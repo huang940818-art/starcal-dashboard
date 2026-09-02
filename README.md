@@ -136,7 +136,10 @@ server.py         本機資料服務（只用標準庫）
 
 ## 作者
 
-杯子蛋糕好好吃
+杯子蛋糕好好吃 · huang940818@gmail.com
+
+有問題或建議都可以開 [Issue](https://github.com/huang940818-art/starcal-dashboard/issues)
+或直接寄信。
 
 ## 授權
 
