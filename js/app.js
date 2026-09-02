@@ -1,5 +1,8 @@
 /* 啟動與分頁。 */
 
+/** 改東西的時候順手更新這個。頁尾會顯示，別人看得出這份還活著。 */
+const BUILD = '2026-09-02';
+
 const PANELS = ['overview', 'money', 'agenda', 'memo', 'wall'];
 
 function showPanel(name) {
@@ -66,6 +69,8 @@ async function main() {
     for (const h of $$('h2[data-icon]')) {
         h.querySelector('.label')?.prepend(icon(h.dataset.icon));
     }
+
+    $('#build').textContent = BUILD;
 
     $('#mode').onclick = () => DataBox.open();
     $('#import-file').onchange = e => {

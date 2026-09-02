@@ -891,6 +891,46 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 
 .swatch[aria-pressed="true"] { border-color: var(--text); }
 
+/* ── 頁尾 ───────────────────────────────────────────── */
+
+footer {
+    border-top: 1px solid color-mix(in srgb, var(--separator) 70%, transparent);
+    margin-top: 30px;
+}
+
+.foot {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 18px 20px 26px;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 14px;
+    font-size: 12.5px;
+    color: var(--text-3);
+}
+
+.foot .who { color: var(--text-2); }
+.foot .who .star { color: var(--accent); }
+
+/* 署名。作品集上別人要看得出這是誰做的。 */
+.foot .by { color: var(--text-2); }
+.foot .by::before { content: '　'; }
+
+.foot .src {
+    color: var(--text-3);
+    text-decoration: none;
+    border-bottom: 1px solid color-mix(in srgb, var(--text-3) 45%, transparent);
+}
+
+.foot .src:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.foot .build { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 620px) {
+    .foot { padding: 16px 14px 22px; }
+    .foot .build { margin-left: 0; }
+}
+
 /* ── 提示 ───────────────────────────────────────────── */
 
 .toast {
