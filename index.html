@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>星歷儀表板</title>
+<meta name="description" content="個人儀表板：記帳、待辦、備忘錄、想法牆。資料存在自己的電腦上。">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header>
+    <div class="topbar">
+        <div class="brand"><span class="star">✦</span> 星歷</div>
+        <div class="today" id="today"></div>
+        <button class="mode" id="mode" type="button" title="資料存在哪裡・點一下可以匯出、匯入">連線中…</button>
+    </div>
+    <nav id="tabs" role="tablist">
+        <button role="tab" data-panel="overview" aria-selected="true">總覽</button>
+        <button role="tab" data-panel="money" aria-selected="false">記帳</button>
+        <button role="tab" data-panel="agenda" aria-selected="false">接下來</button>
+        <button role="tab" data-panel="memo" aria-selected="false">備忘</button>
+        <button role="tab" data-panel="wall" aria-selected="false">想法牆</button>
+    </nav>
+</header>
+
+<main>
+    <!-- ── 總覽 ─────────────────────────────────────── -->
+    <section class="panel" id="panel-overview">
+        <div id="hero"></div>
+        <div class="grid" id="overview-grid"></div>
+    </section>
+
+    <!-- ── 記帳 ─────────────────────────────────────── -->
+    <section class="panel" id="panel-money" hidden>
+        <div id="month-nav"></div>
+        <div class="grid">
+            <div class="card" data-hue="money">
+                <h2 data-icon="wallet"><span class="label">存款總額</span>
+                    <button class="btn small" id="add-account">加帳戶</button>
+                </h2>
+                <div id="accounts-total"></div>
+                <div id="accounts-list"></div>
+            </div>
+
+            <div class="card" data-hue="money">
+                <h2 data-icon="money"><span class="label"><span id="month-card-title">這個月</span></span>
+                    <button class="btn small primary" id="add-txn">記一筆</button>
+                </h2>
+                <div id="month-summary"></div>
+            </div>
+
+            <div class="card" data-hue="budget">
+                <h2 data-icon="scale"><span class="label">固定支出 vs 想要的花費</span></h2>
+                <div id="fixed-flexible"></div>
+            </div>
+
+            <div class="card wide" data-hue="budget">
+                <h2 data-icon="budget"><span class="label">預算</span>
+                    <button class="btn small" id="edit-budgets">設定</button>
+                </h2>
+                <div id="budgets"></div>
+            </div>
+
+            <div class="card wide" data-hue="trend">
+                <h2 data-icon="trend">
+                    <span class="label" id="trend-title">每月收支</span>
+                    <select id="trend-range" class="shrink" style="width:auto">
+                        <option value="6">近 6 個月</option>
+                        <option value="12" selected>近 12 個月</option>
+                        <option value="year">今年</option>
+                    </select>
+                </h2>
+                <div id="trend"></div>
+            </div>
+
+            <div class="card" data-hue="money">
+                <h2 data-icon="list"><span class="label"><span id="by-category-title">這個月花在哪</span></span></h2>
+                <div id="by-category"></div>
+            </div>
+
+            <div class="card" data-hue="sub">
+                <h2 data-icon="sub"><span class="label">訂閱</span>
+                    <button class="btn small" id="add-sub">加訂閱</button>
+                </h2>
+                <div id="subs"></div>
+            </div>
+
+            <div class="card wide" data-hue="money">
+                <h2 data-icon="list"><span class="label">所有帳目</span>
+                    <button class="btn small ghost" id="manage-categories">管理分類</button>
+                </h2>
+                <div class="row" style="margin-bottom:14px">
+                    <input id="q" type="search" placeholder="搜尋店名、備註、分類…" aria-label="搜尋">
+                    <select id="f-kind" class="shrink" style="width:auto">
+                        <option value="">收支不限</option>
+                        <option value="expense">只看支出</option>
+                        <option value="income">只看收入</option>
+                        <option value="transfer">只看轉帳</option>
+                    </select>
+                    <select id="f-category" class="shrink" style="width:auto"></select>
+                    <select id="f-account" class="shrink" style="width:auto"></select>
+                    <select id="f-when" class="shrink" style="width:auto">
+                        <option value="">全部時間</option>
+                        <option value="month">這個月</option>
+                        <option value="last">上個月</option>
+                        <option value="year">今年</option>
+                        <option value="90">近 90 天</option>
+                    </select>
+                    <button class="btn ghost shrink" id="clear-filters">清除</button>
+                </div>
+                <div id="txn-result-summary" class="sub" style="margin-bottom:8px"></div>
+                <div id="txns"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── 接下來 ───────────────────────────────────── -->
+    <section class="panel" id="panel-agenda" hidden>
+        <div class="grid">
+            <div class="card wide" data-hue="todo">
+                <h2 data-icon="todo"><span class="label">接下來</span>
+                    <span>
+                        <button class="btn small ghost" id="clear-done">清掉完成的</button>
+                        <button class="btn small" id="add-event">加行程</button>
+                        <button class="btn small primary" id="add-todo">加待辦</button>
+                    </span>
+                </h2>
+                <p class="sub" style="margin:-8px 0 14px">
+                    行程和待辦排在同一條線上——它們是同一件事的兩個面向。
+                    分開看，就得自己在腦子裡合併，那正是最容易漏掉東西的地方。
+                </p>
+                <div id="agenda"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── 備忘 ─────────────────────────────────────── -->
+    <section class="panel" id="panel-memo" hidden>
+        <div class="grid">
+            <div class="card wide" data-hue="memo">
+                <h2 data-icon="memo"><span class="label">備忘錄</span>
+                    <button class="btn small primary" id="add-memo">新增</button>
+                </h2>
+                <p class="sub" style="margin:-8px 0 12px">
+                    待辦是「要做的事」，備忘是「先記下來免得忘記」——車位號碼、
+                    店員說的話、突然想到的點子。這種東西沒有「完成」。
+                </p>
+                <div id="memo-list"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ── 想法牆 ───────────────────────────────────── -->
+    <section class="panel" id="panel-wall" hidden>
+        <div class="card wide" style="margin-bottom:16px" data-hue="wall">
+            <h2 style="margin:0" data-icon="wall"><span class="label">想法牆</span>
+                <span>
+                    <span class="swatches" id="swatches" style="display:inline-flex;vertical-align:middle;margin-right:10px"></span>
+                    <button class="btn small primary" id="add-sticky">貼一張</button>
+                </span>
+            </h2>
+        </div>
+        <div class="wall" id="wall"></div>
+        <p class="sub" style="margin-top:10px">拖著移動，點進去打字，右下角換顏色或撕掉。</p>
+    </section>
+</main>
+
+<!-- ── 對話框 ───────────────────────────────────────── -->
+
+<dialog id="dlg-txn">
+    <form method="dialog">
+        <h3 id="dlg-txn-title">記一筆</h3>
+        <div class="row">
+            <label class="field"><span>類型</span>
+                <select id="t-kind">
+                    <option value="expense">支出</option>
+                    <option value="income">收入</option>
+                    <option value="transfer">轉帳</option>
+                </select>
+            </label>
+            <label class="field"><span>金額</span>
+                <input id="t-amount" type="number" step="1" min="0" inputmode="decimal" aria-required="true">
+            </label>
+        </div>
+        <div class="row">
+            <label class="field"><span>日期</span><input id="t-date" type="date" aria-required="true"></label>
+            <label class="field" id="t-category-field"><span>分類</span>
+                <select id="t-category"></select>
+            </label>
+        </div>
+        <div class="row">
+            <label class="field"><span id="t-account-label">帳戶</span>
+                <select id="t-account"></select>
+            </label>
+            <label class="field" id="t-to-field" hidden><span>轉到</span>
+                <select id="t-to-account"></select>
+            </label>
+        </div>
+        <label class="field"><span>備註</span><input id="t-note" placeholder="店名、買了什麼"></label>
+        <div class="dialog-actions">
+            <button type="button" class="btn danger spacer" id="t-delete" hidden>刪除</button>
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="t-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-account">
+    <form method="dialog">
+        <h3 id="dlg-account-title">加帳戶</h3>
+        <label class="field"><span>名稱</span><input id="a-name" aria-required="true" placeholder="例：郵局、悠遊卡"></label>
+        <div class="row">
+            <label class="field"><span>種類</span>
+                <select id="a-kind">
+                    <option value="cash">現金</option>
+                    <option value="bank">銀行</option>
+                    <option value="credit">信用卡</option>
+                    <option value="invest">投資</option>
+                    <option value="other">其他</option>
+                </select>
+            </label>
+            <label class="field"><span>起始餘額</span><input id="a-opening" type="number" step="1" value="0"></label>
+        </div>
+        <label class="field" style="display:flex;align-items:center;gap:9px">
+            <input id="a-include" type="checkbox" checked style="width:auto">
+            <span style="margin:0">算進存款總額</span>
+        </label>
+        <div class="dialog-actions">
+            <button type="button" class="btn danger spacer" id="a-delete" hidden>刪除</button>
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="a-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-sub">
+    <form method="dialog">
+        <h3 id="dlg-sub-title">加訂閱</h3>
+        <div class="row">
+            <label class="field"><span>名稱</span><input id="s-name" aria-required="true" placeholder="例：Spotify"></label>
+            <label class="field"><span>金額</span><input id="s-amount" type="number" step="1" min="0" aria-required="true"></label>
+        </div>
+        <div class="row">
+            <label class="field"><span>週期</span>
+                <select id="s-cycle">
+                    <option value="weekly">每週</option>
+                    <option value="monthly" selected>每月</option>
+                    <option value="quarterly">每季</option>
+                    <option value="yearly">每年</option>
+                </select>
+            </label>
+            <label class="field"><span>第一次扣款</span><input id="s-first" type="date" aria-required="true"></label>
+        </div>
+        <label class="field" style="display:flex;align-items:center;gap:9px">
+            <input id="s-active" type="checkbox" checked style="width:auto">
+            <span style="margin:0">還在訂</span>
+        </label>
+        <div class="dialog-actions">
+            <button type="button" class="btn danger spacer" id="s-delete" hidden>刪除</button>
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="s-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-budget">
+    <form method="dialog">
+        <h3>每個月的預算</h3>
+        <p class="sub" style="margin:-8px 0 14px">
+            留白就是不設限。設了才看得到「還剩多少」，不然只看得到「花了多少」。
+        </p>
+        <div id="budget-fields"></div>
+        <div class="dialog-actions">
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="b-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-categories">
+    <form method="dialog">
+        <h3>管理分類</h3>
+        <p class="sub" style="margin:-8px 0 14px">
+            「固定」是非花不可的（房租、訂閱、交通），「彈性」是可以省的。
+            分開標才知道真正的彈性有多少。
+        </p>
+        <div id="category-editor"></div>
+        <div class="dialog-actions">
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="c-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-event">
+    <form method="dialog">
+        <h3 id="dlg-event-title">加行程</h3>
+        <label class="field"><span>什麼行程</span>
+            <input id="e-title" aria-required="true" placeholder="例：實驗室 meeting"></label>
+        <label class="field"><span>日期</span><input id="e-date" type="date" aria-required="true"></label>
+        <div class="row">
+            <label class="field"><span>開始（留白＝整天）</span><input id="e-time" type="time"></label>
+            <label class="field"><span>結束</span><input id="e-end" type="time"></label>
+        </div>
+        <label class="field"><span>備註</span>
+            <input id="e-note" placeholder="地點、要帶什麼、跟誰"></label>
+        <div class="dialog-actions">
+            <button type="button" class="btn danger spacer" id="e-delete" hidden>刪除</button>
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="e-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-todo">
+    <form method="dialog">
+        <h3 id="dlg-todo-title">新增待辦</h3>
+        <label class="field"><span>要做什麼</span><input id="d-title" aria-required="true"></label>
+        <div class="row">
+            <label class="field"><span>期限（可留白）</span><input id="d-due" type="date"></label>
+            <label class="field" style="display:flex;align-items:center;gap:9px;margin-top:20px">
+                <input id="d-priority" type="checkbox" style="width:auto">
+                <span style="margin:0">重要</span>
+            </label>
+        </div>
+        <label class="field"><span>細節</span>
+            <textarea id="d-note" placeholder="地址、對方電話、要帶什麼"></textarea>
+        </label>
+        <div class="dialog-actions">
+            <button type="button" class="btn danger spacer" id="d-delete" hidden>刪除</button>
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="d-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-memo">
+    <form method="dialog">
+        <h3 id="dlg-memo-title">備忘</h3>
+        <label class="field"><span>內容（第一行會當標題）</span>
+            <textarea id="m-text" style="min-height:190px" aria-required="true"></textarea>
+        </label>
+        <label class="field" style="display:flex;align-items:center;gap:9px">
+            <input id="m-pinned" type="checkbox" style="width:auto">
+            <span style="margin:0">釘在最上面</span>
+        </label>
+        <div class="dialog-actions">
+            <button type="button" class="btn danger spacer" id="m-delete" hidden>刪除</button>
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="m-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-data">
+    <form method="dialog">
+        <h3>資料</h3>
+        <div id="data-body"></div>
+        <div class="dialog-actions">
+            <button class="btn" value="close" formnovalidate>關閉</button>
+        </div>
+    </form>
+</dialog>
+
+<input type="file" id="import-file" accept="application/json,.json" hidden>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<!-- 順序有意義：demo.js 在頂層就會呼叫 util 的 uid()/ymd() 把示範資料算出來，
+     所以 util 一定要先載。 -->
+<script src="js/util.js"></script>
+<script src="js/icons.js"></script>
+<script src="js/demo.js"></script>
+<script src="js/store.js"></script>
+<script src="js/data.js"></script>
+<script src="js/money.js"></script>
+<script src="js/todo.js"></script>
+<script src="js/agenda.js"></script>
+<script src="js/memo.js"></script>
+<script src="js/wall.js"></script>
+<script src="js/overview.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

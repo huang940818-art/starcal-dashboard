@@ -1,0 +1,924 @@
+/* 星歷儀表板
+ *
+ * 配色直接沿用 iOS 星歷的 Theme.swift——那組顏色是從 App icon 長出來的
+ * （墨綠底 #2A4937、星星黃 #F9D984），兩邊用同一組，看起來才是同一個東西。
+ *
+ * 背景比 icon 的綠更深：一整片 #2A4937 太亮也太飽和，盯久了會累。
+ * 文字不用純白，#F2EFE4 是帶暖的米白，跟星星黃同一個溫度。
+ */
+
+:root {
+    --bg: #132019;
+    --card: #1D3125;
+    --raised: #2A4937;
+    --separator: #31543E;
+
+    --text: #F2EFE4;
+    --text-2: #9FB3A6;
+    --text-3: #6B8375;
+
+    --accent: #F9D984;
+    --money: #E8C46A;
+    --memo: #D9B48F;
+    --water: #5FC9C0;
+    --sleep: #A99BE8;
+    --heart: #EE8FA3;
+    --lime: #B8D96F;
+    --calendar: #E8A87C;
+
+    --good: #7FD9A8;
+    --warn: #F0B45F;
+    --alert: #E8836F;
+
+    --radius: 14px;
+    --gap: 16px;
+
+    color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    /* 純平色會扁。頂端一層極淡的暖光，像有東西照著，
+     * 但淡到不會讓人注意到它本身。 */
+    background:
+        radial-gradient(90% 55% at 50% -8%,
+            color-mix(in srgb, var(--raised) 42%, transparent) 0%,
+            transparent 70%),
+        var(--bg);
+    background-attachment: fixed;
+    color: var(--text);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "PingFang TC",
+          "Noto Sans TC", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea { font: inherit; color: inherit; }
+
+/* ── 頂欄 ───────────────────────────────────────────── */
+
+header {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--separator);
+}
+
+/* 名字是 .topbar 不是 .bar：長條圖那邊也有一個 .bar，
+ * 兩個撞在一起的話，圖表那條 max-width:20px 會把整條頂欄壓成 40px 寬
+ * （做的時候真的發生了——「星歷」變成直排）。 */
+.topbar {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 12px 20px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+}
+
+.brand {
+    white-space: nowrap;
+    font-size: 17px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.brand .star { color: var(--accent); }
+
+.today {
+    color: var(--text-3);
+    white-space: nowrap;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 展示模式的標示。**這個一定要看得見**——別人在作品集上點的是示範資料，
+ * 沒講清楚的話會以為在看別人的私人帳目。 */
+.mode {
+    margin-left: auto;
+    font-size: 12px;
+    padding: 5px 11px;
+    border-radius: 999px;
+    border: 1px solid var(--separator);
+    color: var(--text-2);
+    white-space: nowrap;
+}
+
+.mode {
+    cursor: pointer;
+    font-family: inherit;
+    transition: border-color .15s, background .15s;
+}
+
+.mode:hover { border-color: var(--text-3); }
+
+.data-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.mode.demo {
+    border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.mode.local { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
+
+/* ── 分頁 ───────────────────────────────────────────── */
+
+nav {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 20px 10px;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+nav::-webkit-scrollbar { display: none; }
+
+nav button {
+    background: none;
+    border: 0;
+    padding: 7px 15px;
+    border-radius: 999px;
+    color: var(--text-2);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background .15s, color .15s;
+}
+
+nav button:hover { color: var(--text); background: var(--card); }
+
+nav button[aria-selected="true"] {
+    background: var(--raised);
+    color: var(--text);
+}
+
+/* ── 版面 ───────────────────────────────────────────── */
+
+main {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 22px 20px 80px;
+}
+
+.panel[hidden] { display: none; }
+
+.grid {
+    display: grid;
+    gap: var(--gap);
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    /* 同一排的卡片等高。一開始為了消掉空白改成 start，
+     * 結果變成高低參差，那比空白更難看。
+     * 空白的問題改用「卡片內容撐滿、空狀態垂直置中」解決（見下面）。 */
+    align-items: stretch;
+}
+
+.card {
+    background: var(--card);
+    border: 1px solid var(--separator);
+    border-radius: var(--radius);
+    padding: 18px;
+    position: relative;
+    transition: border-color .18s, transform .18s;
+    /* 卡片自己是直向的 flex，裡面的空狀態才有辦法撐滿剩下的高度、
+     * 把內容垂直置中——等高就不會看起來像下面漏了一塊。 */
+    display: flex;
+    flex-direction: column;
+}
+
+.card:hover { border-color: color-mix(in srgb, var(--separator) 55%, var(--text-3)); }
+
+.card h2 {
+    margin: 0 0 14px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-2);
+    letter-spacing: .05em;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+/* 標題左邊那個圖示。顏色由 .card 上的 --hue 決定，
+ * 每個區塊一種——掃視的時候眼睛才有落腳點。 */
+.card h2 .label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.card h2 svg {
+    flex: 0 0 auto;
+    color: var(--hue, var(--text-3));
+}
+
+.card { --hue: var(--text-3); }
+.card[data-hue="money"]    { --hue: var(--money); }
+.card[data-hue="todo"]     { --hue: var(--good); }
+.card[data-hue="memo"]     { --hue: var(--memo); }
+.card[data-hue="wall"]     { --hue: var(--sleep); }
+.card[data-hue="budget"]   { --hue: var(--water); }
+.card[data-hue="trend"]    { --hue: var(--lime); }
+.card[data-hue="sub"]      { --hue: var(--calendar); }
+.card[data-hue="alert"]    { --hue: var(--alert); }
+
+.card.wide { grid-column: 1 / -1; }
+
+.big {
+    font-size: 34px;
+    font-weight: 650;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+    line-height: 1.2;
+}
+
+/* 數字旁邊的單位／符號要退到後面去，不然「31,760」和「元」一樣重 */
+.big .unit {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-3);
+    letter-spacing: 0;
+    margin-left: 3px;
+}
+
+.sub { color: var(--text-3); font-size: 13px; }
+
+/* 沒資料時說「沒有」，不要顯示 0——那是兩件不一樣的事。
+ *
+ * 空狀態要當成正式畫面設計，不是「還沒做完的地方」。
+ * 剛開始用的時候，整個儀表板看到的就只有這些。 */
+.empty {
+    color: var(--text-3);
+    font-size: 14px;
+    padding: 26px 4px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    flex: 1;              /* 撐滿卡片剩下的高度，內容置中 */
+    min-height: 0;
+}
+
+/* 想法牆那面是絕對定位的，不要被 flex 影響 */
+.wall .empty { flex: none; }
+
+.empty svg { color: color-mix(in srgb, var(--hue, var(--text-3)) 55%, transparent); }
+.empty .hint { font-size: 12.5px; color: color-mix(in srgb, var(--text-3) 75%, transparent); }
+
+/* ── 今天（總覽的主角）─────────────────────────────────
+ *
+ * 為什麼要有這一塊：原本總覽是三張一樣大的卡片，每一張都同樣重要，
+ * 等於沒有一張重要。儀表板的第一個問題永遠是「現在要我注意什麼」，
+ * 那個答案應該大到不用找。
+ */
+
+.hero {
+    position: relative;
+    overflow: hidden;
+    background:
+        radial-gradient(120% 140% at 88% -10%,
+            color-mix(in srgb, var(--raised) 85%, transparent) 0%,
+            transparent 58%),
+        var(--card);
+    border: 1px solid var(--separator);
+    border-radius: 18px;
+    padding: 26px 28px;
+    margin-bottom: var(--gap);
+}
+
+/* 右上角一顆很淡的星。星歷的識別，但不能搶戲。 */
+.hero .glow {
+    position: absolute;
+    top: -52px;
+    right: -44px;
+    color: var(--accent);
+    opacity: .045;
+    pointer-events: none;
+}
+
+.hero .date {
+    font-size: 12.5px;
+    color: var(--text-3);
+    letter-spacing: .08em;
+    margin-bottom: 10px;
+}
+
+.hero .headline {
+    font-size: 27px;
+    font-weight: 650;
+    letter-spacing: -.01em;
+    line-height: 1.35;
+}
+
+.hero .headline em {
+    font-style: normal;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+}
+
+.hero .headline.calm { color: var(--text-2); font-weight: 600; }
+.hero.has-alert .headline em { color: var(--alert); }
+
+.hero .note {
+    margin-top: 7px;
+    font-size: 14px;
+    color: var(--text-2);
+}
+
+.hero .note.alert { color: var(--alert); }
+.hero .note.warn { color: var(--warn); }
+
+.hero .stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 46px;
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid color-mix(in srgb, var(--separator) 70%, transparent);
+}
+
+.hero .stat { min-width: 0; }
+
+.hero .stat .k {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-3);
+    margin-bottom: 4px;
+}
+
+.hero .stat .k svg { color: var(--hue, var(--text-3)); }
+
+.hero .stat .v {
+    font-size: 20px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.01em;
+}
+
+.hero .stat .v .unit { font-size: 12.5px; font-weight: 500; color: var(--text-3); margin-left: 5px; }
+
+@media (max-width: 620px) {
+    .hero { padding: 20px 18px; }
+    .hero .headline { font-size: 22px; }
+    .hero .stats { gap: 10px 22px; }
+}
+
+/* ── 按鈕與表單 ─────────────────────────────────────── */
+
+.btn {
+    background: var(--raised);
+    border: 1px solid var(--separator);
+    border-radius: 9px;
+    padding: 7px 14px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    white-space: nowrap;
+}
+
+.btn:hover { background: var(--separator); }
+
+.btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #21331F;
+    font-weight: 600;
+}
+
+.btn.primary:hover { filter: brightness(1.07); }
+
+.btn.ghost { background: none; color: var(--text-2); }
+.btn.ghost:hover { background: var(--card); color: var(--text); }
+
+.btn.danger { color: var(--alert); border-color: color-mix(in srgb, var(--alert) 40%, transparent); }
+.btn.small { padding: 4px 10px; font-size: 13px; }
+.btn.icon { padding: 4px 9px; }
+
+input, select, textarea {
+    background: var(--bg);
+    border: 1px solid var(--separator);
+    border-radius: 9px;
+    padding: 8px 11px;
+    width: 100%;
+}
+
+input:focus, select, textarea:focus {
+    outline: none;
+    border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+textarea { resize: vertical; min-height: 76px; line-height: 1.6; }
+
+label.field {
+    display: block;
+    margin-bottom: 12px;
+}
+
+label.field > span {
+    display: block;
+    font-size: 12px;
+    color: var(--text-2);
+    margin-bottom: 5px;
+}
+
+.row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: flex-end;
+}
+
+.row > * { flex: 1; min-width: 120px; }
+.row > .shrink { flex: 0 0 auto; min-width: 0; }
+
+/* ── 對話框 ─────────────────────────────────────────── */
+
+dialog {
+    background: var(--card);
+    color: var(--text);
+    border: 1px solid var(--separator);
+    border-radius: 16px;
+    padding: 22px;
+    width: min(440px, calc(100vw - 32px));
+}
+
+dialog::backdrop { background: rgba(0, 0, 0, .55); }
+
+dialog h3 { margin: 0 0 16px; font-size: 17px; }
+
+.dialog-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+.dialog-actions .spacer { margin-right: auto; }
+
+/* ── 記帳 ───────────────────────────────────────────── */
+
+.money-num { font-variant-numeric: tabular-nums; }
+.income { color: var(--good); }
+.expense { color: var(--text); }
+.negative { color: var(--alert); }
+
+.account-row, .txn-row, .sub-row, .todo-row, .memo-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--separator) 60%, transparent);
+}
+
+.account-row:last-child, .txn-row:last-child,
+.sub-row:last-child, .todo-row:last-child, .memo-row:last-child { border-bottom: 0; }
+
+.grow { flex: 1; min-width: 0; }
+
+.ellipsis {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tag {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--raised);
+    color: var(--text-2);
+    white-space: nowrap;
+}
+
+.tag.fixed { color: var(--water); background: color-mix(in srgb, var(--water) 14%, transparent); }
+.tag.flexible { color: var(--calendar); background: color-mix(in srgb, var(--calendar) 14%, transparent); }
+
+/* 預算條 */
+
+.budget { margin-bottom: 16px; }
+.budget:last-child { margin-bottom: 0; }
+
+.budget-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.track {
+    height: 7px;
+    border-radius: 999px;
+    background: var(--bg);
+    overflow: hidden;
+}
+
+.fill {
+    height: 100%;
+    border-radius: 999px;
+    background: var(--good);
+    transition: width .3s ease;
+}
+
+.fill.warn { background: var(--warn); }
+.fill.over { background: var(--alert); }
+
+/* 長條圖。用 CSS grid 畫，不拉圖表庫——
+ * 這種等級的圖用不到 60KB 的相依，而且離線也要能開。 */
+
+/* 長條的高度是百分比，所以每一層都要有「確定的高度」可以參照，
+ * 否則百分比解析不出來，長條會全部塌成 min-height 的 2px。
+ * 關鍵是 align-items: stretch（不是 flex-end）＋ .bars 的 min-height: 0。 */
+.chart {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    height: 190px;
+    padding-top: 10px;
+}
+
+.chart-col {
+    flex: 1;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+.bars {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 3px;
+}
+
+.bars .bar {
+    width: 42%;
+    max-width: 20px;
+    border-radius: 4px 4px 0 0;
+    min-height: 2px;
+    transition: height .3s ease;
+}
+
+.bars .bar.in { background: color-mix(in srgb, var(--good) 75%, transparent); }
+.bars .bar.out { background: color-mix(in srgb, var(--money) 80%, transparent); }
+
+.chart-label {
+    font-size: 11px;
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.legend {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--text-2);
+    margin-top: 10px;
+}
+
+.legend i {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 3px;
+    margin-right: 5px;
+}
+
+/* 分類長條 */
+
+.cat-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 12px;
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.cat-bar {
+    grid-column: 1 / -1;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--money);
+    opacity: .8;
+}
+
+/* ── 待辦 ───────────────────────────────────────────── */
+
+.check {
+    width: 21px;
+    height: 21px;
+    flex: 0 0 auto;
+    border-radius: 7px;
+    border: 1.5px solid var(--text-3);
+    background: none;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    padding: 0;
+    transition: border-color .15s, background .15s;
+}
+
+.check:hover { border-color: var(--accent); }
+
+.check[aria-checked="true"] {
+    background: var(--good);
+    border-color: var(--good);
+    color: #12291D;
+}
+
+.todo-row.done .title { color: var(--text-3); text-decoration: line-through; }
+
+.todo-row .title { font-size: 15px; }
+.todo-row .meta { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.todo-row .meta.overdue { color: var(--alert); }
+.todo-row .meta.today { color: var(--warn); }
+
+.star-btn {
+    background: none;
+    border: 0;
+    cursor: pointer;
+    color: var(--text-3);
+    padding: 3px 5px;
+    font-size: 15px;
+}
+
+.star-btn.on { color: var(--accent); }
+
+.section-title {
+    font-size: 12px;
+    color: var(--text-3);
+    letter-spacing: .06em;
+    margin: 18px 0 4px;
+}
+
+.section-title:first-child { margin-top: 0; }
+
+/* 月份切換 */
+
+.month-nav {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: var(--gap);
+}
+
+.month-nav .month-label {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: 16px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-width: 132px;
+}
+
+.month-nav .btn.icon {
+    font-size: 17px;
+    line-height: 1;
+    padding: 4px 12px;
+}
+
+.month-nav .btn:disabled {
+    opacity: .32;
+    cursor: default;
+}
+
+.month-nav .btn:disabled:hover { background: var(--raised); }
+
+/* ── 接下來（行程＋待辦的同一條線）───────────────────
+ *
+ * 一天一組。日期那行是錨點，底下才是那天的事。
+ * 這樣掃過去看到的是「哪幾天有事」，而不是一長串沒有段落的清單。
+ */
+
+.day-group {
+    padding: 14px 0 4px;
+    border-top: 1px solid color-mix(in srgb, var(--separator) 55%, transparent);
+}
+
+.day-group:first-child { border-top: 0; padding-top: 0; }
+
+.day-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 4px;
+}
+
+.day-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-2);
+    letter-spacing: .04em;
+}
+
+/* 今天要看得出來，不然這條線上每一天都一樣重 */
+.day-name.now { color: var(--accent); }
+.day-name.alert { color: var(--alert); }
+
+.day-count { font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+.day-group.today { position: relative; }
+
+.day-group.today::before {
+    content: '';
+    position: absolute;
+    left: -18px;
+    top: 14px;
+    bottom: 6px;
+    width: 2px;
+    border-radius: 2px;
+    background: color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+.day-group.muted .day-name { color: var(--text-3); font-weight: 500; }
+.day-group.muted { opacity: .78; }
+
+.event-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 0;
+    cursor: pointer;
+    border-bottom: 1px solid color-mix(in srgb, var(--separator) 40%, transparent);
+}
+
+.event-row:last-child { border-bottom: 0; }
+.event-row:hover .title { color: var(--accent); }
+
+/* 時間欄寬度固定，時間才會對齊成一直行 */
+.event-row .event-time {
+    flex: 0 0 auto;
+    min-width: 84px;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: var(--calendar);
+    letter-spacing: .01em;
+}
+
+.event-row.compact .event-time { min-width: 52px; }
+
+/* 時間線裡的待辦：勾選框推到時間欄的右緣，
+ * 標題就跟行程的標題切齊——兩種列混在一起才不會看起來是沒對齊。 */
+.day-group .todo-row { padding-left: 63px; }
+.day-group .todo-row .check { margin-left: 0; }
+.event-row.late .event-time { color: var(--alert); }
+.event-row .title { font-size: 15px; }
+.event-row .meta { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+
+/* ── 備忘 ───────────────────────────────────────────── */
+
+.memo-row { cursor: pointer; align-items: flex-start; }
+.memo-row:hover .memo-title { color: var(--accent); }
+.memo-title { font-weight: 500; }
+.memo-preview { color: var(--text-3); font-size: 13px; margin-top: 2px; }
+.memo-date { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+
+/* ── 便利貼牆 ───────────────────────────────────────── */
+
+.wall {
+    position: relative;
+    min-height: 560px;
+    border: 1px solid var(--separator);
+    border-radius: var(--radius);
+    background:
+        radial-gradient(circle at 1px 1px,
+            color-mix(in srgb, var(--separator) 70%, transparent) 1px,
+            transparent 0) 0 0 / 26px 26px,
+        var(--card);
+    overflow: hidden;
+    touch-action: none;
+}
+
+.sticky {
+    position: absolute;
+    width: 190px;
+    min-height: 130px;
+    padding: 13px 14px 30px;
+    border-radius: 3px;
+    color: #23231C;
+    box-shadow: 0 5px 16px rgba(0, 0, 0, .35);
+    cursor: grab;
+    /* 每張稍微歪一點，看起來才像貼上去的而不是排版排出來的 */
+    transform: rotate(var(--tilt, 0deg));
+    transition: box-shadow .15s;
+}
+
+.sticky:hover { box-shadow: 0 8px 22px rgba(0, 0, 0, .45); }
+
+.sticky.dragging {
+    cursor: grabbing;
+    box-shadow: 0 16px 34px rgba(0, 0, 0, .5);
+    transform: rotate(var(--tilt, 0deg)) scale(1.03);
+    z-index: 999 !important;
+}
+
+.sticky textarea {
+    background: none;
+    border: 0;
+    padding: 0;
+    color: inherit;
+    width: 100%;
+    min-height: 92px;
+    resize: none;
+    font-size: 14px;
+    line-height: 1.55;
+    cursor: text;
+}
+
+.sticky textarea:focus { outline: none; }
+
+.sticky .tools {
+    position: absolute;
+    right: 7px;
+    bottom: 5px;
+    display: flex;
+    gap: 3px;
+    opacity: 0;
+    transition: opacity .15s;
+}
+
+.sticky:hover .tools, .sticky:focus-within .tools { opacity: 1; }
+
+.sticky .tools button {
+    background: rgba(0, 0, 0, .10);
+    border: 0;
+    border-radius: 5px;
+    width: 21px;
+    height: 21px;
+    cursor: pointer;
+    color: #23231C;
+    font-size: 12px;
+    line-height: 1;
+    display: grid;
+    place-items: center;
+    padding: 0;
+}
+
+.sticky .tools button:hover { background: rgba(0, 0, 0, .22); }
+
+.swatches { display: flex; gap: 6px; }
+
+.swatch {
+    width: 21px;
+    height: 21px;
+    border-radius: 6px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    padding: 0;
+}
+
+.swatch[aria-pressed="true"] { border-color: var(--text); }
+
+/* ── 提示 ───────────────────────────────────────────── */
+
+.toast {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%) translateY(14px);
+    background: var(--raised);
+    border: 1px solid var(--separator);
+    padding: 10px 18px;
+    border-radius: 999px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s, transform .2s;
+    z-index: 200;
+    max-width: calc(100vw - 40px);
+}
+
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.bad { border-color: var(--alert); color: var(--alert); }
+
+@media (max-width: 620px) {
+    main { padding: 16px 14px 60px; }
+    .topbar { padding: 10px 14px; }
+    nav { padding: 0 14px 8px; }
+    .big { font-size: 25px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+}
