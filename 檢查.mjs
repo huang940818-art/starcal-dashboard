@@ -136,6 +136,39 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
       ok('勾得起來', Todo.data.items[0].done === true);
     } else ok('勾得起來', false, '找不到勾選框');
 
+    // ── 遠一點的待辦不能消失（14 天視野外）──
+    // 這條是踩過才加的：排到 25 天後的待辦整批看不見，
+    // 東西還在但畫面上沒有 → 使用者以為存檔失敗，也刪不掉（點不到）。
+    await tab('agenda');
+    const far = new Date(Date.now() + 25 * 86400000);
+    const farYmd = far.getFullYear() + '-' +
+        String(far.getMonth()+1).padStart(2,'0') + '-' + String(far.getDate()).padStart(2,'0');
+    q('#add-todo').click(); await sleep(160);
+    q('#d-title').value = '25天後的待辦';
+    q('#d-due').value = farYmd;
+    q('#d-save').click(); await sleep(300);
+    ok('遠一點的待辦看得到', q('#agenda').textContent.includes('25天後的待辦'));
+    ok('有「更遠」那一區', q('#agenda').textContent.includes('更遠'));
+
+    // 看得到就要點得到、刪得掉
+    const farRow = [...document.querySelectorAll('#agenda .todo-row')]
+        .find(r => r.textContent.includes('25天後的待辦'));
+    ok('遠一點的待辦點得到', !!farRow);
+    if (farRow) {
+        farRow.querySelector('.grow').click(); await sleep(250);
+        ok('點了會開編輯', q('#dlg-todo').open);
+        const before = Todo.data.items.length;
+        q('#d-delete').click(); await sleep(300);
+        ok('遠一點的待辦刪得掉', Todo.data.items.length === before - 1);
+    }
+
+    // 遠一點的行程也一樣
+    q('#add-event').click(); await sleep(160);
+    q('#e-title').value = '25天後的行程';
+    q('#e-date').value = farYmd;
+    q('#e-save').click(); await sleep(300);
+    ok('遠一點的行程看得到', q('#agenda').textContent.includes('25天後的行程'));
+
     // ── 便利貼：貼得上去 ──
     await tab('wall');
     q('#add-sticky').click(); await sleep(260);

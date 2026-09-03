@@ -102,6 +102,35 @@ const Agenda = {
         return out;
     },
 
+    /** 視野的最後一天。超過這天的東西要另外列，不能讓它們消失。 */
+    horizon() {
+        const d = parseYmd(todayStr());
+        return ymd(new Date(d.getFullYear(), d.getMonth(), d.getDate() + this.DAYS - 1));
+    },
+
+    /**
+     * 超過 14 天視野的行程和待辦。
+     *
+     * **這一段是後來補的，因為少了它會出大事**：東西存進去了、資料也在，
+     * 但畫面上完全看不到——使用者會以為存檔失敗，或者以為刪不掉
+     * （點不到的東西當然刪不掉）。看不到比壞掉更糟，因為壞掉至少會報錯。
+     *
+     * 不併進上面那條時間線，是因為時間線要維持「接下來這兩週」的密度；
+     * 更遠的東西列出來就好，日期直接寫在每一列上。
+     */
+    later() {
+        const h = this.horizon();
+        const events = Cal.data.events
+            .filter(e => e.date > h)
+            .map(e => ({ kind: 'event', day: e.date, item: e }));
+        const todos = Todo.data.items
+            .filter(t => !t.done && t.due && t.due > h)
+            .map(t => ({ kind: 'todo', day: t.due, item: t }));
+        return [...events, ...todos].sort((a, b) =>
+            a.day.localeCompare(b.day)
+            || (a.kind === 'event' ? -1 : 1));
+    },
+
     /** 已經過去但還沒處理的。這些要排在最前面，不然會一直被往下推。 */
     overdue() {
         const today = todayStr();
@@ -119,12 +148,13 @@ const Agenda = {
 
         const late = this.overdue();
         const upcoming = this.days();
+        const later = this.later();
         const someday = Todo.open().filter(t => !t.due);
         const done = Todo.data.items.filter(t => t.done)
             .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
 
         if (!late.todos.length && !late.events.length && !upcoming.length
-            && !someday.length && !done.length) {
+            && !later.length && !someday.length && !done.length) {
             box.append(el('div', { class: 'empty' }, [
                 icon('todo', 26), '接下來沒有事',
                 el('div', { class: 'hint', text: '加一個行程或一件待辦，它們會排在同一條線上' }),
@@ -163,6 +193,19 @@ const Agenda = {
             ]));
         }
 
+        // 兩週之後的。每一列自己寫日期，因為「三天後」那種說法在這裡沒有意義。
+        if (later.length) {
+            box.append(el('div', { class: 'day-group' }, [
+                el('div', { class: 'day-head' }, [
+                    el('span', { class: 'day-name', text: '更遠' }),
+                    el('span', { class: 'day-count', text: `${later.length} 件` }),
+                ]),
+                ...later.map(r => r.kind === 'event'
+                    ? this.eventRow(r.item, false, true)
+                    : Todo.row(r.item, true)),
+            ]));
+        }
+
         // 沒有期限的
         if (someday.length) {
             box.append(el('div', { class: 'day-group muted' }, [
@@ -192,10 +235,11 @@ const Agenda = {
             + '日一二三四五六'[d.getDay()].replace(/^/, '週');
     },
 
-    eventRow(e, late = false) {
-        const time = e.time
-            ? (e.endTime ? `${e.time}–${e.endTime}` : e.time)
-            : '整天';
+    eventRow(e, late = false, showDate = false) {
+        // 在「更遠」那一區，左欄要放日期不是時間——那邊沒有按日期分組
+        const time = showDate
+            ? this.dayLabel(e.date).split('　')[0]
+            : (e.time ? (e.endTime ? `${e.time}–${e.endTime}` : e.time) : '整天');
 
         return el('div', {
             class: 'event-row' + (late ? ' late' : ''),
@@ -204,7 +248,9 @@ const Agenda = {
             el('div', { class: 'event-time', text: time }),
             el('div', { class: 'grow' }, [
                 el('div', { class: 'title ellipsis', text: e.title }),
-                e.note ? el('div', { class: 'meta ellipsis', text: e.note }) : null,
+                el('div', { class: 'meta ellipsis' },
+                    [showDate && e.time ? e.time : '', e.note || '']
+                        .filter(Boolean).join('　') || null),
             ]),
         ]);
     },

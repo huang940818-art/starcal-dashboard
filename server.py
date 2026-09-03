@@ -141,10 +141,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
-        # 資料每次都要拿最新的，不然改完重整看到舊的會以為存檔失敗
-        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(body)
+
+    def end_headers(self):
+        # **每一個回應都不給快取。**
+        #
+        # 資料不給快取的理由很明顯：改完重整看到舊的，會以為存檔失敗。
+        # 但**靜態檔也一樣重要**——這是本機開發用的 server，改完 JS 之後
+        # 重整就該看到新的。只送 Last-Modified 的話瀏覽器會啟發式快取，
+        # 於是「我明明修好了她卻說沒看到」，而且要記得按 Cmd+Shift+R 才行。
+        # 本機讀檔的成本可以忽略，不值得為它換來這種誤會。
+        self.send_header("Cache-Control", "no-store")
+        super().end_headers()
 
     def api_name(self) -> str | None:
         if not self.path.startswith("/api/"):
