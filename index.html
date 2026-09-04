@@ -5,6 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>星歷儀表板</title>
 <meta name="description" content="個人儀表板：記帳、待辦、備忘錄、想法牆。資料存在自己的電腦上。">
+<!-- 加到主畫面用的圖示。沒有這幾行的話 iOS 會把整頁縮圖當圖示，看起來像壞掉的。 -->
+<link rel="icon" href="icons/icon-32.png?v=2" sizes="32x32">
+<link rel="icon" href="icons/icon-192.png?v=2" sizes="192x192">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png?v=2">
+<link rel="manifest" href="site.webmanifest?v=2">
+<meta name="theme-color" content="#132019">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="星歷">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -14,6 +23,7 @@
         <div class="brand"><span class="star">✦</span> 星歷</div>
         <div class="today" id="today"></div>
         <button class="mode" id="mode" type="button" title="資料存在哪裡・點一下可以匯出、匯入">連線中…</button>
+        <button class="icon-btn" id="appearance" type="button" title="換主題色" aria-label="換主題色">◑</button>
     </div>
     <nav id="tabs" role="tablist">
         <button role="tab" data-panel="overview" aria-selected="true">總覽</button>
@@ -121,6 +131,7 @@
             <div class="card wide" data-hue="todo">
                 <h2 data-icon="todo"><span class="label">接下來</span>
                     <span>
+                        <button class="btn small ghost" id="manage-labels">分類</button>
                         <button class="btn small ghost" id="clear-done">清掉完成的</button>
                         <button class="btn small" id="add-event">加行程</button>
                         <button class="btn small primary" id="add-todo">加待辦</button>
@@ -130,7 +141,10 @@
                     行程和待辦排在同一條線上——它們是同一件事的兩個面向。
                     分開看，就得自己在腦子裡合併，那正是最容易漏掉東西的地方。
                 </p>
-                <div id="agenda"></div>
+                <div id="agenda-tools"></div>
+                <div id="agenda-list"></div>
+                <div id="calendar" hidden></div>
+                <div id="timetable" hidden></div>
             </div>
         </div>
     </section>
@@ -161,7 +175,7 @@
                 </span>
             </h2>
         </div>
-        <div class="wall" id="wall"></div>
+        <div class="wall" id="wall-board"></div>
         <p class="sub" style="margin-top:10px">拖著移動，點進去打字，右下角換顏色或撕掉。</p>
     </section>
 </main>
@@ -315,8 +329,11 @@
             <label class="field"><span>開始（留白＝整天）</span><input id="e-time" type="time"></label>
             <label class="field"><span>結束</span><input id="e-end" type="time"></label>
         </div>
-        <label class="field"><span>備註</span>
-            <input id="e-note" placeholder="地點、要帶什麼、跟誰"></label>
+        <div class="row">
+            <label class="field"><span>分類</span><select id="e-label"></select></label>
+            <label class="field"><span>備註</span>
+                <input id="e-note" placeholder="地點、要帶什麼、跟誰"></label>
+        </div>
         <div class="dialog-actions">
             <button type="button" class="btn danger spacer" id="e-delete" hidden>刪除</button>
             <button class="btn" value="cancel" formnovalidate>取消</button>
@@ -336,6 +353,7 @@
                 <span style="margin:0">重要</span>
             </label>
         </div>
+        <label class="field"><span>分類</span><select id="d-label"></select></label>
         <label class="field"><span>細節</span>
             <textarea id="d-note" placeholder="地址、對方電話、要帶什麼"></textarea>
         </label>
@@ -365,6 +383,80 @@
     </form>
 </dialog>
 
+<dialog id="dlg-appearance">
+    <form method="dialog">
+        <h3>外觀</h3>
+        <div id="appearance-body"></div>
+        <div class="dialog-actions">
+            <button class="btn primary" value="close" formnovalidate>好了</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-labels">
+    <form method="dialog">
+        <h3>分類</h3>
+        <p class="sub" style="margin:-8px 0 14px">
+            行程、待辦、課表共用同一組分類。名字留白的那幾行存檔時會被丟掉。
+        </p>
+        <div id="label-editor"></div>
+        <div class="dialog-actions">
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="l-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-sets">
+    <form method="dialog">
+        <h3>管理課表</h3>
+        <p class="sub" style="margin:-8px 0 14px">
+            可以存好幾份——這學期、下學期、打工班表。切換是換整份，舊的留著。
+        </p>
+        <div id="set-editor"></div>
+        <div class="dialog-actions">
+            <button class="btn primary" value="close" formnovalidate>好了</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-set">
+    <form method="dialog">
+        <h3 id="dlg-set-title">新的課表</h3>
+        <label class="field"><span>名稱</span>
+            <input id="p-name" aria-required="true" placeholder="例：115 上、打工班表"></label>
+        <label class="field" id="p-copy-field" hidden><span>要不要照現有的複製一份</span>
+            <select id="p-copy"></select></label>
+        <div class="dialog-actions">
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="p-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-slot">
+    <form method="dialog">
+        <h3 id="dlg-slot-title">加一堂</h3>
+        <label class="field"><span>名稱</span>
+            <input id="k-name" aria-required="true" placeholder="例：訊號與系統、早班"></label>
+        <div class="row">
+            <label class="field"><span>星期</span><select id="k-day"></select></label>
+            <label class="field"><span>開始</span><input id="k-start" type="time" aria-required="true"></label>
+            <label class="field"><span>結束</span><input id="k-end" type="time"></label>
+        </div>
+        <div class="row">
+            <label class="field"><span>地點</span><input id="k-place" placeholder="例：工五 301"></label>
+            <label class="field"><span>老師／備註</span><input id="k-teacher"></label>
+        </div>
+        <label class="field"><span>分類</span><select id="k-label"></select></label>
+        <div class="dialog-actions">
+            <button type="button" class="btn danger spacer" id="k-delete" hidden>刪除</button>
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="k-save">存</button>
+        </div>
+    </form>
+</dialog>
+
 <dialog id="dlg-data">
     <form method="dialog">
         <h3>資料</h3>
@@ -388,9 +480,13 @@
 <script src="js/data.js"></script>
 <script src="js/money.js"></script>
 <script src="js/todo.js"></script>
+<script src="js/timetable.js"></script>
 <script src="js/agenda.js"></script>
+<script src="js/calendar.js"></script>
+<script src="js/prefs.js"></script>
 <script src="js/memo.js"></script>
 <script src="js/wall.js"></script>
+<script src="js/ke.js"></script>
 <script src="js/overview.js"></script>
 <script src="js/app.js"></script>
 </body>

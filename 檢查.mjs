@@ -40,6 +40,52 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
 (async () => {
   document.title = '檢查啟動了但沒跑完';
   await sleep(1200);
+
+  // ── 手機那一輪 ──────────────────────────────────
+  // **窄視窗要單獨跑一次。** 桌機視窗下每一條版面檢查都會是綠的，
+  // 卻什麼都沒驗到——手機才是會踩到問題的地方（想法牆卡住那次就是）。
+  // headless 的 viewport 不等於 --window-size 給的數字（實測 390 進來是 485），
+  // 所以門檻抓寬一點。桌機那輪是 1512，離這個數字很遠，不會誤判。
+  if (innerWidth < 700) {
+    try {
+      const wide = () => document.documentElement.scrollWidth > innerWidth + 1;
+      for (const p of ['overview', 'money', 'agenda', 'memo', 'wall']) {
+        await tab(p);
+        await sleep(260);
+        ok('手機上「' + p + '」不會左右捲', !wide(),
+           document.documentElement.scrollWidth + ' > ' + innerWidth);
+      }
+      await tab('wall'); await sleep(300);
+      ok('手機上「貼一張」看得到',
+         q('#add-sticky').getBoundingClientRect().right <= innerWidth + 1,
+         Math.round(q('#add-sticky').getBoundingClientRect().right) + 'px / ' + innerWidth);
+      const wb = q('#wall-board').getBoundingClientRect();
+      const out2 = [...document.querySelectorAll('.wall .sticky')]
+          .filter(n => n.getBoundingClientRect().right > wb.right + 1);
+      ok('手機上沒有便利貼掉到牆外面', out2.length === 0, out2.length + ' 張');
+      ok('手機上牆不吃掉整頁的捲動',
+         getComputedStyle(q('#wall-board')).touchAction !== 'none');
+
+      // 課表在手機上要看得到——網格收起來、清單頂上
+      await tab('agenda'); await sleep(200);
+      Agenda.view = 'class'; Agenda.render(); await sleep(300);
+      ok('手機上課表收起網格、給清單',
+         getComputedStyle(q('.tt-wrap') || document.body).display === 'none'
+         || !q('.tt-wrap'),
+         q('.tt-wrap') ? getComputedStyle(q('.tt-wrap')).display : '沒有網格');
+
+      Agenda.view = 'month'; Agenda.render(); await sleep(300);
+      ok('手機上月曆格子不會被撐爆', !wide(),
+         document.documentElement.scrollWidth + ' > ' + innerWidth);
+      ok('手機上月曆用色點代替標題',
+         getComputedStyle(q('#calendar .cal-dots')).display === 'flex');
+    } catch (e) {
+      out.push('✗ 手機那輪爆了: ' + e.message);
+    }
+    document.title = out.join(' ||| ');
+    return;
+  }
+
   try {
     ok('連得到本機資料', Store.mode === 'local', Store.mode);
     ok('沒有出現「資料讀不出來」', !document.querySelector('main').textContent.includes('資料讀不出來'));
@@ -123,14 +169,14 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     q('#e-title').value = '檢查用行程';
     q('#e-save').click(); await sleep(260);
     ok('行程存得進去', Cal.data.events.length === 1);
-    ok('行程出現在時間線上', q('#agenda').textContent.includes('檢查用行程'));
+    ok('行程出現在時間線上', q('#agenda-list').textContent.includes('檢查用行程'));
 
     // ── 待辦：勾了要變完成 ──
     q('#add-todo').click(); await sleep(160);
     q('#d-title').value = '檢查用待辦';
     q('#d-save').click(); await sleep(260);
     ok('待辦存得進去', Todo.data.items.length === 1);
-    const check = q('#agenda .todo-row .check');
+    const check = q('#agenda-list .todo-row .check');
     if (check) {
       check.click(); await sleep(220);
       ok('勾得起來', Todo.data.items[0].done === true);
@@ -147,11 +193,11 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     q('#d-title').value = '25天後的待辦';
     q('#d-due').value = farYmd;
     q('#d-save').click(); await sleep(300);
-    ok('遠一點的待辦看得到', q('#agenda').textContent.includes('25天後的待辦'));
-    ok('有「更遠」那一區', q('#agenda').textContent.includes('更遠'));
+    ok('遠一點的待辦看得到', q('#agenda-list').textContent.includes('25天後的待辦'));
+    ok('有「更遠」那一區', q('#agenda-list').textContent.includes('更遠'));
 
     // 看得到就要點得到、刪得掉
-    const farRow = [...document.querySelectorAll('#agenda .todo-row')]
+    const farRow = [...document.querySelectorAll('#agenda-list .todo-row')]
         .find(r => r.textContent.includes('25天後的待辦'));
     ok('遠一點的待辦點得到', !!farRow);
     if (farRow) {
@@ -167,7 +213,7 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     q('#e-title').value = '25天後的行程';
     q('#e-date').value = farYmd;
     q('#e-save').click(); await sleep(300);
-    ok('遠一點的行程看得到', q('#agenda').textContent.includes('25天後的行程'));
+    ok('遠一點的行程看得到', q('#agenda-list').textContent.includes('25天後的行程'));
 
     // ── 便利貼：貼得上去 ──
     await tab('wall');
@@ -193,9 +239,329 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     const brand = document.querySelector('.brand').getBoundingClientRect();
     ok('品牌沒有被擠成直排', brand.height < 40, Math.round(brand.height) + 'px 高');
 
+    // ── 安全區（瀏海）──
+    // env() 在桌機上解析成 0px，所以這裡驗不到瀏海本身，
+    // 驗的是**它沒有把桌機的留白弄不見**：少寫 fallback 的話
+    // 整條 calc() 會失效，padding 直接歸零，手機修好、電腦壞掉。
+    const mainPad = getComputedStyle(document.querySelector('main'));
+    ok('main 左右留白沒被 env() 吃掉',
+       parseFloat(mainPad.paddingLeft) >= 14, mainPad.paddingLeft);
+    ok('main 下方留白沒被 env() 吃掉',
+       parseFloat(mainPad.paddingBottom) >= 60, mainPad.paddingBottom);
+    const footPad = getComputedStyle(document.querySelector('.foot'));
+    ok('頁尾留白沒被 env() 吃掉',
+       parseFloat(footPad.paddingLeft) >= 14 && parseFloat(footPad.paddingBottom) >= 22,
+       footPad.paddingLeft + ' / ' + footPad.paddingBottom);
+    // 不要在這支注入腳本裡寫 '\\n' 這種跳脫——PROBE 是樣板字串，
+    // 跳脫會先被求值成真的換行，注進去就是「引號裡有換行」的語法錯誤，
+    // 而且整段檢查會靜靜不跑，只留下 1/1 過。（剛剛就踩了一次。）
+    // ── 小克的區塊 ──
+    const keCard = [...document.querySelectorAll('#overview-grid .card')]
+        .find(c => c.querySelector('h2 .label')?.textContent === '小克');
+    ok('本機模式看得到小克那塊', !!keCard);
+    if (keCard) {
+        const pcts = [...keCard.querySelectorAll('.ke-pct')].map(e => e.textContent);
+        ok('兩個額度都畫出來了', pcts.join(',') === '42%,91%', pcts.join(',') || '沒有');
+        ok('91% 會轉成紅色的警示',
+           keCard.querySelector('.ke-pct.alert')?.textContent === '91%');
+        ok('42% 不會被誤標成警示',
+           !keCard.querySelector('.ke-row .ke-pct.alert + *') &&
+           [...keCard.querySelectorAll('.ke-pct')][0].className.trim() === 'ke-pct');
+        ok('有寫重置時間', !!keCard.querySelector('.ke-reset'));
+        ok('有帶到板子那句話',
+           keCard.querySelector('.ke-line')?.textContent === '測試用的一句話。');
+        const fill = keCard.querySelector('.ke-fill');
+        ok('進度條寬度跟著百分比', fill && fill.style.width === '42%', fill?.style.width);
+    }
+
+    // **這條最重要**：展示模式（GitHub Pages）不可以出現小克那塊。
+    // 別人打開作品集不該看到她的私人東西，也不該看到一塊看不懂的卡片。
+    const realMode = Store.mode;
+    const sandbox = document.createElement('div');
+    Store.mode = 'demo';
+    Ke.render(sandbox);
+    ok('展示模式完全不畫小克那塊', sandbox.childElementCount === 0,
+       sandbox.childElementCount + ' 個元素');
+    Store.mode = realMode;
+
+    const headerRule = [...document.styleSheets]
+        .flatMap(sh => { try { return [...sh.cssRules] } catch { return [] } })
+        .find(r => r.selectorText === 'header'
+                && r.style.getPropertyValue('padding-top').includes('safe-area-inset-top'));
+    ok('頂欄有讓開瀏海的規則', !!headerRule,
+       headerRule ? headerRule.style.getPropertyValue('padding-top') : '沒有');
+
     // ── 月份切換 ──
     ok('這個月時「下個月」是停用的',
        q('#month-nav button[aria-label="下個月"]').disabled);
+
+    // ── 主題色 ──
+    const root = document.documentElement;
+    Prefs.setAccent('#7FB4E8');
+    await sleep(120);
+    ok('主題色換得掉',
+       getComputedStyle(root).getPropertyValue('--accent').trim().toLowerCase() === '#7fb4e8',
+       getComputedStyle(root).getPropertyValue('--accent').trim());
+    // #7FB4E8 配深字的對比度是 6.3，配淺字只有 1.9——所以答案是深字。
+    // （用「亮度 > 0.45」那種門檻的話這裡會挑錯，因為它的亮度只有 0.43。）
+    ok('中間調的主題色會挑對比度高的那個字色',
+       getComputedStyle(root).getPropertyValue('--on-accent').trim() === '#21331F',
+       getComputedStyle(root).getPropertyValue('--on-accent').trim());
+    // 這條是重點：主色按鈕的文字色寫死深字的話，深色主題色會整顆糊掉
+    Prefs.setAccent('#3A2E5F');
+    await sleep(100);
+    ok('暗色主題色會自動改成淺字',
+       getComputedStyle(root).getPropertyValue('--on-accent').trim() === '#F2EFE4',
+       getComputedStyle(root).getPropertyValue('--on-accent').trim());
+    // 八個預設色**每一個都要驗**，不是抽一個看起來對就算。
+    // 4.5 是 WCAG AA 給一般文字的門檻。
+    const badAccent = [];
+    for (const a of ACCENTS) {
+      Prefs.setAccent(a.c);
+      const on = getComputedStyle(root).getPropertyValue('--on-accent').trim();
+      const r = contrast(a.c, on);
+      if (r < 4.5) badAccent.push(a.name + ' ' + r.toFixed(1));
+    }
+    ok('八個預設主題色的按鈕文字都讀得到', badAccent.length === 0,
+       badAccent.join('、'));
+
+    Prefs.setAccent('#F9D984');
+    await sleep(100);
+    ok('主題色存進資料裡', Prefs.data.accent === '#F9D984');
+
+    q('#appearance').click(); await sleep(180);
+    ok('外觀視窗開得起來', q('#dlg-appearance').open);
+    ok('外觀視窗有一排色票',
+       document.querySelectorAll('#appearance-body .accent').length >= 6,
+       document.querySelectorAll('#appearance-body .accent').length + ' 個');
+    ok('外觀視窗有自訂顏色',
+       !!q('#appearance-body input[type=color]'));
+    q('#dlg-appearance button[value=\"close\"]').click(); await sleep(150);
+    ok('外觀視窗關得掉', !q('#dlg-appearance').open);
+
+    // ── 分類 ──
+    await tab('agenda');
+    ok('全新資料有預設分類', Prefs.labels().length > 0, Prefs.labels().length + ' 類');
+    ok('分類篩選列畫得出來',
+       document.querySelectorAll('#agenda-tools .chip').length >= Prefs.labels().length + 1);
+    ok('三個檢視的切換鈕都在',
+       document.querySelectorAll('#agenda-tools .view-btn').length === 3);
+
+    const lid = Prefs.labels()[0].id;
+    const lid2 = Prefs.labels()[1].id;
+    q('#add-event').click(); await sleep(160);
+    ok('加行程有分類可選',
+       document.querySelectorAll('#e-label option').length === Prefs.labels().length + 1);
+    q('#e-title').value = '分類測試行程';
+    q('#e-label').value = lid;
+    q('#e-save').click(); await sleep(300);
+    const tagged = Cal.data.events.find(e => e.title === '分類測試行程');
+    ok('行程的分類存得起來', tagged && tagged.label === lid);
+    ok('時間線上看得到分類色點', !!q('#agenda-list .event-row .label-dot'));
+
+    Agenda.filter = lid2; Agenda.render(); await sleep(220);
+    ok('篩到別的分類就看不到它', !q('#agenda-list').textContent.includes('分類測試行程'));
+    Agenda.filter = lid; Agenda.render(); await sleep(220);
+    ok('篩回自己的分類就看得到', q('#agenda-list').textContent.includes('分類測試行程'));
+
+    // **總覽是全貌，不該被別的分頁上的篩選改掉。**
+    Overview.render(); await sleep(150);
+    const heroAll = Agenda.overdue(true).todos.length + Agenda.overdue(true).events.length;
+    const heroFiltered = Agenda.overdue().todos.length + Agenda.overdue().events.length;
+    ok('總覽算過期時不吃分類篩選', heroAll >= heroFiltered, heroAll + ' vs ' + heroFiltered);
+    Agenda.filter = null; Agenda.render(); await sleep(150);
+
+    // 分類刪掉之後，指到它的行程要放掉那個 id——留著的話那件事
+    // 會永遠指向一個不存在的分類，篩選查不到，看起來像資料不見了
+    q('#manage-labels').click(); await sleep(220);
+    ok('分類視窗開得起來', q('#dlg-labels').open);
+    const lrows = document.querySelectorAll('#label-editor .label-edit-row');
+    ok('分類視窗列得出每一個分類', lrows.length === Prefs.labels().length,
+       lrows.length + ' 列');
+    const nameInput = lrows[0].querySelector('input:not([type=color])');
+    nameInput.value = '';
+    nameInput.dispatchEvent(new Event('input'));
+    q('#l-save').click(); await sleep(340);
+    ok('名字留白的分類存檔時會被丟掉', !Prefs.labels().some(l => l.id === lid));
+    ok('指到被刪分類的行程會放掉那個 id',
+       Cal.data.events.find(e => e.title === '分類測試行程').label === null);
+
+    // ── 月曆 ──
+    Agenda.view = 'month'; Agenda.render(); await sleep(280);
+    ok('月曆切得過去', !q('#calendar').hidden && q('#agenda-list').hidden);
+    const cells = document.querySelectorAll('#calendar .cal-cell');
+    ok('月曆格子補滿整週', cells.length > 0 && cells.length % 7 === 0, cells.length + ' 格');
+    ok('月曆標得出今天', !!q('#calendar .cal-cell.today'));
+    ok('月曆底下有選中那天的內容', !!q('#calendar .cal-day'));
+    ok('今天那格列得出剛剛那個行程',
+       q('#calendar .cal-day').textContent.includes('分類測試行程'));
+    const other = [...cells].find(c => !c.classList.contains('picked')
+                                    && !c.classList.contains('outside')
+                                    && !c.classList.contains('today'));
+    if (other) {
+      other.click(); await sleep(280);
+      ok('點別天會換掉底下的內容',
+         !q('#calendar .cal-day').textContent.includes('分類測試行程'));
+    } else ok('點別天會換掉底下的內容', false, '找不到別的格子');
+    MonthView.shift(1); await sleep(260);
+    ok('翻得到下個月', MonthView.ym !== thisMonth());
+    MonthView.today(); await sleep(220);
+    ok('回得到這個月', MonthView.ym === thisMonth());
+
+    // ── 課表 ──
+    Agenda.view = 'class'; Agenda.render(); await sleep(240);
+    ok('課表切得過去', !q('#timetable').hidden);
+    ok('還沒有課表時給的是空狀態不是空白',
+       q('#timetable').textContent.includes('還沒有課表'));
+
+    const pick = t => [...document.querySelectorAll('#timetable button')]
+        .find(b => b.textContent === t);
+    pick('新的課表').click(); await sleep(200);
+    ok('新課表視窗開得起來', q('#dlg-set').open);
+    q('#p-name').value = '115 上';
+    q('#p-save').click(); await sleep(340);
+    ok('課表建得起來', Timetable.data.sets.length === 1);
+    ok('新建的課表自動變成使用中', Timetable.active().name === '115 上');
+
+    pick('加一堂').click(); await sleep(200);
+    ok('加一堂開得起來', q('#dlg-slot').open);
+    q('#k-name').value = '訊號與系統';
+    q('#k-day').value = String(new Date().getDay());
+    q('#k-start').value = '09:10';
+    q('#k-end').value = '12:00';
+    q('#k-place').value = '工五 301';
+    q('#k-save').click(); await sleep(360);
+    ok('一堂課存得進去', Timetable.slots().length === 1);
+    ok('課表網格畫得出那一堂', !!q('#timetable .tt-slot'));
+    ok('課按實際時間擺，不是擠在最上面',
+       parseFloat(q('#timetable .tt-slot').style.top) > 0,
+       q('#timetable .tt-slot').style.top);
+    ok('網格底下也有一份清單（手機讀的是那份）',
+       q('#timetable .tt-list').textContent.includes('訊號與系統'));
+
+    // 結束比開始早要擋下來，不然課會變成負高度
+    q('#timetable .tt-slot').click(); await sleep(220);
+    q('#k-end').value = '08:00';
+    q('#k-save').click(); await sleep(240);
+    ok('結束比開始早會被擋下來', q('#dlg-slot').open);
+    q('#dlg-slot button[value=\"cancel\"]').click(); await sleep(180);
+
+    // 換整份課表：複製一份出來，兩份不能共用同一堂課的 id
+    pick('新的課表').click(); await sleep(200);
+    q('#p-name').value = '115 下';
+    q('#p-copy').value = Timetable.data.sets[0].id;
+    q('#p-save').click(); await sleep(360);
+    ok('課表複製得出來', Timetable.data.sets.length === 2);
+    ok('複製後換成新的那份', Timetable.active().name === '115 下');
+    ok('複製過去的課有自己的 id，不會改一份動到兩份',
+       Timetable.data.sets[0].slots[0].id !== Timetable.data.sets[1].slots[0].id);
+    ok('複製過去的內容一樣',
+       Timetable.data.sets[1].slots[0].name === '訊號與系統');
+
+    // 課要出現在時間線上，但比行程輕
+    Agenda.view = 'timeline'; Agenda.render(); await sleep(260);
+    ok('今天的課出現在時間線上', q('#agenda-list').textContent.includes('訊號與系統'));
+    ok('課那一列的樣式跟行程不一樣', !!q('#agenda-list .class-row'));
+
+    // 課和行程要照時間混排。分批接起來的話，9:30 的考試會排在
+    // 13:20 的課後面——照時間讀是這條線唯一的用途。
+    const todayGroup = [...document.querySelectorAll('#agenda-list .day-group')]
+        .find(g => g.querySelector('.day-name')?.textContent === '今天');
+    const times = todayGroup
+        ? [...todayGroup.querySelectorAll('.event-time')]
+            .map(e => e.textContent.split('–')[0])
+            .filter(t => /^\d/.test(t))
+        : [];
+    const sorted = [...times].sort();
+    ok('課和行程照時間混排', times.join(',') === sorted.join(','), times.join(' → '));
+
+    await tab('overview'); await sleep(220);
+    const stats = [...document.querySelectorAll('#hero .stat')].map(x => x.textContent);
+    ok('總覽有「今天的課」那格',
+       stats.some(t => t.includes('今天的課')), stats.join(' | '));
+    ok('總覽那句話有提到今天幾堂課',
+       q('#hero').textContent.includes('1 堂課'), q('#hero').textContent.slice(0, 90));
+
+    // ── 想法牆在手機上不能卡住 ──
+    // **這條是回歸測試。** 牆上寫 touch-action: none 的話，手指放在
+    // 這面 560px 高的牆上，瀏覽器就不產生捲動手勢——手機上整頁滑不動。
+    await tab('wall'); await sleep(220);
+    const wallTA = getComputedStyle(q('#wall-board')).touchAction;
+    ok('牆不會吃掉整頁的觸控捲動', wallTA !== 'none', wallTA);
+    const st = q('.wall .sticky');
+    ok('要鎖手勢的是便利貼本身',
+       st && getComputedStyle(st).touchAction === 'none',
+       st ? getComputedStyle(st).touchAction : '沒有便利貼');
+    ok('便利貼上可以自己挑顏色', !!q('.wall .sticky .pick input[type=color]'));
+
+    // 分頁名稱跟元素 id 撞名（#wall / #agenda），瀏覽器會照 hash 自己捲過去
+    // 把上面的工具列捲出畫面——手機上就變成「貼一張」那顆按鈕不見了
+    ok('切到想法牆不會把上面的工具列捲掉', scrollY < 10, 'scrollY=' + Math.round(scrollY));
+    ok('「貼一張」在畫面裡', q('#add-sticky').getBoundingClientRect().top > 0,
+       Math.round(q('#add-sticky').getBoundingClientRect().top) + 'px');
+
+    // 便利貼不能掉到牆外面——看不到就等於點不到、刪不掉。
+    // **要把牆縮成手機寬度才驗得到**：在 1512px 的視窗上，
+    // 每一張本來就都在裡面，這條會一直是綠的卻什麼都沒驗到。
+    for (let i = 0; i < 4; i++) {
+      Wall.data.notes.push({ id: 'w' + i, text: '第 ' + i + ' 張',
+        x: 40 + i * 260, y: 30 + i * 40, color: '#F9D984', z: i + 1, tilt: 0 });
+    }
+    q('#wall-board').style.width = '360px';
+    Wall.render(); await sleep(200);
+    const wallBox = q('#wall-board').getBoundingClientRect();
+    const outside = [...document.querySelectorAll('.wall .sticky')]
+        .filter(n => n.getBoundingClientRect().right > wallBox.right + 1);
+    ok('窄螢幕上沒有便利貼掉到牆外面', outside.length === 0,
+       outside.length + ' 張掉出去（牆寬 ' + Math.round(wallBox.width) + 'px）');
+    // 夾的是畫面位置，不是資料——不然回到電腦會發現自己排的版被擠成一團
+    ok('夾住的是畫面位置，資料沒有被改掉',
+       Wall.data.notes.some(n => n.x > 360),
+       Wall.data.notes.map(n => n.x).join(','));
+    q('#wall-board').style.width = '';
+    Wall.render(); await sleep(150);
+    ok('色票旁邊有自訂顏色', !!q('#swatches input[type=color]'));
+
+    const rules = [...document.styleSheets]
+        .flatMap(sh => { try { return [...sh.cssRules] } catch { return [] } });
+    // 手機沒有 hover，少了這條的話換色和撕掉兩顆鍵永遠是透明的，
+    // 等於便利貼貼上去就刪不掉
+    ok('沒有 hover 的裝置也看得到便利貼的工具鍵',
+       rules.some(r => r.media && r.conditionText.includes('hover: none')));
+
+    // ── 匯出／匯入 ──
+    // 匯出要帶到新的兩份，不然換一台電腦課表和主題色就沒了
+    ok('匯出會帶到課表和設定',
+       NAMES.includes('課表') && NAMES.includes('設定'), NAMES.join('、'));
+
+    // 真的走一次匯入。**只驗清單有列到是不夠的**——
+    // 名字在清單裡但實際上沒被寫進去，畫面看起來一樣正常。
+    const before = JSON.stringify(Timetable.data);
+    const got = DataBox.apply({
+      app: '星歷儀表板', version: 1, data: {
+        課表: { active: 'imported', sets: [{ id: 'imported', name: '匯入的課表',
+                 slots: [{ id: 'i1', name: '匯入的課', day: 2,
+                           start: '08:00', end: '09:00', label: null }] }] },
+        設定: { accent: '#5FC9C0', labels: [{ id: 'i-l', name: '匯入的分類', color: '#5FC9C0' }] },
+      },
+    });
+    await sleep(320);
+    ok('匯入真的收得到課表和設定', got === 2, '收了 ' + got + ' 份');
+    ok('匯入的課表寫進資料層了',
+       Store.cache['課表'].sets[0].name === '匯入的課表');
+    ok('匯入的主題色寫進資料層了', Store.cache['設定'].accent === '#5FC9C0');
+
+    // 舊的匯出檔沒有這兩份，不能因為少一個鍵就把現有的清成空的
+    const n2 = DataBox.apply({ app: '星歷儀表板', data: { 備忘: { items: [] } } });
+    await sleep(200);
+    ok('舊的匯出檔不會把課表清掉',
+       Store.cache['課表'].sets.length === 1 && n2 === 1, '收了 ' + n2 + ' 份');
+    // 匯入換掉的是 Store.cache 裡的物件，各模組手上抓的還是舊的那一份——
+    // **所以 import 最後那個 reload 是必要的，不是偷懶。**
+    // 哪天有人把它拿掉，這條會先叫。
+    ok('匯入後模組手上還是舊物件（所以一定要 reload）',
+       JSON.stringify(Timetable.data) === before
+       && Store.cache['課表'] !== Timetable.data);
 
     // ── 資料匯出／匯入的入口 ──
     q('#mode').click(); await sleep(200);
@@ -218,6 +584,18 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
 // ── 跑起來 ──────────────────────────────────────────────
 
 const dataDir = mkdtempSync(join(tmpdir(), 'starcal-check-'));
+
+// 小克那塊的固定樣本。**故意放一個 91%**，才驗得到「快滿了要變紅」那條——
+// 拿真實額度來測的話，數字每天不一樣，測試就會時好時壞。
+writeFileSync(join(dataDir, '小克.json'), JSON.stringify({
+    line: '測試用的一句話。',
+    limits: [
+        { kind: 'session',    group: 'session', percent: 42, resetsAt: new Date(Date.now() + 3600e3).toISOString() },
+        { kind: 'weekly_all', group: 'weekly',  percent: 91, resetsAt: new Date(Date.now() + 86400e3).toISOString() },
+    ],
+    fetchedAt: Date.now(),
+    problem: null,
+}));
 const probePath = join(HERE, '_檢查.html');
 
 const html = readFileSync(join(HERE, 'index.html'), 'utf-8');
@@ -240,7 +618,14 @@ try {
         `--window-size=1512,1400 --dump-dom "http://127.0.0.1:${PORT}/_檢查.html" 2>/dev/null`,
         { maxBuffer: 32 * 1024 * 1024 }).toString();
 
-    const title = (dom.match(/<title>([^<]*)<\/title>/) || [])[1] || '';
+    // 手機那一輪。同一份 probe，靠視窗寬度自己分岔。
+    const domM = execSync(
+        `"${CHROME}" --headless --disable-gpu --virtual-time-budget=60000 ` +
+        `--window-size=390,844 --dump-dom "http://127.0.0.1:${PORT}/_檢查.html" 2>/dev/null`,
+        { maxBuffer: 32 * 1024 * 1024 }).toString();
+
+    const title = ((dom.match(/<title>([^<]*)<\/title>/) || [])[1] || '')
+        + ' ||| ' + ((domM.match(/<title>([^<]*)<\/title>/) || [])[1] || '');
     const lines = title.split(' ||| ').filter(Boolean);
 
     if (!lines.length) {

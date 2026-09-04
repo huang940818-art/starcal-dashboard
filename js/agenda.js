@@ -31,7 +31,8 @@ const Cal = {
 
     edit(e, defaultDay = null) {
         const isNew = !e;
-        e = e || { id: uid(), date: defaultDay || todayStr(), time: '', endTime: '', title: '', note: '' };
+        e = e || { id: uid(), date: defaultDay || todayStr(), time: '', endTime: '',
+                   title: '', note: '', label: null };
 
         $('#dlg-event-title').textContent = isNew ? '加行程' : '改行程';
         $('#e-title').value = e.title;
@@ -39,6 +40,7 @@ const Cal = {
         $('#e-time').value = e.time || '';
         $('#e-end').value = e.endTime || '';
         $('#e-note').value = e.note || '';
+        Prefs.fillSelect($('#e-label'), e.label);
         $('#e-delete').hidden = isNew;
 
         const dlg = openDialog('#dlg-event');
@@ -56,6 +58,7 @@ const Cal = {
                 date: $('#e-date').value || todayStr(),
                 time, endTime,
                 note: $('#e-note').value.trim(),
+                label: $('#e-label').value || null,
             });
             if (isNew) this.data.events.push(e);
             this.save();
@@ -79,10 +82,83 @@ const Agenda = {
     /** 往後看幾天。再遠的都算「之後」，列出來只會讓這條線變長。 */
     DAYS: 14,
 
+    /** 'timeline' | 'month' | 'class' —— 預設永遠是時間線。
+     *
+     *  月曆和課表是「這個月／這週長什麼樣」，時間線是「接下來要做什麼」。
+     *  一打開先回答後者：那才是打開這個分頁的原因。 */
+    view: 'timeline',
+
+    /** 只看某一個分類。null ＝ 全部。 */
+    filter: null,
+
     async init() {
         $('#add-event').onclick = () => Cal.edit(null);
         $('#add-todo').onclick = () => Todo.edit(null);
         $('#clear-done').onclick = () => Todo.clearDone();
+        $('#manage-labels').onclick = () => Prefs.openLabels();
+        MonthView.init();
+    },
+
+    /** 分類篩選套在這裡，三個檢視就自動一起被篩到——
+     *  各自篩一次的話，遲早有一個會漏掉。 */
+    match(x) {
+        return !this.filter || x.label === this.filter;
+    },
+
+    eventsOn(day) { return Cal.on(day).filter(e => this.match(e)); },
+
+    todosOn(day) {
+        return Todo.data.items.filter(t => !t.done && t.due === day && this.match(t));
+    },
+
+    /** 上面那一排：看哪一種、只看哪一類。 */
+    tools() {
+        const box = $('#agenda-tools');
+        clear(box);
+
+        const views = [
+            { k: 'timeline', name: '時間線', ico: 'todo' },
+            { k: 'month', name: '月曆', ico: 'calendar' },
+            { k: 'class', name: '課表', ico: 'clock' },
+        ];
+        box.append(el('div', { class: 'view-switch', role: 'tablist' },
+            views.map(v => el('button', {
+                type: 'button', role: 'tab',
+                class: 'view-btn' + (this.view === v.k ? ' on' : ''),
+                'aria-selected': String(this.view === v.k),
+                onclick: () => { this.view = v.k; this.render(); },
+            }, [icon(v.ico, 15), v.name]))));
+
+        // 分類列。一個分類都沒有的時候整條不出現——
+        // 空的篩選列只是在佔位置。
+        const labels = Prefs.labels();
+        const chips = el('div', { class: 'chips' });
+        if (labels.length) {
+            chips.append(el('button', {
+                type: 'button',
+                class: 'chip' + (this.filter ? '' : ' on'),
+                text: '全部',
+                onclick: () => { this.filter = null; this.render(); },
+            }));
+            for (const l of labels) {
+                chips.append(el('button', {
+                    type: 'button',
+                    class: 'chip' + (this.filter === l.id ? ' on' : ''),
+                    style: `--chip:${l.color}`,
+                    onclick: () => {
+                        // 再按一次取消，不用另外找「清除」在哪
+                        this.filter = this.filter === l.id ? null : l.id;
+                        this.render();
+                    },
+                }, [el('span', { class: 'label-dot', style: `background:${l.color}` }), l.name]));
+            }
+        }
+        chips.append(el('button', {
+            type: 'button', class: 'chip ghost', id: 'manage-labels-btn',
+            text: labels.length ? '管理分類' : '設定分類',
+            onclick: () => Prefs.openLabels(),
+        }));
+        box.append(chips);
     },
 
     /**
@@ -95,11 +171,30 @@ const Agenda = {
         for (let i = 0; i < this.DAYS; i++) {
             const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
             const day = ymd(d);
-            const events = Cal.on(day);
-            const todos = Todo.data.items.filter(t => !t.done && t.due === day);
-            if (events.length || todos.length) out.push({ day, events, todos });
+            const events = this.eventsOn(day);
+            const todos = this.todosOn(day);
+            const classes = Timetable.on(day).filter(c => this.match(c));
+            if (events.length || todos.length || classes.length) {
+                out.push({ day, todos, timed: this.mergeTimed(events, classes) });
+            }
         }
         return out;
+    },
+
+    /**
+     * 課和行程排在同一條時間軸上。
+     *
+     * **一定要混排，不能課一批、行程一批接起來。** 分批的話 9:30 的考試
+     * 會排在 13:20 的課後面——這條線唯一的用途就是「照時間讀」，
+     * 順序錯了它連清單都不如。
+     *
+     * 沒有時間的（整天的行程）排最後，跟 Cal.on 的規則一致。
+     */
+    mergeTimed(events, classes) {
+        return [
+            ...events.map(e => ({ kind: 'event', t: e.time || '', item: e })),
+            ...classes.map(c => ({ kind: 'class', t: c.start || '', item: c })),
+        ].sort((a, b) => (a.t || '99:99').localeCompare(b.t || '99:99'));
     },
 
     /** 視野的最後一天。超過這天的東西要另外列，不能讓它們消失。 */
@@ -121,43 +216,68 @@ const Agenda = {
     later() {
         const h = this.horizon();
         const events = Cal.data.events
-            .filter(e => e.date > h)
+            .filter(e => e.date > h && this.match(e))
             .map(e => ({ kind: 'event', day: e.date, item: e }));
         const todos = Todo.data.items
-            .filter(t => !t.done && t.due && t.due > h)
+            .filter(t => !t.done && t.due && t.due > h && this.match(t))
             .map(t => ({ kind: 'todo', day: t.due, item: t }));
         return [...events, ...todos].sort((a, b) =>
             a.day.localeCompare(b.day)
             || (a.kind === 'event' ? -1 : 1));
     },
 
-    /** 已經過去但還沒處理的。這些要排在最前面，不然會一直被往下推。 */
-    overdue() {
+    /**
+     * 已經過去但還沒處理的。這些要排在最前面，不然會一直被往下推。
+     *
+     * @param all  true ＝ 不套用分類篩選。
+     *             總覽要用 true：**總覽是全貌，不該被別的分頁上的篩選改掉。**
+     *             在「接下來」按了「只看學校」之後回總覽，看到「有 2 件過期」
+     *             而實際上有 5 件——那是最糟的一種錯，因為它看起來是對的。
+     */
+    overdue(all = false) {
         const today = todayStr();
+        const ok = x => all || this.match(x);
         return {
-            events: Cal.data.events.filter(e => e.date < today)
+            events: Cal.data.events.filter(e => e.date < today && ok(e))
                 .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10),
-            todos: Todo.data.items.filter(t => !t.done && t.due && t.due < today)
+            todos: Todo.data.items.filter(t => !t.done && t.due && t.due < today && ok(t))
                 .sort((a, b) => a.due.localeCompare(b.due)),
         };
     },
 
+    /** 分頁的總入口：畫工具列，然後把場子交給選中的那個檢視。 */
     render() {
-        const box = $('#agenda');
+        if ($('#panel-agenda').hidden) return;
+        this.tools();
+
+        $('#agenda-list').hidden = this.view !== 'timeline';
+        $('#calendar').hidden = this.view !== 'month';
+        $('#timetable').hidden = this.view !== 'class';
+
+        if (this.view === 'timeline') this.renderTimeline();
+        else if (this.view === 'month') MonthView.render();
+        else Timetable.render();
+    },
+
+    renderTimeline() {
+        const box = $('#agenda-list');
         clear(box);
 
         const late = this.overdue();
         const upcoming = this.days();
         const later = this.later();
-        const someday = Todo.open().filter(t => !t.due);
-        const done = Todo.data.items.filter(t => t.done)
+        const someday = Todo.open().filter(t => !t.due && this.match(t));
+        const done = Todo.data.items.filter(t => t.done && this.match(t))
             .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
 
         if (!late.todos.length && !late.events.length && !upcoming.length
             && !later.length && !someday.length && !done.length) {
             box.append(el('div', { class: 'empty' }, [
-                icon('todo', 26), '接下來沒有事',
-                el('div', { class: 'hint', text: '加一個行程或一件待辦，它們會排在同一條線上' }),
+                icon('todo', 26),
+                this.filter ? '這個分類接下來沒有事' : '接下來沒有事',
+                el('div', { class: 'hint', text: this.filter
+                    ? '按上面的「全部」看其他分類'
+                    : '加一個行程或一件待辦，它們會排在同一條線上' }),
             ]));
             return;
         }
@@ -175,14 +295,16 @@ const Agenda = {
         }
 
         // 接下來幾天
-        for (const { day, events, todos } of upcoming) {
+        for (const { day, timed, todos } of upcoming) {
             const isToday = day === todayStr();
             box.append(el('div', { class: 'day-group' + (isToday ? ' today' : '') }, [
                 el('div', { class: 'day-head' }, [
                     el('span', { class: 'day-name' + (isToday ? ' now' : ''), text: relativeDay(day) }),
                     el('span', { class: 'day-count', text: this.dayLabel(day) }),
                 ]),
-                ...events.map(e => this.eventRow(e)),
+                ...timed.map(r => r.kind === 'class'
+                    ? this.classRow(r.item)
+                    : this.eventRow(r.item)),
                 ...todos.map(t => Todo.row(t)),
             ]));
         }
@@ -247,10 +369,39 @@ const Agenda = {
         }, [
             el('div', { class: 'event-time', text: time }),
             el('div', { class: 'grow' }, [
-                el('div', { class: 'title ellipsis', text: e.title }),
+                el('div', { class: 'title ellipsis' }, [
+                    Prefs.dot(e.label), el('span', { text: e.title }),
+                ]),
                 el('div', { class: 'meta ellipsis' },
                     [showDate && e.time ? e.time : '', e.note || '']
                         .filter(Boolean).join('　') || null),
+            ]),
+        ]);
+    },
+
+    /**
+     * 時間線裡的一堂課。
+     *
+     * **樣式刻意比行程輕。** 課表是每週固定的，每天都會出現四五堂——
+     * 跟行程和待辦一樣重的話，這條線上唯一看得到的東西就只剩上課，
+     * 真正要處理的事會被淹掉。這裡只是提醒「那幾個時段被佔走了」。
+     *
+     * 點下去跳到課表，不在時間線上改：改一堂課是改「每個禮拜」，
+     * 從單一天的畫面上做那件事很容易改錯。
+     */
+    classRow(c) {
+        return el('div', {
+            class: 'event-row class-row',
+            title: '課表裡的固定時段・點一下去課表改',
+            onclick: () => { this.view = 'class'; this.render(); },
+        }, [
+            el('div', { class: 'event-time', text: `${c.start}–${c.end || ''}` }),
+            el('div', { class: 'grow' }, [
+                el('div', { class: 'title ellipsis' }, [
+                    Prefs.dot(c.label), el('span', { text: c.name }),
+                ]),
+                el('div', { class: 'meta ellipsis',
+                    text: [c.place, c.teacher].filter(Boolean).join('　') || null }),
             ]),
         ]);
     },

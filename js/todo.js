@@ -58,7 +58,9 @@ const Todo = {
                 onclick: () => this.toggle(i),
             }),
             el('div', { class: 'grow', style: 'cursor:pointer', onclick: () => this.edit(i) }, [
-                el('div', { class: 'title ellipsis', text: i.title }),
+                el('div', { class: 'title ellipsis' }, [
+                    Prefs.dot(i.label), el('span', { text: i.title }),
+                ]),
                 meta ? el('div', {
                     class: 'meta ellipsis' + (overdue ? ' overdue' : isToday ? ' today' : ''),
                     text: meta,
@@ -96,15 +98,18 @@ const Todo = {
         toast(`清掉 ${n} 件`);
     },
 
-    edit(i) {
+    /** @param defaultDay 從月曆的某一天按「加待辦」進來時，期限先填那天 */
+    edit(i, defaultDay = null) {
         const isNew = !i;
-        i = i || { id: uid(), title: '', done: false, priority: 0, due: null, note: '', createdAt: Date.now() };
+        i = i || { id: uid(), title: '', done: false, priority: 0, due: defaultDay,
+                   note: '', label: null, createdAt: Date.now() };
 
         $('#dlg-todo-title').textContent = isNew ? '新增待辦' : '改待辦';
         $('#d-title').value = i.title;
         $('#d-due').value = i.due || '';
         $('#d-priority').checked = !!i.priority;
         $('#d-note').value = i.note || '';
+        Prefs.fillSelect($('#d-label'), i.label);
         $('#d-delete').hidden = isNew;
 
         const dlg = openDialog('#dlg-todo');
@@ -118,6 +123,7 @@ const Todo = {
                 due: $('#d-due').value || null,
                 priority: $('#d-priority').checked ? 1 : 0,
                 note: $('#d-note').value.trim(),
+                label: $('#d-label').value || null,
             });
             if (isNew) this.data.items.push(i);
             this.save();

@@ -20,6 +20,9 @@ const Overview = {
         this.renderMoney(grid);
         this.renderUpcoming(grid);
         this.renderMemo(grid);
+        // 小克那塊放最後：它不是待辦事項，不該排在「現在需要注意什麼」前面。
+        // 展示模式時 Ke.render 自己會早退，這裡不用判斷。
+        Ke.render(grid);
     },
 
     /* ── 今天 ──────────────────────────────────────── */
@@ -32,7 +35,7 @@ const Overview = {
         const dateText = `${now.getMonth() + 1} 月 ${now.getDate()} 日　`
             + '日一二三四五六'[now.getDay()].replace(/^/, '週');
 
-        const late = Agenda.overdue();
+        const late = Agenda.overdue(true);   // 總覽看全部，不吃「接下來」那邊的分類篩選
         const overdue = [...late.events, ...late.todos];
         // 今天的事＝今天的行程 ＋ 今天到期的待辦。
         // 分開算就等於要人自己在腦子裡合併，那正是這條線要解決的問題。
@@ -46,8 +49,13 @@ const Overview = {
             .filter(b => Number(b.limit) > 0 && (spent.get(b.category) || 0) > b.limit)
             .map(b => ({ ...b, used: spent.get(b.category) || 0 }));
 
+        // 今天的課。**不算進「今天有幾件事」**——課表是每週固定的，
+        // 每天四五堂加進去的話那個數字永遠是兩位數，「今天只有三件事」
+        // 這個訊息就消失了。課單獨講一句，講的是「哪幾個時段被佔走了」。
+        const classes = Timetable.on(todayStr());
+
         const empty = !Money.data.transactions.length && !open.length
-            && !Cal.data.events.length
+            && !Cal.data.events.length && !Timetable.slots().length
             && !Memo.data.items.length && !Wall.data.notes.length;
 
         // 一次只講最要緊的那一件
@@ -72,6 +80,13 @@ const Overview = {
             note = '今天沒有到期的，慢慢來。';
         } else {
             headline = ['今天沒有到期的事'];
+        }
+
+        // 課的那一句接在後面，不搶上面那句的位置。
+        if (classes.length) {
+            const span = `${classes[0].start}–${classes[classes.length - 1].end || ''}`;
+            const line = `今天 ${classes.length} 堂課・${span}`;
+            note = note ? `${note}　｜　${line}` : line;
         }
 
         function em(text) {
@@ -108,6 +123,10 @@ const Overview = {
                 hue: 'var(--money)', ico: 'money', name: '這個月',
                 value: money(s.net, true), unit: null,
                 negative: s.net < 0,
+            },
+            {
+                hue: 'var(--calendar)', ico: 'clock', name: '今天的課',
+                value: String(Timetable.on(todayStr()).length), unit: '堂',
             },
             {
                 hue: 'var(--memo)', ico: 'memo', name: '備忘',

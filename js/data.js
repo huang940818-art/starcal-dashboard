@@ -11,7 +11,7 @@
  * 資料的事放在同一個地方最好找。
  */
 
-const NAMES = ['記帳', '待辦', '行事曆', '備忘', '便利貼'];
+const NAMES = ['記帳', '待辦', '行事曆', '備忘', '便利貼', '課表', '設定'];
 
 const DataBox = {
     open() {
@@ -71,7 +71,7 @@ const DataBox = {
         openDialog('#dlg-data');
     },
 
-    /** 五份資料打包成一個檔。帶版本和時間，之後要轉格式才有依據。 */
+    /** 所有資料打包成一個檔。帶版本和時間，之後要轉格式才有依據。 */
     async export() {
         const payload = { app: '星歷儀表板', version: 1, at: new Date().toISOString(), data: {} };
         for (const name of NAMES) {
@@ -99,7 +99,25 @@ const DataBox = {
             return toast('這不是星歷匯出的檔案', true);
         }
 
-        // 只認識的那幾份會被蓋掉，多的忽略——不要因為檔案裡多一個鍵就整份不收
+        const n = this.apply(payload);
+        if (!n) return toast('檔案裡沒有可以匯入的資料', true);
+
+        // 匯進來的東西要讓每個模組重新認一次，直接重整最乾淨
+        toast(`匯入了 ${n} 份，重新載入…`);
+        setTimeout(() => location.reload(), 700);
+    },
+
+    /**
+     * 把 payload 寫進資料層，回傳收了幾份。
+     *
+     * **跟 import 拆開是為了測得到。** import 最後會 reload，
+     * 一個會把整個頁面重載的函式沒辦法在同一個頁面裡驗證它做了什麼——
+     * 跟底下 clearAll / wipe 拆開是同一個理由。
+     */
+    apply(payload) {
+        // 只認識的那幾份會被蓋掉，多的忽略——不要因為檔案裡多一個鍵就整份不收。
+        // 反過來，舊的匯出檔沒有「課表」和「設定」，那兩份就保持原樣，
+        // 不要因為檔案裡少一個鍵就把現有的清成空的。
         let n = 0;
         for (const name of NAMES) {
             const incoming = payload.data[name];
@@ -108,11 +126,7 @@ const DataBox = {
             Store.save(name, { immediate: true });
             n++;
         }
-        if (!n) return toast('檔案裡沒有可以匯入的資料', true);
-
-        // 匯進來的東西要讓每個模組重新認一次，直接重整最乾淨
-        toast(`匯入了 ${n} 份，重新載入…`);
-        setTimeout(() => location.reload(), 700);
+        return n;
     },
 
     clearAll() {

@@ -17,7 +17,11 @@
     --text-2: #9FB3A6;
     --text-3: #6B8375;
 
+    /* 主題色可以換（js/prefs.js 會覆寫這兩個 inline 在 :root 上）。
+     * --on-accent 是「主色上面的文字色」——換成深色主題色的時候
+     * 寫死深字會整顆糊掉，所以那個值是照亮度算出來的。 */
     --accent: #F9D984;
+    --on-accent: #21331F;
     --money: #E8C46A;
     --memo: #D9B48F;
     --water: #5FC9C0;
@@ -206,6 +210,12 @@ main {
     align-items: center;
     justify-content: space-between;
     gap: 10px;
+    /* **一定要能換行。** 想法牆那張的標題後面掛著七個色票和一顆按鈕，
+     * 手機上排不下就會把卡片撐寬 → 整頁跟著能左右捲 → 牆也變寬，
+     * 便利貼被夾在「牆內」卻掉到螢幕外面。一個 flex-wrap 少寫，
+     * 壞掉的是三層之外的東西。 */
+    flex-wrap: wrap;
+    row-gap: 10px;
 }
 
 /* 標題左邊那個圖示。顏色由 .card 上的 --hue 決定，
@@ -394,7 +404,7 @@ main {
 .btn.primary {
     background: var(--accent);
     border-color: var(--accent);
-    color: #21331F;
+    color: var(--on-accent);
     font-weight: 600;
 }
 
@@ -808,13 +818,18 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
             transparent 0) 0 0 / 26px 26px,
         var(--card);
     overflow: hidden;
-    touch-action: none;
+    /* **不能寫 touch-action: none。** 寫在牆上的話，手指放在這面
+     * 560px 高的牆上，瀏覽器就不產生捲動手勢——手機上整頁滑不動，
+     * 看起來就是「點了之後卡住」。要鎖的是便利貼，不是牆。 */
+    touch-action: pan-y;
 }
 
 .sticky {
     position: absolute;
     width: 190px;
     min-height: 130px;
+    /* 這個才是要鎖的：拖便利貼的時候不要同時捲頁面 */
+    touch-action: none;
     padding: 13px 14px 30px;
     border-radius: 3px;
     color: #23231C;
@@ -849,6 +864,9 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 
 .sticky textarea:focus { outline: none; }
 
+/* 打字區不跟著鎖手勢，不然長內容捲不動、也選不到字 */
+.sticky textarea { touch-action: auto; }
+
 .sticky .tools {
     position: absolute;
     right: 7px;
@@ -860,6 +878,14 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 }
 
 .sticky:hover .tools, .sticky:focus-within .tools { opacity: 1; }
+
+/* 手機沒有 hover。不寫這條的話，換顏色和撕掉這兩顆鍵在手機上
+ * 永遠是透明的——等於便利貼貼上去就刪不掉了。 */
+@media (hover: none) {
+    .sticky .tools { opacity: 1; }
+    .sticky .tools button { width: 30px; height: 30px; font-size: 15px; }
+    .sticky { padding-bottom: 38px; }
+}
 
 .sticky .tools button {
     background: rgba(0, 0, 0, .10);
@@ -890,6 +916,410 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 }
 
 .swatch[aria-pressed="true"] { border-color: var(--text); }
+
+/* 色票旁邊那顆「自己挑」。做得跟色票一樣大，它是第七個選項不是設定。 */
+.swatch-custom {
+    width: 25px;
+    height: 25px;
+    padding: 1px;
+    border-radius: 7px;
+    vertical-align: middle;
+}
+
+/* 便利貼上的「挑這張的顏色」。原生的 color input 長得像個輸入框，
+ * 在便利貼上很突兀——把它縮成一顆跟旁邊按鈕一樣的小方塊。 */
+.sticky .pick {
+    width: 21px;
+    height: 21px;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, .10);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.sticky .pick:hover { background: rgba(0, 0, 0, .22); }
+
+.sticky .pick input {
+    width: 34px;
+    height: 34px;
+    border: 0;
+    padding: 0;
+    background: none;
+    cursor: pointer;
+    opacity: 0;
+}
+
+/* 色塊看不到的話這顆就只是個灰方塊，要有個記號說明它是幹嘛的 */
+.sticky .pick::before {
+    content: '✎';
+    position: absolute;
+    font-size: 11px;
+    color: #23231C;
+    pointer-events: none;
+}
+
+.sticky .pick { position: relative; }
+
+@media (hover: none) {
+    .sticky .pick { width: 30px; height: 30px; }
+}
+
+
+/* ── 檢視切換、分類 ──────────────────────────────────
+ *
+ * 三個檢視回答三個不同的問題：時間線＝接下來要做什麼、
+ * 月曆＝這個月長什麼樣、課表＝這禮拜哪些時段被佔走了。
+ * 切換做成分段控制而不是下拉，因為要一眼看得出還有別的檢視在。
+ */
+
+#agenda-tools { margin-bottom: 16px; }
+
+.view-switch {
+    display: inline-flex;
+    background: var(--bg);
+    border: 1px solid var(--separator);
+    border-radius: 10px;
+    padding: 3px;
+    gap: 2px;
+}
+
+.view-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: 0;
+    border-radius: 8px;
+    padding: 6px 13px;
+    color: var(--text-3);
+    cursor: pointer;
+    font-size: 13.5px;
+    white-space: nowrap;
+    transition: background .15s, color .15s;
+}
+
+.view-btn:hover { color: var(--text-2); }
+
+.view-btn.on {
+    background: var(--raised);
+    color: var(--text);
+    font-weight: 600;
+}
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 12px;
+}
+
+.chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: 1px solid var(--separator);
+    border-radius: 999px;
+    padding: 4px 12px;
+    color: var(--text-2);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+}
+
+.chip:hover { color: var(--text); }
+
+.chip.on {
+    color: var(--text);
+    border-color: color-mix(in srgb, var(--chip, var(--accent)) 70%, transparent);
+    background: color-mix(in srgb, var(--chip, var(--accent)) 14%, transparent);
+}
+
+.chip.ghost { color: var(--text-3); border-style: dashed; }
+
+/* 分類色點。**尺寸刻意小**——它是標記，不是主角；
+ * 大到跟文字一樣重的話，掃過去看到的會是一排點而不是一排事。 */
+.label-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+    margin-right: 7px;
+    vertical-align: 1px;
+}
+
+/* 沒有分類的那些也要佔同樣的位置，不然有分類和沒分類的
+ * 標題會左右差 15px，看起來像沒對齊。 */
+.label-dot.none { background: none; }
+
+.label-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--separator) 45%, transparent);
+}
+
+.label-edit-row:last-of-type { border-bottom: 0; }
+
+.color-input {
+    width: 38px;
+    height: 32px;
+    flex: 0 0 auto;
+    padding: 2px;
+    border-radius: 8px;
+    background: var(--bg);
+    border: 1px solid var(--separator);
+    cursor: pointer;
+}
+
+.accent-row { display: flex; flex-wrap: wrap; gap: 9px; }
+
+.accent {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 2px solid transparent;
+    outline: 1px solid color-mix(in srgb, var(--separator) 60%, transparent);
+    outline-offset: -1px;
+    cursor: pointer;
+    padding: 0;
+}
+
+.accent[aria-pressed="true"] {
+    border-color: var(--text);
+    outline-color: transparent;
+}
+
+.icon-btn {
+    background: var(--raised);
+    border: 1px solid var(--separator);
+    border-radius: 9px;
+    width: 32px;
+    height: 30px;
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 15px;
+    line-height: 1;
+    padding: 0;
+}
+
+.icon-btn:hover { background: var(--separator); }
+
+.tag-now {
+    font-size: 11px;
+    margin-left: 8px;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    color: var(--accent);
+}
+
+/* ── 月曆 ───────────────────────────────────────────
+ *
+ * 月曆是「這個月長什麼樣」，不是「接下來要做什麼」——所以它
+ * 不是預設檢視（見 js/calendar.js 上面那段）。
+ */
+
+.cal-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 4px;
+}
+
+.cal-head { margin-bottom: 6px; }
+
+.cal-wd {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-3);
+    letter-spacing: .06em;
+    padding: 4px 0;
+}
+
+.cal-wd.weekend { color: color-mix(in srgb, var(--text-3) 70%, transparent); }
+
+.cal-cell {
+    min-height: 92px;
+    border: 1px solid color-mix(in srgb, var(--separator) 50%, transparent);
+    border-radius: 10px;
+    padding: 6px 7px;
+    background: color-mix(in srgb, var(--bg) 55%, transparent);
+    cursor: pointer;
+    overflow: hidden;
+    transition: border-color .15s, background .15s;
+}
+
+.cal-cell:hover { border-color: var(--separator); }
+
+/* 這個月以外的日子留著（那一週才是完整的），但要退到後面去 */
+.cal-cell.outside { opacity: .38; }
+
+.cal-cell.today { border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
+.cal-cell.today .cal-n { color: var(--accent); font-weight: 700; }
+
+.cal-cell.picked {
+    background: var(--raised);
+    border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+.cal-n {
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--text-2);
+    margin-bottom: 4px;
+}
+
+.cal-item {
+    display: flex;
+    align-items: center;
+    font-size: 11.5px;
+    color: var(--text-2);
+    line-height: 1.7;
+}
+
+.cal-item .label-dot { width: 6px; height: 6px; margin-right: 5px; }
+.cal-item.todo { color: var(--text-3); }
+.cal-more { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+/* 課的摘要。比事件淡——它是背景資訊（那天有課），
+ * 不是那天要處理的事。 */
+.cal-class {
+    font-size: 10.5px;
+    color: color-mix(in srgb, var(--calendar) 75%, transparent);
+    margin-top: 3px;
+    letter-spacing: .02em;
+}
+
+/* 手機上格子只有五十幾像素寬，塞標題只會變成一堆碎字。
+ * 那邊改用色點，內容看底下那塊。 */
+.cal-dots { display: none; gap: 3px; flex-wrap: wrap; }
+
+.cal-day {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--separator);
+}
+
+.cal-day .day-head { margin-bottom: 8px; }
+
+@media (max-width: 620px) {
+    .cal-grid { gap: 3px; }
+    .cal-cell { min-height: 52px; padding: 4px; }
+    .cal-items, .cal-more { display: none; }
+    .cal-class { font-size: 9.5px; margin-top: 2px; }
+    .cal-dots { display: flex; }
+    .cal-dots .label-dot { width: 6px; height: 6px; margin: 0; }
+}
+
+/* ── 課表 ───────────────────────────────────────────
+ *
+ * 按實際時間擺，不按節次。大學的課不一定對齊節次
+ * （有的 9:10 開始、有的 13:20），寫死節次會有課擺不進去。
+ */
+
+.tt-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: var(--gap);
+}
+
+/* 星期多、螢幕窄的時候讓網格自己橫捲，不要把整頁撐出捲軸 */
+.tt-wrap { overflow-x: auto; padding-bottom: 6px; }
+
+.tt-grid {
+    display: grid;
+    grid-template-columns: 46px repeat(var(--cols), minmax(96px, 1fr));
+    grid-template-rows: auto var(--h);
+    gap: 0 6px;
+    min-width: 100%;
+}
+
+.tt-corner { grid-column: 1; grid-row: 1; }
+
+.tt-wd {
+    grid-row: 1;
+    text-align: center;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2);
+    padding-bottom: 8px;
+}
+
+.tt-wd.now { color: var(--accent); }
+
+.tt-ruler { grid-column: 1; grid-row: 2; position: relative; }
+
+.tt-tick {
+    position: absolute;
+    right: 6px;
+    transform: translateY(-50%);
+    font-size: 11px;
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.tt-col {
+    grid-row: 2;
+    position: relative;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--bg) 55%, transparent);
+}
+
+.tt-col.now { background: color-mix(in srgb, var(--raised) 45%, transparent); }
+
+.tt-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: color-mix(in srgb, var(--separator) 40%, transparent);
+}
+
+.tt-slot {
+    position: absolute;
+    left: 3px;
+    right: 3px;
+    border-radius: 8px;
+    padding: 5px 8px;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--slot, var(--accent)) 55%, transparent);
+    border-left: 3px solid var(--slot, var(--accent));
+    background: color-mix(in srgb, var(--slot, var(--accent)) 16%, var(--card));
+    color: var(--text);
+    transition: filter .15s;
+}
+
+.tt-slot:hover { filter: brightness(1.25); }
+
+.tt-name { font-size: 12.5px; font-weight: 600; line-height: 1.35; }
+.tt-time { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.tt-place { font-size: 11px; color: var(--text-3); }
+
+/* 清單是**手機的替代品**，不是網格的補充。桌機兩份都畫的話，
+ * 同一週的課會講兩遍，畫面長度翻倍卻沒有多講任何事。 */
+.tt-list { display: none; }
+
+/* 網格在手機上就算能橫捲也很難讀，那邊反過來：給清單，收網格。 */
+@media (max-width: 620px) {
+    .tt-wrap { display: none; }
+    .tt-list { display: block; }
+}
+
+/* 時間線裡的課：比行程輕。它是「這個時段被佔走了」的提醒，
+ * 不是要處理的事——一樣重的話真正的待辦會被淹掉。 */
+.class-row { opacity: .72; }
+.class-row .event-time { color: var(--text-3); }
+.class-row .title { font-size: 14px; color: var(--text-2); }
+.class-row:hover { opacity: 1; }
+.class-row:hover .title { color: var(--text); }
 
 /* ── 頁尾 ───────────────────────────────────────────── */
 
@@ -961,4 +1391,124 @@ footer {
 
 @media (prefers-reduced-motion: reduce) {
     * { transition: none !important; }
+}
+
+/* ── 瀏海與底部安全區 ─────────────────────────────────
+ *
+ * 加到 iPhone 主畫面之後這頁是全螢幕的（manifest 的 standalone
+ * ＋ apple-mobile-web-app-capable），系統不再幫忙留白，
+ * 內容會直接鑽到瀏海和底部橫條底下——頂欄那一行會被吃掉。
+ *
+ * viewport-fit=cover 已經寫在 index.html 的 viewport 上，
+ * 那一行只是「允許畫到安全區外」；真正把空間讓回來的是下面這幾條。
+ *
+ * **env() 一定要帶 fallback。** 桌機和多數 Android 沒有這個變數，
+ * 沒有 fallback 的話整條 calc() 會失效，padding 直接歸零——
+ * 修好了手機、卻把電腦版的左右留白弄不見。
+ *
+ * 這一段放在檔案最後面是故意的：下面那個 max-width:620px 的區塊
+ * 用的是 padding 簡寫，會把左右值整個蓋掉。同樣的權重，後面的贏。
+ */
+
+header { padding-top: env(safe-area-inset-top, 0px); }
+
+.topbar,
+nav,
+main,
+.foot {
+    padding-left: calc(20px + env(safe-area-inset-left, 0px));
+    padding-right: calc(20px + env(safe-area-inset-right, 0px));
+}
+
+main { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+.foot { padding-bottom: calc(26px + env(safe-area-inset-bottom, 0px)); }
+.toast { bottom: calc(26px + env(safe-area-inset-bottom, 0px)); }
+
+@media (max-width: 620px) {
+    .topbar,
+    nav,
+    main,
+    .foot {
+        padding-left: calc(14px + env(safe-area-inset-left, 0px));
+        padding-right: calc(14px + env(safe-area-inset-right, 0px));
+    }
+    main { padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px)); }
+    .foot { padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
+}
+
+/* ── 小克的區塊 ───────────────────────────────────────
+ * 只有本機模式會出現（見 js/ke.js）。展示模式連 DOM 都不會生。
+ */
+
+.card[data-hue="ke"] { --hue: var(--water); }
+
+.ke-line {
+    margin: 0 0 16px;
+    color: var(--text-2);
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+.ke-row + .ke-row { margin-top: 14px; }
+
+.ke-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.ke-label { color: var(--text-2); font-size: 13px; }
+
+.ke-pct {
+    font-size: 17px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--hue);
+}
+.ke-pct.warn  { color: var(--warn); }
+.ke-pct.alert { color: var(--alert); }
+
+.ke-track {
+    height: 6px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--separator) 70%, transparent);
+    overflow: hidden;
+}
+
+.ke-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: var(--hue);
+    /* 0% 的時候也要看得見一點點，不然像壞掉 */
+    min-width: 3px;
+    transition: width .3s;
+}
+.ke-fill.warn  { background: var(--warn); }
+.ke-fill.alert { background: var(--alert); }
+
+.ke-reset {
+    margin-top: 5px;
+    font-size: 12px;
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+}
+
+.ke-problem {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin: 14px 0 0;
+    font-size: 12.5px;
+    line-height: 1.55;
+    color: var(--alert);
+}
+
+.ke-foot {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--separator);
+    font-size: 12px;
+    color: var(--text-3);
 }

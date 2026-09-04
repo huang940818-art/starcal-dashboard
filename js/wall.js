@@ -28,15 +28,31 @@ const Wall = {
                 'aria-pressed': String(c === this.color),
                 'aria-label': `顏色 ${c}`,
                 title: '新的便利貼會是這個顏色',
-                onclick: () => {
-                    this.color = c;
-                    $$('#swatches .swatch').forEach(
-                        b => b.setAttribute('aria-pressed', String(b.style.backgroundColor === hexToRgb(c))));
-                },
+                onclick: () => { this.color = c; this.markSwatch(); },
             }));
         }
 
+        // 自己挑一個。六個色票是常用的，但「這一疊是同一件事」
+        // 有時候就是需要一個不在名單上的顏色。
+        const custom = el('input', {
+            type: 'color', class: 'color-input swatch-custom',
+            value: this.color,
+            'aria-label': '自訂便利貼顏色',
+            title: '自己挑一個顏色',
+            oninput: e => { this.color = e.target.value; this.markSwatch(); },
+        });
+        box.append(custom);
+        this._custom = custom;
+
         $('#add-sticky').onclick = () => this.add();
+    },
+
+    /** 哪一個色票是選中的。自訂色不在名單上時六個都不選。 */
+    markSwatch() {
+        const now = hexToRgb(this.color);
+        $$('#swatches .swatch').forEach(
+            b => b.setAttribute('aria-pressed', String(b.style.backgroundColor === now)));
+        if (this._custom) this._custom.value = this.color;
     },
 
     save() { Store.save('便利貼'); },
@@ -46,7 +62,7 @@ const Wall = {
     },
 
     add() {
-        const wall = $('#wall');
+        const wall = $('#wall-board');
         // 新的貼在可視範圍偏左上，但每張錯開一點，不然會疊在同一個位置
         const n = this.data.notes.length;
         const note = {
@@ -67,7 +83,7 @@ const Wall = {
     },
 
     render() {
-        const wall = $('#wall');
+        const wall = $('#wall-board');
         clear(wall);
 
         if (!this.data.notes.length) {
@@ -84,6 +100,28 @@ const Wall = {
         for (const note of this.data.notes) wall.append(this.sticky(note));
     },
 
+    /** 便利貼的尺寸，跟 CSS 的 .sticky 對著。夾座標的時候要用。 */
+    W: 190,
+    H: 130,
+
+    /**
+     * 顯示用的座標，夾在現在這面牆裡面。
+     *
+     * **只夾顯示，不寫回資料。** 牆的寬度跟著螢幕變：在電腦上排好的
+     * 位置，換到手機牆只有 360px 寬，右邊那幾張就整個掉到畫面外
+     * （看不到、也點不到）。但如果順手把資料改掉，回到電腦就會發現
+     * 自己排的版被擠成一團了——那是拿一個問題換另一個問題。
+     */
+    place(note) {
+        const wall = $('#wall-board');
+        // 分頁還沒顯示的時候寬度是 0，這時候夾會把每一張都推到左上角
+        if (!wall.clientWidth) return { x: note.x, y: note.y };
+        return {
+            x: Math.max(0, Math.min(note.x, Math.max(0, wall.clientWidth - this.W))),
+            y: Math.max(0, Math.min(note.y, Math.max(0, wall.clientHeight - this.H))),
+        };
+    },
+
     sticky(note) {
         const area = el('textarea', {
             value: note.text,
@@ -96,23 +134,39 @@ const Wall = {
         });
         area.value = note.text;
 
+        const at = this.place(note);
         const node = el('div', {
             class: 'sticky',
             'data-id': note.id,
-            style: `left:${note.x}px; top:${note.y}px; background:${note.color}; ` +
+            style: `left:${at.x}px; top:${at.y}px; background:${note.color}; ` +
                    `z-index:${note.z || 1}; --tilt:${(note.tilt ?? 0).toFixed(2)}deg`,
         }, [
             area,
             el('div', { class: 'tools' }, [
                 el('button', {
-                    type: 'button', title: '換顏色', text: '◑',
+                    type: 'button', title: '換成下一個顏色', text: '◑',
                     onclick: () => {
+                        // 自訂色不在名單上，indexOf 會給 -1 → 下一個是第 0 個。
+                        // 那是對的：從名單外面按一下就回到名單裡。
                         const i = COLORS.indexOf(note.color);
                         note.color = COLORS[(i + 1) % COLORS.length];
                         node.style.background = note.color;
                         this.save();
                     },
                 }),
+                el('label', {
+                    class: 'pick', title: '自己挑這張的顏色',
+                }, [
+                    el('input', {
+                        type: 'color', value: note.color,
+                        'aria-label': '這張便利貼的顏色',
+                        oninput: e => {
+                            note.color = e.target.value;
+                            node.style.background = note.color;
+                            this.save();
+                        },
+                    }),
+                ]),
                 el('button', {
                     type: 'button', title: '撕掉', text: '✕',
                     onclick: () => {
@@ -133,11 +187,16 @@ const Wall = {
         let startX, startY, originX, originY, moved;
 
         node.addEventListener('pointerdown', e => {
-            if (e.target.closest('textarea, button')) return;
+            // 工具列上的東西不算拖。**label 和 input 一定要在這裡面**——
+            // 少了它們，按下顏色選擇器會被當成開始拖曳、preventDefault
+            // 把它吃掉，色盤永遠打不開。
+            if (e.target.closest('textarea, button, label, input')) return;
             if (e.button !== 0 && e.pointerType === 'mouse') return;
 
             startX = e.clientX; startY = e.clientY;
-            originX = note.x; originY = note.y;
+            // 起點用畫面上的位置，不是資料裡的——牆變窄時它們不一樣，
+            // 用資料裡的話手指一按便利貼就先跳到別的地方去了
+            originX = node.offsetLeft; originY = node.offsetTop;
             moved = false;
 
             note.z = this.topZ() + 1;
@@ -154,7 +213,7 @@ const Wall = {
             const dy = e.clientY - startY;
             if (!moved && Math.hypot(dx, dy) > 3) moved = true;
 
-            const wall = $('#wall');
+            const wall = $('#wall-board');
             // 夾在牆內。拖到外面就找不回來了，而且捲軸會被撐出去。
             const maxX = wall.clientWidth - node.offsetWidth;
             const maxY = wall.clientHeight - node.offsetHeight;

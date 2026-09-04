@@ -192,6 +192,17 @@ function demoMoney() {
     };
 }
 
+/* 示範用的分類。**id 寫死不用 uid()**——底下的行程、待辦和課表
+ * 都要指到這幾個 id，隨機產生的話對不起來，示範資料一打開
+ * 就是一堆沒有顏色的列。 */
+const DEMO_LABELS = [
+    { id: 'demo-school', name: '學校', color: '#7FB4E8' },
+    { id: 'demo-lab',    name: '專題', color: '#5FC9C0' },
+    { id: 'demo-life',   name: '生活', color: '#B8D96F' },
+    { id: 'demo-body',   name: '身體', color: '#EE8FA3' },
+    { id: 'demo-money',  name: '錢',   color: '#F0B45F' },
+];
+
 const DEMO = {
     記帳: demoMoney(),
 
@@ -199,23 +210,24 @@ const DEMO = {
         events: [
             {
                 id: uid(), date: ymd(new Date()), time: '14:00', endTime: '15:30',
-                title: '實驗室 meeting', note: '報告上週的進度',
+                title: '實驗室 meeting', note: '報告上週的進度', label: 'demo-lab',
             },
             {
                 id: uid(), date: ymd(new Date()), time: '19:00', endTime: '',
-                title: '跟同學吃飯', note: '學校後門那家',
+                title: '跟同學吃飯', note: '學校後門那家', label: 'demo-life',
             },
             {
                 id: uid(), date: ymd(new Date(Date.now() + 86400000)), time: '',
-                endTime: '', title: '回函截止', note: '整天都可以寄',
+                endTime: '', title: '回函截止', note: '整天都可以寄', label: 'demo-school',
             },
             {
                 id: uid(), date: ymd(new Date(Date.now() + 3 * 86400000)),
                 time: '09:30', endTime: '12:00', title: '多益考試', note: '記得帶證件和 2B 鉛筆',
+                label: 'demo-school',
             },
             {
                 id: uid(), date: ymd(new Date(Date.now() + 6 * 86400000)),
-                time: '15:00', endTime: '16:00', title: '牙醫回診', note: '',
+                time: '15:00', endTime: '16:00', title: '牙醫回診', note: '', label: 'demo-body',
             },
         ],
     },
@@ -225,16 +237,16 @@ const DEMO = {
             {
                 id: uid(), title: '寄回函給系辦', done: false, priority: 1,
                 due: ymd(new Date(Date.now() + 86400000)),
-                note: '要附成績單影本', createdAt: Date.now() - 3 * 86400000,
+                note: '要附成績單影本', label: 'demo-school', createdAt: Date.now() - 3 * 86400000,
             },
             {
                 id: uid(), title: '訂高鐵票', done: false, priority: 0,
                 due: ymd(new Date(Date.now() + 4 * 86400000)),
-                note: '早鳥票只到週五', createdAt: Date.now() - 86400000,
+                note: '早鳥票只到週五', label: 'demo-life', createdAt: Date.now() - 86400000,
             },
             {
                 id: uid(), title: '約牙醫回診', done: false, priority: 0,
-                due: null, note: '', createdAt: Date.now() - 6 * 86400000,
+                due: null, note: '', label: 'demo-body', createdAt: Date.now() - 6 * 86400000,
             },
             {
                 id: uid(), title: '把電子書載下來', done: false, priority: 0,
@@ -242,7 +254,7 @@ const DEMO = {
             },
             {
                 id: uid(), title: '繳網路費', done: true, priority: 0,
-                due: ymd(new Date(Date.now() - 2 * 86400000)), note: '',
+                due: ymd(new Date(Date.now() - 2 * 86400000)), note: '', label: 'demo-money',
                 createdAt: Date.now() - 8 * 86400000,
                 completedAt: Date.now() - 2 * 86400000,
             },
@@ -297,7 +309,31 @@ const DEMO = {
         ],
     },
 
-    設定: {},
+    課表: {
+        active: 'demo-term',
+        sets: [{
+            id: 'demo-term',
+            name: '115 上',
+            slots: [
+                { id: 'k1', name: '訊號與系統', day: 1, start: '09:10', end: '12:00',
+                  place: '工五 301', teacher: '林老師', label: 'demo-school' },
+                { id: 'k2', name: '專題實作', day: 1, start: '13:20', end: '16:10',
+                  place: '實驗室', teacher: '', label: 'demo-lab' },
+                { id: 'k3', name: '微處理機', day: 2, start: '10:10', end: '12:00',
+                  place: '工四 205', teacher: '陳老師', label: 'demo-school' },
+                { id: 'k4', name: '英文閱讀', day: 3, start: '08:10', end: '10:00',
+                  place: '人文 102', teacher: '', label: 'demo-school' },
+                { id: 'k5', name: '專題實作', day: 3, start: '14:10', end: '17:00',
+                  place: '實驗室', teacher: '', label: 'demo-lab' },
+                { id: 'k6', name: '電子學實驗', day: 4, start: '13:20', end: '16:10',
+                  place: '實驗大樓 B1', teacher: '王老師', label: 'demo-school' },
+                { id: 'k7', name: '體育', day: 5, start: '10:10', end: '12:00',
+                  place: '體育館', teacher: '', label: 'demo-body' },
+            ],
+        }],
+    },
+
+    設定: { accent: '#F9D984', labels: DEMO_LABELS },
 };
 
 
@@ -312,5 +348,6 @@ const EMPTY_DATA = {
     行事曆: { events: [] },
     備忘: { items: [] },
     便利貼: { notes: [] },
+    課表: { active: null, sets: [] },
     設定: {},
 };

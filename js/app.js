@@ -1,7 +1,7 @@
 /* 啟動與分頁。 */
 
 /** 改東西的時候順手更新這個。頁尾會顯示，別人看得出這份還活著。 */
-const BUILD = '2026-09-02';
+const BUILD = '2026-09-04';
 
 const PANELS = ['overview', 'money', 'agenda', 'memo', 'wall'];
 
@@ -15,9 +15,23 @@ function showPanel(name) {
     // 網址記住現在在哪一頁，重整不會跳回總覽
     history.replaceState(null, '', `#${name}`);
 
+    // 換一頁就回到最上面。
+    //
+    // 這裡本來有個更難看的問題：分頁名稱跟頁面裡的元素 id 撞名
+    // （#wall 對上 <div id="wall">、#agenda 對上 <div id="agenda">），
+    // 瀏覽器載入時會照 hash 自己捲過去，把上面的工具列整條捲出畫面——
+    // 手機上打開想法牆看不到「貼一張」，像那顆按鈕不見了。
+    // **光靠這行 scrollTo 擋不住**：瀏覽器在資源載完之後還會再定位一次。
+    // 真正的修法是把那兩個元素改名成 #wall-board 和 #agenda-list，
+    // 網址維持 #wall / #agenda（存過的連結還能用）。
+    scrollTo({ top: 0 });
+
     // 想法牆要等版面確定才畫得對——牆的寬度是拖曳範圍的上限，
     // 在 hidden 的時候 clientWidth 是 0。
     if (name === 'wall') Wall.render();
+    // 接下來那頁在 hidden 的時候不畫（省掉一次沒人看的月曆和課表），
+    // 所以切過去的時候要自己補一次。
+    if (name === 'agenda') Agenda.render();
 }
 
 function renderAll() {
@@ -49,7 +63,11 @@ async function main() {
     }
 
     try {
-        await Promise.all([Money.init(), Todo.init(), Cal.init(), Memo.init(), Wall.init()]);
+        await Promise.all([Money.init(), Todo.init(), Cal.init(), Memo.init(),
+                           Wall.init(), Timetable.init(), Ke.init()]);
+        // Prefs 要等 Cal 和 Todo 讀完——「完全空的時候才補預設分類」
+        // 這個判斷得先看得到有沒有行程和待辦。
+        await Prefs.init();
         await Agenda.init();
     } catch (e) {
         // 讀不出來就整頁停住，**不要顯示一個空的儀表板**——

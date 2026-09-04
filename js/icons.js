@@ -24,6 +24,7 @@ const ICONS = {
     list: '<path d="M4 6.5h16M4 12h16M4 17.5h10"/>',
     calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 9.5h17M8 3.5v3M16 3.5v3"/>',
     clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 1.8"/>',
+    signal: '<path d="M12 19.5h.01"/><path d="M8.8 16.3a4.5 4.5 0 0 1 6.4 0"/><path d="M5.6 13.1a9 9 0 0 1 12.8 0"/><path d="M2.5 10a13.5 13.5 0 0 1 19 0"/>',
     wallet: '<path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h11.5v2.5"/><rect x="3.5" y="7.5" width="17" height="12" rx="2.5"/><path d="M16.5 13.5h.01"/>',
 };
 
