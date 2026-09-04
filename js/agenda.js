@@ -191,10 +191,16 @@ const Agenda = {
      * 沒有時間的（整天的行程）排最後，跟 Cal.on 的規則一致。
      */
     mergeTimed(events, classes) {
+        // 用數字排序，不用字串。課可能只有節次沒有時間（學校課表本來就是
+        // 「第 9-10 節」），那種要排在有時間的後面、彼此照節次順序——
+        // 拿字串比的話「第 9 節」和「14:00」根本沒有可比性。
+        const key = x => x.kind === 'class'
+            ? Timetable.sortKey(x.item)
+            : (x.item.time ? mins(x.item.time) : 99999);
         return [
-            ...events.map(e => ({ kind: 'event', t: e.time || '', item: e })),
-            ...classes.map(c => ({ kind: 'class', t: c.start || '', item: c })),
-        ].sort((a, b) => (a.t || '99:99').localeCompare(b.t || '99:99'));
+            ...events.map(e => ({ kind: 'event', item: e })),
+            ...classes.map(c => ({ kind: 'class', item: c })),
+        ].sort((a, b) => key(a) - key(b));
     },
 
     /** 視野的最後一天。超過這天的東西要另外列，不能讓它們消失。 */
@@ -395,7 +401,7 @@ const Agenda = {
             title: '課表裡的固定時段・點一下去課表改',
             onclick: () => { this.view = 'class'; this.render(); },
         }, [
-            el('div', { class: 'event-time', text: `${c.start}–${c.end || ''}` }),
+            el('div', { class: 'event-time', text: Timetable.whenText(c) }),
             el('div', { class: 'grow' }, [
                 el('div', { class: 'title ellipsis' }, [
                     Prefs.dot(c.label), el('span', { text: c.name }),

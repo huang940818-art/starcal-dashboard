@@ -84,7 +84,13 @@ const Overview = {
 
         // 課的那一句接在後面，不搶上面那句的位置。
         if (classes.length) {
-            const span = `${classes[0].start}–${classes[classes.length - 1].end || ''}`;
+            // 節次沒設時間的話講節次，不要生一個「–」出來假裝有時間
+            const a = Timetable.startOf(classes[0]);
+            const b = Timetable.endOf(classes[classes.length - 1]);
+            const span = a
+                ? `${a}–${b || ''}`
+                : Timetable.whenText(classes[0])
+                  + (classes.length > 1 ? `～${Timetable.whenText(classes[classes.length - 1])}` : '');
             const line = `今天 ${classes.length} 堂課・${span}`;
             note = note ? `${note}　｜　${line}` : line;
         }

@@ -66,13 +66,46 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
       ok('手機上牆不吃掉整頁的捲動',
          getComputedStyle(q('#wall-board')).touchAction !== 'none');
 
-      // 課表在手機上要看得到——網格收起來、清單頂上
+      // 課表在手機上要看得到。**節次網格不收**——它只有五欄，
+      // 而且那正是課表該有的樣子；只有時間軸那種才收起來換清單。
       await tab('agenda'); await sleep(200);
-      Agenda.view = 'class'; Agenda.render(); await sleep(300);
-      ok('手機上課表收起網格、給清單',
-         getComputedStyle(q('.tt-wrap') || document.body).display === 'none'
-         || !q('.tt-wrap'),
-         q('.tt-wrap') ? getComputedStyle(q('.tt-wrap')).display : '沒有網格');
+      // 一定要在節次制那份上測。上一輪留下來的 active 剛好是時間制的話，
+      // 底下那幾條會全部被跳過——**跳過的檢查看起來跟通過一模一樣**。
+      // 桌機那輪最後跑的是匯入測試，存進檔案的是一份時間制的課表，
+      // 所以這裡自己建一份節次制的。只改記憶體，不存檔。
+      const ps = Timetable.periods();
+      Timetable.data.sets.push({
+        id: 'm-test', name: '手機測試用', mode: 'period',
+        slots: [
+          { id: 'm1', name: '測試課一', day: 1, from: ps[10].id, to: ps[11].id,
+            teacher: '某老師', place: '某教室', label: null },
+          { id: 'm2', name: '測試課二', day: 5, from: ps[10].id, to: ps[10].id,
+            teacher: '', place: '', label: null },
+        ],
+      });
+      Timetable.data.active = 'm-test';
+      Agenda.view = 'class'; Agenda.render(); await sleep(320);
+      const wrap = q('.tt-wrap');
+      const isPeriod = !!q('.tt-p');
+      ok('手機那輪測得到節次課表', isPeriod,
+         isPeriod ? '' : '畫出來的不是節次網格');
+      ok('手機上節次課表的網格留著',
+         !isPeriod || getComputedStyle(wrap).display !== 'none',
+         isPeriod ? getComputedStyle(wrap).display : '這份是時間制');
+      ok('手機上課表格子點得到',
+         !isPeriod || document.querySelectorAll('.tt-p-empty, .tt-p-slot').length > 0);
+      ok('手機上課表不會把頁面撐寬', !wide(),
+         document.documentElement.scrollWidth + ' > ' + innerWidth);
+      // 五天要一屏放完。**網格自己橫捲也不行**——她的課有星期五，
+      // 被推到看不見的地方等於那天不存在。
+      if (isPeriod) {
+        const g = q('.tt-p');
+        ok('手機上五天一屏放得完，網格不用橫捲',
+           g.scrollWidth <= g.clientWidth + 1,
+           g.scrollWidth + ' vs ' + g.clientWidth);
+        ok('手機上星期表頭用單字',
+           getComputedStyle(q('.tt-p-wd .wd-short')).display !== 'none');
+      }
 
       Agenda.view = 'month'; Agenda.render(); await sleep(300);
       ok('手機上月曆格子不會被撐爆', !wide(),
@@ -423,28 +456,122 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     ok('課表建得起來', Timetable.data.sets.length === 1);
     ok('新建的課表自動變成使用中', Timetable.active().name === '115 上');
 
-    pick('加一堂').click(); await sleep(200);
-    ok('加一堂開得起來', q('#dlg-slot').open);
-    q('#k-name').value = '訊號與系統';
-    q('#k-day').value = String(new Date().getDay());
-    q('#k-start').value = '09:10';
-    q('#k-end').value = '12:00';
-    q('#k-place').value = '工五 301';
-    q('#k-save').click(); await sleep(360);
-    ok('一堂課存得進去', Timetable.slots().length === 1);
-    ok('課表網格畫得出那一堂', !!q('#timetable .tt-slot'));
-    ok('課按實際時間擺，不是擠在最上面',
-       parseFloat(q('#timetable .tt-slot').style.top) > 0,
-       q('#timetable .tt-slot').style.top);
-    ok('網格底下也有一份清單（手機讀的是那份）',
-       q('#timetable .tt-list').textContent.includes('訊號與系統'));
+    ok('新課表預設是節次制', Timetable.mode() === 'period');
+    ok('節次表有 0-4、中午、5-12 共 14 節',
+       Timetable.periods().length === 14
+       && Timetable.periods()[5].name === '中午',
+       Timetable.periods().map(p => p.name).join(','));
 
-    // 結束比開始早要擋下來，不然課會變成負高度
-    q('#timetable .tt-slot').click(); await sleep(220);
-    q('#k-end').value = '08:00';
-    q('#k-save').click(); await sleep(240);
-    ok('結束比開始早會被擋下來', q('#dlg-slot').open);
-    q('#dlg-slot button[value=\"cancel\"]').click(); await sleep(180);
+    // 節次網格：空格要能點，而且點下去星期和節次已經填好——
+    // **這是這一版的重點**。要人先按「加一堂」再從頭選一次，
+    // 等於把眼睛已經看到的資訊再用手輸入一次。
+    const cells0 = document.querySelectorAll('#timetable .tt-p-empty');
+    ok('空的課表整面都是可以點的格子', cells0.length === 14 * 5,
+       cells0.length + ' 格');
+    const todayCol = Timetable.days().indexOf(new Date().getDay());
+    ok('網格有五個星期欄',
+       document.querySelectorAll('#timetable .tt-p-wd').length === 5);
+
+    // 點週一第 9 節那格（節次 index 10）
+    const wantDay = Timetable.days()[0];
+    const target = [...cells0].find(c =>
+        c.getAttribute('aria-label') === '星期' + '日一二三四五六'[wantDay] + ' 第 9 節・加一堂');
+    ok('格子上寫得出是哪一天哪一節', !!target,
+       target ? target.getAttribute('aria-label') : cells0[0].getAttribute('aria-label'));
+    target.click(); await sleep(240);
+    ok('點格子直接開加一堂', q('#dlg-slot').open);
+    ok('點進來的星期已經填好', Number(q('#k-day').value) === wantDay,
+       q('#k-day').value + ' vs ' + wantDay);
+    ok('點進來的節次已經填好',
+       Timetable.period(q('#k-from').value)?.name === '9',
+       Timetable.period(q('#k-from').value)?.name);
+    ok('節次制不給填時間欄', q('#k-time-fields').hidden && !q('#k-period-fields').hidden);
+
+    q('#k-name').value = '實務專題';
+    q('#k-to').value = Timetable.periods().find(p => p.name === '10').id;
+    q('#k-place').value = '體教三';
+    q('#k-teacher').value = '陳老師';
+    q('#k-save').click(); await sleep(380);
+    ok('一堂課存得進去', Timetable.slots().length === 1);
+    ok('課表網格畫得出那一堂', !!q('#timetable .tt-p-slot'));
+    {
+      // 折疊會動到列號，所以不能比字串，要看它實際跨了幾列
+      const gr = q('#timetable .tt-p-slot').style.gridRow.split('/').map(x => Number(x.trim()));
+      ok('跨兩節的課在格子上真的佔兩格', gr[1] - gr[0] === 2,
+         q('#timetable .tt-p-slot').style.gridRow);
+    }
+    ok('格子上有老師和教室',
+       q('#timetable .tt-p-slot').textContent.includes('陳老師')
+       && q('#timetable .tt-p-slot').textContent.includes('體教三'));
+    {
+      // 空格數會跟著折疊變，所以不比數量，比**有沒有疊在一起**——
+      // 空格畫在課上面的話，點下去會變成新增而不是編輯
+      const at = n => { const r = n.getBoundingClientRect();
+                        return Math.round(r.left) + ',' + Math.round(r.top); };
+      const slotAt = new Set([...document.querySelectorAll('#timetable .tt-p-slot')].map(at));
+      const clash = [...document.querySelectorAll('#timetable .tt-p-empty')]
+          .filter(c => slotAt.has(at(c)));
+      ok('被課佔走的格子不會再畫一個空格', clash.length === 0, clash.length + ' 格重疊');
+    }
+
+    // 完全沒課的連續節次要收起來。她的課全在 9-12 節，前面九列整片空白，
+    // 全部畫出來就得捲過一大片什麼都沒有的格子才看得到重點。
+    ok('沒課的連續節次收成一條', !!q('#timetable .tt-p-fold'),
+       document.querySelectorAll('#timetable .tt-p-fold').length + ' 條');
+    {
+      const before = document.querySelectorAll('#timetable .tt-p-n').length;
+      q('#timetable .tt-p-fold').click(); await sleep(280);
+      ok('點一下展開得回來',
+         document.querySelectorAll('#timetable .tt-p-n').length > before,
+         before + ' → ' + document.querySelectorAll('#timetable .tt-p-n').length);
+      // 展開之後每一格還是要對齊——折疊會動到列號，最容易在這裡錯位
+      const heads2 = [...document.querySelectorAll('#timetable .tt-p-wd')]
+          .map(h => Math.round(h.getBoundingClientRect().left));
+      const bad2 = [...document.querySelectorAll('#timetable .tt-p-slot, #timetable .tt-p-empty')]
+          .filter(c => !heads2.some(x => Math.abs(x - Math.round(c.getBoundingClientRect().left)) <= 2));
+      ok('展開之後每一格還是對齊的', bad2.length === 0, bad2.length + ' 格沒對齊');
+      Timetable.opened.clear(); Timetable.render(); await sleep(260);
+    }
+
+    // **每一格都要真的落在它該在的星期欄。**
+    // 跨節的課會讓下面幾列少一格，靠 auto-placement 的話後面的會往前補——
+    // 整列往左位移一格，星期四的課看起來排在星期三。畫面依然是一張整齊的表，
+    // 只是內容錯的。用實際座標對，不是看 style 字串。
+    {
+      const heads = [...document.querySelectorAll('#timetable .tt-p-wd')]
+          .map(h => Math.round(h.getBoundingClientRect().left));
+      const misplaced = [...document.querySelectorAll('#timetable .tt-p-slot, #timetable .tt-p-empty')]
+          .filter(c => !heads.some(x => Math.abs(x - Math.round(c.getBoundingClientRect().left)) <= 2));
+      ok('每一格都對齊它的星期欄', misplaced.length === 0,
+         misplaced.length + ' 格沒對齊');
+    }
+
+    // 節次沒設時間的時候，時間線要寫節次，不能生一個「–」出來假裝有時間
+    ok('沒設節次時間就寫節次', Timetable.whenText(Timetable.slots()[0]) === '9–10 節',
+       Timetable.whenText(Timetable.slots()[0]));
+
+    // 反過來選（第 10 節到第 9 節）要自己調回來，不是丟錯誤給她
+    q('#timetable .tt-p-slot').click(); await sleep(220);
+    q('#k-from').value = Timetable.periods().find(p => p.name === '10').id;
+    q('#k-to').value = Timetable.periods().find(p => p.name === '9').id;
+    q('#k-save').click(); await sleep(320);
+    ok('節次選反了會自己調回來，不是報錯',
+       !q('#dlg-slot').open && Timetable.slots()[0].from === Timetable.slots()[0].to,
+       Timetable.whenText(Timetable.slots()[0]));
+    // 改回原來的範圍
+    q('#timetable .tt-p-slot').click(); await sleep(220);
+    q('#k-from').value = Timetable.periods().find(p => p.name === '9').id;
+    q('#k-to').value = Timetable.periods().find(p => p.name === '10').id;
+    q('#k-day').value = String(new Date().getDay());
+    q('#k-save').click(); await sleep(320);
+
+    // 設了節次時間之後，時間線就改寫時間
+    Timetable.data.periods.find(p => p.name === '9').start = '16:10';
+    Timetable.data.periods.find(p => p.name === '10').end = '18:00';
+    Timetable.save();
+    ok('設了節次時間就改寫時間',
+       Timetable.whenText(Timetable.slots()[0]) === '16:10–18:00',
+       Timetable.whenText(Timetable.slots()[0]));
 
     // 換整份課表：複製一份出來，兩份不能共用同一堂課的 id
     pick('新的課表').click(); await sleep(200);
@@ -456,11 +583,13 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     ok('複製過去的課有自己的 id，不會改一份動到兩份',
        Timetable.data.sets[0].slots[0].id !== Timetable.data.sets[1].slots[0].id);
     ok('複製過去的內容一樣',
-       Timetable.data.sets[1].slots[0].name === '訊號與系統');
+       Timetable.data.sets[1].slots[0].name === '實務專題',
+       Timetable.data.sets[1].slots[0].name);
 
     // 課要出現在時間線上，但比行程輕
     Agenda.view = 'timeline'; Agenda.render(); await sleep(260);
-    ok('今天的課出現在時間線上', q('#agenda-list').textContent.includes('訊號與系統'));
+    ok('今天的課出現在時間線上', q('#agenda-list').textContent.includes('實務專題'),
+       q('#agenda-list').textContent.slice(0, 60));
     ok('課那一列的樣式跟行程不一樣', !!q('#agenda-list .class-row'));
 
     // 課和行程要照時間混排。分批接起來的話，9:30 的考試會排在

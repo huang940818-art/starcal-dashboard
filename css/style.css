@@ -1303,13 +1303,151 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 .tt-time { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
 .tt-place { font-size: 11px; color: var(--text-3); }
 
+/* ── 節次課表 ─────────────────────────────────────────
+ *
+ * 學校發的課表長什麼樣，這裡就長什麼樣：左邊一欄節次，上面一排星期。
+ * **空格是可以點的**——要人先按「加一堂」再從頭選星期和節次，
+ * 等於把眼睛已經看到的資訊再用手輸入一次。
+ */
+
+.tt-p {
+    display: grid;
+    grid-template-columns: 52px repeat(var(--cols), minmax(92px, 1fr));
+    gap: 3px;
+    align-items: stretch;
+    min-width: 100%;
+}
+
+.tt-p-wd .wd-short { display: none; }
+
+.tt-p-corner {
+    font-size: 11px;
+    color: var(--text-3);
+    display: grid;
+    place-items: center;
+    padding-bottom: 6px;
+}
+
+.tt-p-wd {
+    text-align: center;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text-2);
+    padding-bottom: 6px;
+}
+
+.tt-p-wd.now { color: var(--accent); }
+
+.tt-p-n {
+    display: grid;
+    place-content: center;
+    gap: 1px;
+    text-align: center;
+    background: color-mix(in srgb, var(--raised) 55%, transparent);
+    border-radius: 7px;
+    min-height: 46px;
+}
+
+.tt-p-name { font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.tt-p-time { font-size: 10px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+/* 空格。平常很淡，滑過去才明顯——十四列乘五欄全都醒目的話，
+ * 真正有課的那幾格就不見了。 */
+.tt-p-empty {
+    border: 1px dashed color-mix(in srgb, var(--separator) 60%, transparent);
+    border-radius: 7px;
+    background: none;
+    cursor: pointer;
+    min-height: 46px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    transition: background .12s, border-color .12s;
+}
+
+.tt-p-empty .plus { color: var(--text-3); opacity: 0; font-size: 15px; transition: opacity .12s; }
+.tt-p-empty:hover { background: var(--card); border-color: var(--separator); }
+.tt-p-empty:hover .plus { opacity: .8; }
+
+.tt-p-slot {
+    border: 1px solid color-mix(in srgb, var(--slot, var(--accent)) 55%, transparent);
+    border-left: 3px solid var(--slot, var(--accent));
+    background: color-mix(in srgb, var(--slot, var(--accent)) 16%, var(--card));
+    border-radius: 7px;
+    padding: 7px 9px;
+    text-align: left;
+    cursor: pointer;
+    color: var(--text);
+    overflow: hidden;
+    display: grid;
+    align-content: center;
+    gap: 2px;
+    transition: filter .15s;
+}
+
+.tt-p-slot:hover { filter: brightness(1.25); }
+.tt-p-title { font-size: 12.5px; font-weight: 600; line-height: 1.35; }
+.tt-p-sub { font-size: 11px; color: var(--text-3); line-height: 1.4; }
+
+/* 收起來的空白節次。課通常擠在一天的某幾節，前面整片空白全部畫出來
+ * 的話，這張表拉得比螢幕還長。 */
+.tt-p-fold {
+    border: 1px dashed color-mix(in srgb, var(--separator) 55%, transparent);
+    border-radius: 7px;
+    background: none;
+    color: var(--text-3);
+    font-size: 12px;
+    cursor: pointer;
+    padding: 9px 12px;
+    text-align: left;
+    transition: background .12s, color .12s;
+}
+
+.tt-p-fold:hover { background: var(--card); color: var(--text-2); }
+.tt-p-fold .sub { font-size: 11px; }
+
+/* 節次時間的編輯列 */
+.period-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 0;
+}
+
+.period-row .period-name { width: 68px; flex: 0 0 auto; text-align: center; }
+.period-row input[type=time] { flex: 1; }
+
+/* 手機：五天要一屏放完。
+ *
+ * 課名塞不下細節，所以格子上只留課名——老師和教室在底下那份清單裡，
+ * 那才是手機上真正讀得到的地方。**先讓她看到這禮拜的形狀**，
+ * 細節往下捲就有；反過來（格子塞滿細節、星期五被推到螢幕外）比較糟。
+ */
+@media (max-width: 620px) {
+    .tt-p {
+        grid-template-columns: 34px repeat(var(--cols), minmax(0, 1fr));
+        gap: 2px;
+    }
+    .tt-p-slot { padding: 4px 5px; }
+    .tt-p-title { font-size: 11px; line-height: 1.3; }
+    .tt-p-sub { display: none; }
+    .tt-p-n, .tt-p-empty { min-height: 38px; }
+    .tt-p-name { font-size: 11.5px; }
+    .tt-p-corner { font-size: 10px; }
+    .tt-p-wd { font-size: 12px; }
+    .tt-p-wd .wd-long { display: none; }
+    .tt-p-wd .wd-short { display: inline; }
+    .tt-p-fold { padding: 8px 10px; font-size: 11.5px; }
+}
+
 /* 清單是**手機的替代品**，不是網格的補充。桌機兩份都畫的話，
  * 同一週的課會講兩遍，畫面長度翻倍卻沒有多講任何事。 */
 .tt-list { display: none; }
 
-/* 網格在手機上就算能橫捲也很難讀，那邊反過來：給清單，收網格。 */
+/* 時間軸網格在手機上就算能橫捲也很難讀，那邊反過來：給清單，收網格。
+ * **節次網格不收**——它只有五欄，而且那正是課表該有的樣子。 */
 @media (max-width: 620px) {
-    .tt-wrap { display: none; }
+    .tt-wrap:has(.tt-grid) { display: none; }
     .tt-list { display: block; }
 }
 

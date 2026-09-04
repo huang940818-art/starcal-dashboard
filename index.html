@@ -425,6 +425,12 @@
         <h3 id="dlg-set-title">新的課表</h3>
         <label class="field"><span>名稱</span>
             <input id="p-name" aria-required="true" placeholder="例：115 上、打工班表"></label>
+        <label class="field"><span>怎麼排</span>
+            <select id="p-mode">
+                <option value="period">照節次（學校課表）</option>
+                <option value="time">照時間（打工班表）</option>
+            </select>
+        </label>
         <label class="field" id="p-copy-field" hidden><span>要不要照現有的複製一份</span>
             <select id="p-copy"></select></label>
         <div class="dialog-actions">
@@ -434,14 +440,33 @@
     </form>
 </dialog>
 
+<dialog id="dlg-periods">
+    <form method="dialog">
+        <h3>節次時間</h3>
+        <p class="sub" style="margin:-8px 0 14px">
+            每一節幾點到幾點。**留白也完全能用**——課表本來就是靠節次讀的。
+            填了的話，時間線上就會顯示時間而不是節次。
+        </p>
+        <div id="period-editor"></div>
+        <div class="dialog-actions">
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="pd-save">存</button>
+        </div>
+    </form>
+</dialog>
+
 <dialog id="dlg-slot">
     <form method="dialog">
         <h3 id="dlg-slot-title">加一堂</h3>
         <label class="field"><span>名稱</span>
             <input id="k-name" aria-required="true" placeholder="例：訊號與系統、早班"></label>
-        <div class="row">
-            <label class="field"><span>星期</span><select id="k-day"></select></label>
-            <label class="field"><span>開始</span><input id="k-start" type="time" aria-required="true"></label>
+        <label class="field"><span>星期</span><select id="k-day"></select></label>
+        <div class="row" id="k-period-fields">
+            <label class="field"><span>從第幾節</span><select id="k-from"></select></label>
+            <label class="field"><span>到第幾節</span><select id="k-to"></select></label>
+        </div>
+        <div class="row" id="k-time-fields" hidden>
+            <label class="field"><span>開始</span><input id="k-start" type="time"></label>
             <label class="field"><span>結束</span><input id="k-end" type="time"></label>
         </div>
         <div class="row">

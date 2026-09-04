@@ -309,28 +309,46 @@ const DEMO = {
         ],
     },
 
+    // 示範課表用節次制——學校發的課表就是這樣，示範資料要像真的。
+    // 另外附一份時間制的班表，兩種模式都看得到。
     課表: {
         active: 'demo-term',
-        sets: [{
-            id: 'demo-term',
-            name: '115 上',
-            slots: [
-                { id: 'k1', name: '訊號與系統', day: 1, start: '09:10', end: '12:00',
-                  place: '工五 301', teacher: '林老師', label: 'demo-school' },
-                { id: 'k2', name: '專題實作', day: 1, start: '13:20', end: '16:10',
-                  place: '實驗室', teacher: '', label: 'demo-lab' },
-                { id: 'k3', name: '微處理機', day: 2, start: '10:10', end: '12:00',
-                  place: '工四 205', teacher: '陳老師', label: 'demo-school' },
-                { id: 'k4', name: '英文閱讀', day: 3, start: '08:10', end: '10:00',
-                  place: '人文 102', teacher: '', label: 'demo-school' },
-                { id: 'k5', name: '專題實作', day: 3, start: '14:10', end: '17:00',
-                  place: '實驗室', teacher: '', label: 'demo-lab' },
-                { id: 'k6', name: '電子學實驗', day: 4, start: '13:20', end: '16:10',
-                  place: '實驗大樓 B1', teacher: '王老師', label: 'demo-school' },
-                { id: 'k7', name: '體育', day: 5, start: '10:10', end: '12:00',
-                  place: '體育館', teacher: '', label: 'demo-body' },
-            ],
-        }],
+        periods: [
+            ...['0', '1', '2', '3', '4'].map(n => ({ id: 'p' + n, name: n, start: '', end: '' })),
+            { id: 'pnoon', name: '中午', start: '', end: '' },
+            ...['5', '6', '7', '8', '9', '10', '11', '12']
+                .map(n => ({ id: 'p' + n, name: n, start: '', end: '' })),
+        ],
+        sets: [
+            {
+                id: 'demo-term', name: '115 上', mode: 'period',
+                slots: [
+                    { id: 'k1', name: '訊號與系統', day: 1, from: 'p2', to: 'p3',
+                      place: '工五 301', teacher: '林老師', label: 'demo-school' },
+                    { id: 'k2', name: '專題實作', day: 1, from: 'p9', to: 'p10',
+                      place: '實驗室', teacher: '陳老師', label: 'demo-lab' },
+                    { id: 'k3', name: '微處理機', day: 2, from: 'p3', to: 'p4',
+                      place: '工四 205', teacher: '陳老師', label: 'demo-school' },
+                    { id: 'k4', name: '英文閱讀', day: 3, from: 'p1', to: 'p2',
+                      place: '人文 102', teacher: '', label: 'demo-school' },
+                    { id: 'k5', name: '專題實作', day: 3, from: 'p10', to: 'p12',
+                      place: '實驗室', teacher: '陳老師', label: 'demo-lab' },
+                    { id: 'k6', name: '電子學實驗', day: 4, from: 'p6', to: 'p8',
+                      place: '實驗大樓 B1', teacher: '王老師', label: 'demo-school' },
+                    { id: 'k7', name: '體育', day: 5, from: 'p3', to: 'p4',
+                      place: '體育館', teacher: '', label: 'demo-body' },
+                ],
+            },
+            {
+                id: 'demo-shift', name: '打工班表', mode: 'time',
+                slots: [
+                    { id: 's1', name: '早班', day: 6, start: '08:00', end: '14:00',
+                      place: '', teacher: '', label: 'demo-money' },
+                    { id: 's2', name: '晚班', day: 0, start: '15:00', end: '21:00',
+                      place: '', teacher: '', label: 'demo-money' },
+                ],
+            },
+        ],
     },
 
     設定: { accent: '#F9D984', labels: DEMO_LABELS },
@@ -348,6 +366,6 @@ const EMPTY_DATA = {
     行事曆: { events: [] },
     備忘: { items: [] },
     便利貼: { notes: [] },
-    課表: { active: null, sets: [] },
+    課表: { active: null, periods: [], sets: [] },
     設定: {},
 };

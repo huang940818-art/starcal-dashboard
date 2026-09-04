@@ -75,7 +75,7 @@ EMPTY = {
     "備忘": {"items": []},
     "便利貼": {"notes": []},
     # 課表可以有好幾份（這學期、下學期、打工班表），active 說現在用哪一份
-    "課表": {"active": None, "sets": []},
+    "課表": {"active": None, "periods": [], "sets": []},
     "設定": {"accent": None, "labels": []},
     # 小克的額度。這份**不是使用者寫的**，是 ~/.star-bridge/小克額度.sh 產的，
     # 前端唯讀。空的形狀要有 limits，不然畫面每個地方都得寫 `?? []`。
