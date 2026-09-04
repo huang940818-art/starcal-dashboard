@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import http.server
 import json
 import os
@@ -83,6 +84,33 @@ EMPTY = {
 
 MAX_BODY = 8 * 1024 * 1024      # 8MB。正常資料離這個很遠，這是防呆不是設計目標
 KEEP_BACKUPS = 20
+
+# 前端拿來判斷「程式換了沒」的檔案。
+# 只看程式，不看資料——資料本來就一直在變，跟著它一起變的話會一直說有新版。
+WEB_FILES = ("index.html", "site.webmanifest")
+WEB_DIRS = ("js", "css")
+
+
+def web_version() -> str:
+    """程式檔的指紋。任何一支改了，這個字串就會變。
+
+    用 mtime 和大小，不讀內容——這是本機 server，檔案十幾支，
+    但沒必要為了一個「換了沒」把每支都讀進來算雜湊。
+    改了內容而大小和 mtime 都不變的情況不存在（存檔就會動到 mtime）。
+    """
+    parts = []
+    paths = [WEB_DIR / f for f in WEB_FILES]
+    for d in WEB_DIRS:
+        folder = WEB_DIR / d
+        if folder.is_dir():
+            paths += sorted(folder.iterdir())
+    for p in paths:
+        try:
+            st = p.stat()
+        except OSError:
+            continue
+        parts.append(f"{p.name}:{st.st_mtime_ns}:{st.st_size}")
+    return hashlib.sha1("|".join(parts).encode("utf-8")).hexdigest()[:12]
 
 
 def ensure_dirs() -> None:
@@ -180,6 +208,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if name == "ping":
             # 前端靠這個判斷「我現在是連著本機資料，還是在展示模式」
             return self.send_json({"ok": True, "dir": str(DATA_DIR)})
+
+        if name == "版本":
+            # 加到主畫面的全螢幕模式沒有網址列也沒有重整鍵，
+            # 所以前端要自己問「程式換了沒」。見 js/update.js。
+            return self.send_json({"version": web_version()})
 
         if name not in FILES:
             return self.send_json({"error": f"沒有這份資料：{name}"}, 404)

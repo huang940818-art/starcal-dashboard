@@ -106,6 +106,9 @@ async function main() {
 
     renderAll();
 
+    // 程式換了就自己更新。展示模式沒有 /api，這支會早退。
+    Update.init();
+
     // 沒寫完的資料在關頁面前送出去
     addEventListener('pagehide', () => Store.flushAll());
     addEventListener('visibilitychange', () => {

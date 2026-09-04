@@ -1436,6 +1436,34 @@ main { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
     .foot { padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
 }
 
+/* ── 更新提示 ─────────────────────────────────────────
+ *
+ * 不能用 toast：那個會自己消失，而且點不了。這一條要留在那裡
+ * 等她有空，所以要自己一種東西。
+ */
+
+.update-bar {
+    position: fixed;
+    left: 50%;
+    transform: translateX(-50%);
+    bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 12px 9px 18px;
+    border-radius: 999px;
+    background: var(--raised);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+    z-index: 300;
+    max-width: calc(100vw - 28px);
+    font-size: 14px;
+}
+
+@media (max-width: 620px) {
+    .update-bar { padding: 8px 10px 8px 15px; gap: 8px; font-size: 13.5px; }
+}
+
 /* ── 小克的區塊 ───────────────────────────────────────
  * 只有本機模式會出現（見 js/ke.js）。展示模式連 DOM 都不會生。
  */

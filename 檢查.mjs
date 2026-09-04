@@ -563,6 +563,51 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
        JSON.stringify(Timetable.data) === before
        && Store.cache['課表'] !== Timetable.data);
 
+    // ── 自己更新 ──
+    // 加到主畫面之後沒有網址列也沒有重整鍵，所以頁面要自己問「程式換了沒」
+    ok('拿得到程式版本', !!Update.version, Update.version || '沒有');
+    ok('同一份程式不會被當成有新版',
+       (await Update.fetch()) === Update.version);
+
+    // 版本沒變就什麼都不該做
+    Update.check(); await sleep(300);
+    ok('沒換版的時候不會跳提示', !q('#update-bar'));
+
+    // **正在打字的時候不可以硬重載**，會把她手上那件事弄掉
+    q('#add-todo').click(); await sleep(200);
+    ok('對話框開著時算「正在忙」', Update.busy());
+    q('#dlg-todo button[value=\"cancel\"]').click(); await sleep(180);
+    // 關掉的對話框裡面留下的焦點不算忙——不排掉的話 busy() 從此永遠是 true，
+    // 自動更新再也不會發生，而且完全沒有徵兆
+    ok('對話框關掉就不算忙', !Update.busy(),
+       document.activeElement.tagName + ' in '
+       + (document.activeElement.closest('dialog')?.id || '(不在對話框裡)'));
+
+    // 忙的時候要給可以點的提示，不是自己重載
+    const realApply = Update.apply;
+    let applied = 0;
+    Update.apply = () => { applied++; };
+    Update.version = 'x-舊版';         // 假裝拿到的是不一樣的版本
+    q('#add-todo').click(); await sleep(200);
+    await Update.check(); await sleep(300);
+    ok('忙的時候不會自己重載', applied === 0);
+    ok('忙的時候給一條可以點的提示', !!q('#update-bar'));
+    ok('提示上有「重新載入」可以按',
+       [...document.querySelectorAll('#update-bar button')]
+         .some(b => b.textContent === '重新載入'));
+    // 同一版按掉之後不要再跳
+    q('#update-bar button[aria-label=\"關掉這個提示\"]').click(); await sleep(150);
+    await Update.check(); await sleep(300);
+    ok('同一版按掉之後不會再吵', !q('#update-bar'));
+    q('#dlg-todo button[value=\"cancel\"]').click(); await sleep(200);
+
+    // 不忙的時候才自己重載
+    await Update.check(); await sleep(300);
+    ok('不忙的時候就自己更新', applied === 1, '呼叫了 ' + applied + ' 次');
+    Update.apply = realApply;
+    Update.version = await Update.fetch();
+    q('#update-bar')?.remove();
+
     // ── 資料匯出／匯入的入口 ──
     q('#mode').click(); await sleep(200);
     ok('點徽章開得出資料視窗', q('#dlg-data').open);
