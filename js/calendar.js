@@ -104,6 +104,7 @@ const MonthView = {
                 tabindex: '0',
                 'aria-label': `${c.n} 日，${items.length} 件事`,
                 onclick: () => { this.picked = c.day; this.render(); },
+                ondblclick: () => Cal.edit(null, c.day),
                 onkeydown: e => {
                     if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
@@ -112,18 +113,51 @@ const MonthView = {
                     }
                 },
             }, [
-                el('div', { class: 'cal-n', text: String(c.n) }),
+                el('div', { class: 'cal-head-row' }, [
+                    el('div', { class: 'cal-n', text: String(c.n) }),
+                    // 在這天加一件。滑過格子才出現——三十五個常駐的 ＋
+                    // 會比那個月真正有事的那幾天還顯眼。
+                    el('button', {
+                        type: 'button', class: 'cal-add', text: '＋',
+                        'aria-label': `在 ${c.n} 日加行程`,
+                        title: '在這天加行程',
+                        onclick: e => { e.stopPropagation(); Cal.edit(null, c.day); },
+                    }),
+                ]),
                 // 桌機放標題，手機只放色點——同一份資料兩種密度，
                 // 由 CSS 決定顯示哪一個
                 el('div', { class: 'cal-items' },
-                    items.slice(0, 3).map(x => el('div', {
-                        class: 'cal-item' + (x.kind === 'todo' ? ' todo' : ''),
-                    }, [
-                        Prefs.dot(x.it.label) || el('span', { class: 'label-dot none' }),
-                        el('span', { class: 'ellipsis', text: x.it.title }),
-                    ]))),
+                    items.slice(0, 3).map(x => {
+                        const l = Prefs.label(x.it.label);
+                        // 有時間的把時間寫出來。格子裡只有標題的話，
+                        // 「今天下午有事」跟「今天早上有事」看起來一模一樣。
+                        const t = x.kind === 'event' ? (x.it.time || '') : '';
+                        return el('button', {
+                            type: 'button',
+                            class: 'cal-item' + (x.kind === 'todo' ? ' todo' : '')
+                                + (x.it.done ? ' done' : ''),
+                            style: l ? `--line:${l.color}` : '',
+                            title: [t, x.it.title, l ? `・${l.name}` : '']
+                                .filter(Boolean).join(' ') + '　點一下改',
+                            // **點條目直接開編輯。** 原本要先點格子選日期、
+                            // 再到底下的清單裡找同一件事點第二次——
+                            // 眼睛已經看到它了，卻不能直接動它。
+                            onclick: e => {
+                                e.stopPropagation();
+                                if (x.kind === 'event') Cal.edit(x.it);
+                                else Todo.edit(x.it);
+                            },
+                        }, [
+                            t ? el('span', { class: 'cal-t', text: t }) : null,
+                            el('span', { class: 'ellipsis', text: x.it.title }),
+                        ]);
+                    })),
                 items.length > 3
-                    ? el('div', { class: 'cal-more', text: `＋${items.length - 3}` })
+                    ? el('button', {
+                        type: 'button', class: 'cal-more',
+                        text: `＋${items.length - 3} 件`,
+                        onclick: e => { e.stopPropagation(); this.picked = c.day; this.render(); },
+                    })
                     : null,
                 // 課用一行摘要，不一堂一堂列。
                 // **每天四五堂課列進格子的話，這個月只剩下上課看得到**——

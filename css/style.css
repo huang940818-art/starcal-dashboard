@@ -37,7 +37,21 @@
     --radius: 14px;
     --gap: 16px;
 
+    /* 陰影在亮底上要淡很多。深色那組照搬過去，每張卡片都像浮在
+     * 一灘髒水上——這是換主題最容易忘記跟著換的東西。 */
+    --shadow-1: 0 5px 16px rgba(0, 0, 0, .35);
+    --shadow-2: 0 16px 34px rgba(0, 0, 0, .5);
+    --shadow-3: 0 10px 30px rgba(0, 0, 0, .45);
+    --glass-tint: 255, 255, 255;
+
     color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+    --shadow-1: 0 3px 10px rgba(60, 55, 40, .13);
+    --shadow-2: 0 12px 26px rgba(60, 55, 40, .20);
+    --shadow-3: 0 8px 22px rgba(60, 55, 40, .16);
+    --glass-tint: 255, 255, 255;
 }
 
 * { box-sizing: border-box; }
@@ -466,6 +480,7 @@ dialog {
 }
 
 dialog::backdrop { background: rgba(0, 0, 0, .55); }
+:root[data-theme="light"] dialog::backdrop { background: rgba(40, 36, 28, .32); }
 
 dialog h3 { margin: 0 0 16px; font-size: 17px; }
 
@@ -833,18 +848,18 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
     padding: 13px 14px 30px;
     border-radius: 3px;
     color: #23231C;
-    box-shadow: 0 5px 16px rgba(0, 0, 0, .35);
+    box-shadow: var(--shadow-1);
     cursor: grab;
     /* 每張稍微歪一點，看起來才像貼上去的而不是排版排出來的 */
     transform: rotate(var(--tilt, 0deg));
     transition: box-shadow .15s;
 }
 
-.sticky:hover { box-shadow: 0 8px 22px rgba(0, 0, 0, .45); }
+.sticky:hover { box-shadow: var(--shadow-3); }
 
 .sticky.dragging {
     cursor: grabbing;
-    box-shadow: 0 16px 34px rgba(0, 0, 0, .5);
+    box-shadow: var(--shadow-2);
     transform: rotate(var(--tilt, 0deg)) scale(1.03);
     z-index: 999 !important;
 }
@@ -1143,7 +1158,7 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 .cal-wd.weekend { color: color-mix(in srgb, var(--text-3) 70%, transparent); }
 
 .cal-cell {
-    min-height: 92px;
+    min-height: 104px;
     border: 1px solid color-mix(in srgb, var(--separator) 50%, transparent);
     border-radius: 10px;
     padding: 6px 7px;
@@ -1166,24 +1181,95 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
     border-color: color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
+.cal-head-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+    min-height: 16px;
+}
+
 .cal-n {
     font-size: 12.5px;
     font-variant-numeric: tabular-nums;
     color: var(--text-2);
-    margin-bottom: 4px;
 }
 
+/* 在這天加一件。滑過格子才出現——三十五個常駐的 ＋ 會比
+ * 那個月真正有事的那幾天還顯眼。 */
+.cal-add {
+    background: none;
+    border: 0;
+    color: var(--text-3);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 1px 3px;
+    border-radius: 5px;
+    opacity: 0;
+    transition: opacity .12s, background .12s, color .12s;
+}
+
+.cal-cell:hover .cal-add, .cal-cell:focus-within .cal-add { opacity: 1; }
+.cal-add:hover { background: var(--separator); color: var(--text); }
+
+/* 格子裡的每一件事。
+ *
+ * **左邊那條線是分類的顏色。** 原本只有一個 8px 的小圓點，
+ * 在一格 150px 寬、字 11px 的地方等於看不見——她說「更明顯」，
+ * 那就給它一條真的看得到的線，加一塊底色。
+ *
+ * 而且整條是按鈕：點下去直接改那一件。原本要先點格子選日期、
+ * 再到底下的清單裡找同一件事點第二次。
+ */
 .cal-item {
     display: flex;
-    align-items: center;
+    align-items: baseline;
+    gap: 4px;
+    width: 100%;
     font-size: 11.5px;
     color: var(--text-2);
-    line-height: 1.7;
+    line-height: 1.55;
+    text-align: left;
+    padding: 2px 5px;
+    margin-bottom: 2px;
+    border: 0;
+    border-left: 3px solid var(--line, var(--calendar));
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--line, var(--calendar)) 13%, transparent);
+    cursor: pointer;
+    transition: background .12s, color .12s;
 }
 
-.cal-item .label-dot { width: 6px; height: 6px; margin-right: 5px; }
-.cal-item.todo { color: var(--text-3); }
-.cal-more { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.cal-item:hover {
+    background: color-mix(in srgb, var(--line, var(--calendar)) 26%, transparent);
+    color: var(--text);
+}
+
+.cal-item .cal-t {
+    font-size: 10.5px;
+    color: var(--text-3);
+    font-variant-numeric: tabular-nums;
+    flex: 0 0 auto;
+}
+
+/* 待辦用虛線邊，跟行程分得出來——兩種東西同一個樣子的話，
+ * 就得點進去才知道自己在看什麼 */
+.cal-item.todo { border-left-style: dotted; border-left-width: 4px; }
+.cal-item.done { opacity: .5; text-decoration: line-through; }
+
+.cal-more {
+    font-size: 11px;
+    color: var(--text-3);
+    margin-top: 1px;
+    background: none;
+    border: 0;
+    padding: 1px 4px;
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.cal-more:hover { background: var(--separator); color: var(--text-2); }
 
 /* 課的摘要。比事件淡——它是背景資訊（那天有課），
  * 不是那天要處理的事。 */
@@ -1574,6 +1660,144 @@ main { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
     .foot { padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); }
 }
 
+/* ── 磨砂玻璃 ─────────────────────────────────────────
+ *
+ * 玻璃要有東西可以透才成立。純色背景上做模糊等於什麼都沒做——
+ * 所以開玻璃的時候背後會多幾團很淡的色光，顏色跟著主題走。
+ *
+ * **只套在大塊上**（卡片、頂欄、對話框、hero）。月曆一頁三十五格，
+ * 每一格都掛 backdrop-filter 的話，捲動會直接卡住。
+ */
+
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .3s;
+    background:
+        radial-gradient(48% 38% at 10% 4%,
+            color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%),
+        radial-gradient(42% 34% at 92% 10%,
+            color-mix(in srgb, var(--water) 26%, transparent), transparent 70%),
+        radial-gradient(52% 44% at 74% 88%,
+            color-mix(in srgb, var(--sleep) 24%, transparent), transparent 70%),
+        radial-gradient(40% 30% at 24% 92%,
+            color-mix(in srgb, var(--lime) 18%, transparent), transparent 70%);
+}
+
+:root[data-glass="on"] body::before { opacity: 1; }
+
+:root[data-glass="on"] .card,
+:root[data-glass="on"] .hero,
+:root[data-glass="on"] dialog,
+:root[data-glass="on"] .wall,
+:root[data-glass="on"] .toast,
+:root[data-glass="on"] .update-bar {
+    background: color-mix(in srgb, var(--card) 58%, transparent);
+    backdrop-filter: blur(20px) saturate(1.5);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    border-color: color-mix(in srgb, rgb(var(--glass-tint)) 16%, var(--separator));
+    /* 上緣一道很淡的高光。玻璃之所以看起來是玻璃，
+     * 一半是因為它有厚度——這道線就是厚度。 */
+    box-shadow: inset 0 1px 0 color-mix(in srgb, rgb(var(--glass-tint)) 12%, transparent),
+                var(--shadow-1);
+}
+
+:root[data-glass="on"] header {
+    background: color-mix(in srgb, var(--bg) 62%, transparent);
+    backdrop-filter: blur(22px) saturate(1.4);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+}
+
+/* 牆上的點點格線在半透明底下會糊掉，玻璃模式下加深一點 */
+:root[data-glass="on"] .wall {
+    background:
+        radial-gradient(circle at 1px 1px,
+            color-mix(in srgb, var(--separator) 90%, transparent) 1px,
+            transparent 0) 0 0 / 26px 26px,
+        color-mix(in srgb, var(--card) 58%, transparent);
+}
+
+/* 不支援 backdrop-filter 的瀏覽器：退回不透明，不要留一片
+ * 看得到底下文字的半透明卡片——那是不能讀的。 */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    :root[data-glass="on"] .card,
+    :root[data-glass="on"] .hero,
+    :root[data-glass="on"] dialog,
+    :root[data-glass="on"] .wall { background: var(--card); }
+    :root[data-glass="on"] header { background: var(--bg); }
+    :root[data-glass="on"] body::before { opacity: .5; }
+}
+
+/* ── 外觀對話框 ───────────────────────────────────── */
+
+.sec {
+    margin: 20px 0 10px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .08em;
+    color: var(--text-3);
+}
+
+.sec:first-child { margin-top: 0; }
+
+.theme-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+    gap: 10px;
+}
+
+.theme-card {
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 11px;
+    padding: 7px 7px 9px;
+    cursor: pointer;
+    text-align: left;
+    transition: border-color .15s, background .15s;
+}
+
+.theme-card:hover { background: var(--raised); }
+.theme-card[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* 預覽用主題自己的顏色畫，不是一張截圖——改了配色卻忘了改預覽圖，
+ * 是這種選單最常見的謊。 */
+.theme-swatch {
+    height: 54px;
+    border-radius: 8px;
+    border: 1px solid;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    overflow: hidden;
+}
+
+.theme-bar { height: 9px; border-radius: 3px; }
+.theme-dots { display: flex; gap: 4px; }
+.theme-dots span { width: 9px; height: 9px; border-radius: 999px; }
+.theme-line { height: 4px; border-radius: 2px; width: 70%; opacity: .55; }
+
+.theme-name { font-size: 12.5px; font-weight: 600; margin-top: 7px; }
+.theme-note { font-size: 10.5px; color: var(--text-3); margin-top: 1px; }
+
+.switch-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 11px;
+    cursor: pointer;
+    padding: 4px 0;
+}
+
+.switch-row input { margin-top: 3px; flex: 0 0 auto; }
+.switch-row .sub { margin-top: 3px; line-height: 1.6; }
+
 /* ── 更新提示 ─────────────────────────────────────────
  *
  * 不能用 toast：那個會自己消失，而且點不了。這一條要留在那裡
@@ -1592,7 +1816,7 @@ main { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
     border-radius: 999px;
     background: var(--raised);
     border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-    box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+    box-shadow: var(--shadow-3);
     z-index: 300;
     max-width: calc(100vw - 28px);
     font-size: 14px;

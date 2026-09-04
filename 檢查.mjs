@@ -346,6 +346,93 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     ok('暗色主題色會自動改成淺字',
        getComputedStyle(root).getPropertyValue('--on-accent').trim() === '#F2EFE4',
        getComputedStyle(root).getPropertyValue('--on-accent').trim());
+    // ── 主題 ──
+    // 第一版只換 --accent 一個變數，換完幾乎看不出差別（她的原話：
+    // 「有跟沒有一樣」）。所以這裡驗的是**整組配色真的都換掉了**。
+    ok('主題不只一個', THEMES.length >= 6, THEMES.length + ' 個');
+    {
+      const read = () => ['--bg', '--card', '--raised', '--separator',
+                          '--text', '--text-2', '--text-3', '--accent',
+                          '--water', '--heart', '--lime']
+          .map(k => getComputedStyle(root).getPropertyValue(k).trim());
+      Prefs.setTheme('starcal'); await sleep(160);
+      const a = read();
+      Prefs.setTheme('midnight'); await sleep(200);
+      const b = read();
+      const changed = a.filter((v, i) => v !== b[i]).length;
+      ok('換主題會換掉整組配色，不是只換主色', changed >= 10,
+         changed + '/' + a.length + ' 個變數變了');
+      ok('背景真的變了', a[0] !== b[0], a[0] + ' → ' + b[0]);
+    }
+
+    // 亮色主題要標得出來，不然陰影、backdrop 那些沒辦法跟著變淡
+    Prefs.setTheme('paper'); await sleep(200);
+    ok('亮色主題會標上 data-theme=light', root.dataset.theme === 'light',
+       root.dataset.theme);
+    ok('亮色主題的陰影有跟著變淡',
+       getComputedStyle(root).getPropertyValue('--shadow-1').includes('60, 55, 40'),
+       getComputedStyle(root).getPropertyValue('--shadow-1').trim());
+
+    // **每一個主題的每一組配色都要驗。** 挑一個看起來對就放行的話，
+    // 亮色主題上那些為深底調的粉彩會淡到看不見——「換個主題就有一半
+    // 的東西不見了」比不給換更糟。
+    {
+      const bad = [];
+      for (const t of THEMES) {
+        const v = t.vars;
+        const check = (name, fg, bg, min) => {
+          const r = contrast(fg, bg);
+          // 不要在這支注入腳本裡用反引號和樣板字串——PROBE 是外面那層的
+          // 樣板字串，會先被求值掉。用加號串接。
+          if (r < min) bad.push(t.name + '/' + name + ' ' + r.toFixed(1) + '<' + min);
+        };
+        check('內文', v['--text'], v['--bg'], 7);
+        check('次要字', v['--text-2'], v['--card'], 3.5);
+        check('提示字', v['--text-3'], v['--card'], 2.6);
+        check('主色', v['--accent'], v['--bg'], 3);
+        for (const k of ['--money', '--memo', '--water', '--sleep',
+                         '--heart', '--lime', '--calendar',
+                         '--good', '--warn', '--alert']) {
+          check(k.slice(2), v[k], v['--card'], 2.8);
+        }
+      }
+      ok('每個主題的每一種顏色都讀得到', bad.length === 0, bad.join('、'));
+    }
+
+    // 磨砂玻璃
+    Prefs.setGlass(true); await sleep(200);
+    ok('開了磨砂玻璃會標在根元素上', root.dataset.glass === 'on');
+    {
+      const card = q('#overview-grid .card') || q('.card');
+      const bf = getComputedStyle(card).backdropFilter
+              || getComputedStyle(card).webkitBackdropFilter;
+      ok('玻璃真的套到卡片上', /blur/.test(bf || ''), bf || '(沒有)');
+      // computed 值可能是 rgba(...) 也可能是 color(srgb ... / a)，
+      // 比字串前綴會漏。直接把 alpha 撈出來看。
+      const bgc = getComputedStyle(card).backgroundColor;
+      // **正則裡不要出現斜線。** PROBE 是外面那層的樣板字串，
+      // 反斜線會先被吃掉一層，未跳脫的 / 會把正則字面量提前結束
+      // → SyntaxError → 整段檢查一行都不跑，而且靜靜地不跑。
+      const nums = bgc.match(/[0-9.]+/g) || [];
+      const alpha = nums.length >= 4 ? Number(nums[nums.length - 1]) : 1;
+      ok('玻璃模式下卡片是半透明的', alpha > 0 && alpha < 1, bgc);
+      // 背後要有東西可以透，不然模糊等於沒做。
+      // **不能靠 computed opacity 判斷**——那個有 .3s 的淡入，而
+      // headless 的 virtual-time 模式下 transition 不一定會推進，
+      // 讀到的永遠是起點 0。改成驗「光暈畫了什麼」加「規則在不在」。
+      const glow = getComputedStyle(document.body, '::before').backgroundImage;
+      ok('背後畫了幾團色光', /gradient/.test(glow), glow.slice(0, 46));
+      const allRules = [...document.styleSheets]
+          .flatMap(sh => { try { return [...sh.cssRules] } catch { return [] } });
+      ok('開玻璃的時候那幾團光會亮起來',
+         allRules.some(r => r.selectorText
+            && r.selectorText.includes('data-glass="on"')
+            && r.selectorText.includes('body::before')));
+    }
+    Prefs.setGlass(false); await sleep(180);
+    ok('關得掉', root.dataset.glass === 'off');
+    Prefs.setTheme('starcal'); await sleep(180);
+
     // 八個預設色**每一個都要驗**，不是抽一個看起來對就算。
     // 4.5 是 WCAG AA 給一般文字的門檻。
     const badAccent = [];
@@ -440,6 +527,26 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     ok('月曆底下有選中那天的內容', !!q('#calendar .cal-day'));
     ok('今天那格列得出剛剛那個行程',
        q('#calendar .cal-day').textContent.includes('分類測試行程'));
+    // 格子裡的事要能直接點開來改。原本要先點格子選日期、再到底下的清單裡
+    // 找同一件事點第二次——眼睛已經看到它了，卻不能直接動它。
+    {
+      const item = q('#calendar .cal-cell.today .cal-item');
+      ok('格子裡的事是可以點的', !!item && item.tagName === 'BUTTON',
+         item ? item.tagName : '找不到');
+      if (item) {
+        item.click(); await sleep(280);
+        ok('點格子裡的事直接開編輯', q('#dlg-event').open || q('#dlg-todo').open);
+        (q('#dlg-event').open ? q('#dlg-event') : q('#dlg-todo'))
+          .querySelector('button[value=\"cancel\"]').click();
+        await sleep(200);
+      }
+      // 「更明顯」＝ 分類顏色要是一條看得到的線，不是 8px 的小圓點
+      ok('格子裡的事有分類顏色的線',
+         !!item && parseFloat(getComputedStyle(item).borderLeftWidth) >= 3,
+         item ? getComputedStyle(item).borderLeftWidth : '');
+      ok('格子右上角有「在這天加」', !!q('#calendar .cal-cell .cal-add'));
+    }
+
     const other = [...cells].find(c => !c.classList.contains('picked')
                                     && !c.classList.contains('outside')
                                     && !c.classList.contains('today'));

@@ -49,7 +49,12 @@ const Prefs = {
 
     async init() {
         this.data = await Store.load('設定');
-        this.data.accent ??= DEFAULT_ACCENT;
+        this.data.theme ??= DEFAULT_THEME;
+        // accent 是「在主題之上再換一個主色」。null＝跟著主題走，
+        // 這樣換主題的時候主色會一起變，而不是卡著上一個主題的顏色。
+        if (this.data.accent === DEFAULT_ACCENT) this.data.accent = null;
+        this.data.accent ??= null;
+        this.data.glass ??= false;
         this.data.labels ??= [];
 
         // 「從來沒有過」和「自己刪光了」是兩件事，要分得出來。
@@ -72,13 +77,29 @@ const Prefs = {
 
     save() { Store.save('設定'); },
 
-    /* ── 主題色 ─────────────────────────────────── */
+    /* ── 主題 ───────────────────────────────────── */
 
-    accent() { return this.data?.accent || DEFAULT_ACCENT; },
+    theme() { return theme(this.data?.theme); },
+
+    /** 現在的主色。沒有自訂就用主題自己的。 */
+    accent() { return this.data?.accent || this.theme().vars['--accent']; },
 
     apply() {
-        const c = this.accent();
         const root = document.documentElement;
+        const t = this.theme();
+
+        // 整組套上去。**上一個主題設過的變數要一起被蓋掉**——
+        // 每個主題的 vars 鍵都一樣，所以直接覆寫就好，不用先清。
+        for (const [k, v] of Object.entries(t.vars)) root.style.setProperty(k, v);
+
+        // 少數地方沒辦法只靠變數（陰影、便利貼的按鈕底色），
+        // 那些看 data-theme 分岔。color-scheme 則決定捲軸和表單元件的長相。
+        root.dataset.theme = t.scheme;
+        root.style.colorScheme = t.scheme;
+        root.dataset.glass = this.data?.glass ? 'on' : 'off';
+        $('#theme-color-meta')?.setAttribute('content', t.vars['--bg']);
+
+        const c = this.accent();
         root.style.setProperty('--accent', c);
         // 主色按鈕上的字要看得見。深色主題色配深字會整顆糊掉，
         // 所以文字色跟著算，不寫死。
@@ -94,6 +115,22 @@ const Prefs = {
 
     setAccent(c) {
         this.data.accent = c;
+        this.save();
+        this.apply();
+    },
+
+    setTheme(id) {
+        this.data.theme = id;
+        // 換主題就放掉自訂主色。留著的話換過去只有背景變、主色還卡在
+        // 上一個主題的顏色上，兩邊常常不搭。想要自訂再挑一次就好。
+        this.data.accent = null;
+        this.save();
+        this.apply();
+        renderAll();
+    },
+
+    setGlass(on) {
+        this.data.glass = !!on;
         this.save();
         this.apply();
     },
@@ -133,9 +170,67 @@ const Prefs = {
         const custom = el('input', {
             type: 'color', class: 'color-input',
             value: this.accent(),
-            'aria-label': '自訂主題色',
+            'aria-label': '自訂主色',
             oninput: e => { this.setAccent(e.target.value); mark(); },
         });
+
+        /* ── 主題 ── */
+        const themeRow = el('div', { class: 'theme-row' },
+            THEMES.map(t => el('button', {
+                type: 'button',
+                class: 'theme-card', 'data-id': t.id,
+                'aria-label': `${t.name}・${t.note}`,
+                onclick: () => {
+                    this.setTheme(t.id);
+                    custom.value = this.accent();
+                    mark();
+                },
+            }, [
+                // 預覽用主題自己的顏色畫，不是拿一張截圖——
+                // 改了配色卻忘了改預覽圖，是這種選單最常見的謊。
+                el('div', {
+                    class: 'theme-swatch',
+                    style: `background:${t.vars['--bg']};border-color:${t.vars['--separator']}`,
+                }, [
+                    el('div', { class: 'theme-bar',
+                        style: `background:${t.vars['--card']}` }),
+                    el('div', { class: 'theme-dots' }, [
+                        el('span', { style: `background:${t.vars['--accent']}` }),
+                        el('span', { style: `background:${t.vars['--water']}` }),
+                        el('span', { style: `background:${t.vars['--heart']}` }),
+                        el('span', { style: `background:${t.vars['--lime']}` }),
+                    ]),
+                    el('div', { class: 'theme-line',
+                        style: `background:${t.vars['--text-3']}` }),
+                ]),
+                el('div', { class: 'theme-name', text: t.name }),
+                el('div', { class: 'theme-note', text: t.note }),
+            ])));
+
+        /* ── 磨砂玻璃 ── */
+        const glass = el('label', { class: 'switch-row' }, [
+            el('input', {
+                type: 'checkbox', style: 'width:auto',
+                checked: !!this.data.glass,
+                onchange: e => this.setGlass(e.target.checked),
+            }),
+            el('div', {}, [
+                el('div', { text: '磨砂玻璃' }),
+                el('div', { class: 'sub', text:
+                    '卡片變半透明，背後透出一層模糊的光。'
+                    + '舊一點的機器可能會頓，覺得卡就關掉。' }),
+            ]),
+        ]);
+
+        const mark = () => {
+            for (const b of $$('.theme-card', themeRow)) {
+                b.setAttribute('aria-pressed', String(b.dataset.id === this.data.theme));
+            }
+            const now = this.accent().toLowerCase();
+            for (const b of $$('.accent', box)) {
+                b.setAttribute('aria-pressed', String(b.dataset.c.toLowerCase() === now));
+            }
+        };
 
         const swatches = el('div', { class: 'accent-row' },
             ACCENTS.map(a => el('button', {
@@ -144,24 +239,29 @@ const Prefs = {
                 onclick: () => { this.setAccent(a.c); custom.value = a.c; mark(); },
             })));
 
-        const mark = () => {
-            const now = this.accent().toLowerCase();
-            for (const b of $$('.accent', swatches)) {
-                b.setAttribute('aria-pressed', String(b.dataset.c.toLowerCase() === now));
-            }
-        };
-
         box.append(
-            el('p', { class: 'sub', style: 'margin:0 0 14px', text:
-                '主題色會用在星星、重點數字、主要按鈕和今天那條線上。' }),
+            el('h4', { class: 'sec', text: '主題' }),
+            themeRow,
+            el('h4', { class: 'sec', text: '材質' }),
+            glass,
+            el('h4', { class: 'sec', text: '主色' }),
+            el('p', { class: 'sub', style: 'margin:-6px 0 12px', text:
+                '每個主題自己有一個主色。這裡可以換掉它——'
+                + '換主題的時候會跟著回到那個主題的顏色。' }),
             swatches,
-            el('div', { class: 'row', style: 'align-items:center;gap:10px;margin-top:14px' }, [
+            el('div', { class: 'row', style: 'align-items:center;gap:10px;margin-top:12px' }, [
                 custom,
-                el('span', { class: 'sub', text: '自己挑一個顏色' }),
+                el('span', { class: 'sub', text: '自己挑一個' }),
                 el('button', {
-                    type: 'button', class: 'btn ghost small', text: '恢復預設',
+                    type: 'button', class: 'btn ghost small', text: '跟著主題',
                     style: 'margin-left:auto',
-                    onclick: () => { this.setAccent(DEFAULT_ACCENT); custom.value = DEFAULT_ACCENT; mark(); },
+                    onclick: () => {
+                        this.data.accent = null;
+                        this.save();
+                        this.apply();
+                        custom.value = this.accent();
+                        mark();
+                    },
                 }),
             ]),
         );
