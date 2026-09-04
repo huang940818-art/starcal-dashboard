@@ -135,11 +135,16 @@ const Wall = {
         area.value = note.text;
 
         const at = this.place(note);
+        // 字色跟著便利貼自己的顏色算。**寫死深色字的話，挑一張深色便利貼
+        // 就整張看不見**——字看不見，右下角那兩顆按鈕也一起消失。
+        // 她自訂顏色之後第一個踩到的就是這個。
+        const ink = inkOn(note.color);
         const node = el('div', {
             class: 'sticky',
             'data-id': note.id,
             style: `left:${at.x}px; top:${at.y}px; background:${note.color}; ` +
-                   `z-index:${note.z || 1}; --tilt:${(note.tilt ?? 0).toFixed(2)}deg`,
+                   `z-index:${note.z || 1}; --tilt:${(note.tilt ?? 0).toFixed(2)}deg; ` +
+                   `--ink:${ink}`,
         }, [
             area,
             el('div', { class: 'tools' }, [
@@ -151,6 +156,7 @@ const Wall = {
                         const i = COLORS.indexOf(note.color);
                         note.color = COLORS[(i + 1) % COLORS.length];
                         node.style.background = note.color;
+                        node.style.setProperty('--ink', inkOn(note.color));
                         this.save();
                     },
                 }),
@@ -163,6 +169,7 @@ const Wall = {
                         oninput: e => {
                             note.color = e.target.value;
                             node.style.background = note.color;
+                            node.style.setProperty('--ink', inkOn(note.color));
                             this.save();
                         },
                     }),

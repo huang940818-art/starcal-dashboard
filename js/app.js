@@ -101,6 +101,18 @@ async function main() {
         b.onclick = () => showPanel(b.dataset.panel);
     }
 
+    // 日期和時間欄位：點哪裡都開選擇器。
+    //
+    // 原生的 date/time 只有右邊那顆小圖示會開選擇器，點在數字上
+    // 只能用鍵盤打——而那顆圖示在深色底上幾乎看不見，看起來就是
+    // 「這個欄位點了沒反應」。showPicker() 讓整格都能點。
+    for (const inp of $$('input[type=date], input[type=time]')) {
+        inp.addEventListener('click', () => {
+            // 已經開著、或瀏覽器不支援，就讓它照原本的方式運作
+            try { inp.showPicker?.(); } catch {}
+        });
+    }
+
     const start = location.hash.slice(1);
     showPanel(PANELS.includes(start) ? start : 'overview');
 

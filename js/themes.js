@@ -28,7 +28,7 @@ const THEMES = [
         },
     },
     {
-        id: 'midnight', name: '午夜', note: '深藍紫・Tokyo Night', scheme: 'dark',
+        id: 'midnight', name: '夜藍', note: '深藍紫・Tokyo Night', scheme: 'dark',
         vars: {
             '--bg': '#1A1B26', '--card': '#1F2335', '--raised': '#292E42',
             '--separator': '#3B4261',
@@ -41,7 +41,7 @@ const THEMES = [
         },
     },
     {
-        id: 'mocha', name: '摩卡', note: '奶油紫・Catppuccin', scheme: 'dark',
+        id: 'mocha', name: '薰衣草', note: '柔紫・Catppuccin', scheme: 'dark',
         vars: {
             '--bg': '#181825', '--card': '#1E1E2E', '--raised': '#313244',
             '--separator': '#45475A',
@@ -54,7 +54,7 @@ const THEMES = [
         },
     },
     {
-        id: 'rose', name: '玫瑰松', note: '暗紫粉・Rosé Pine', scheme: 'dark',
+        id: 'rose', name: '暮玫瑰', note: '灰粉・Rosé Pine', scheme: 'dark',
         vars: {
             '--bg': '#191724', '--card': '#1F1D2E', '--raised': '#26233A',
             '--separator': '#403D52',
@@ -67,7 +67,7 @@ const THEMES = [
         },
     },
     {
-        id: 'gruvbox', name: '暖褐', note: '土黃棕・Gruvbox', scheme: 'dark',
+        id: 'gruvbox', name: '土黃', note: '暖棕・Gruvbox', scheme: 'dark',
         vars: {
             '--bg': '#1D2021', '--card': '#282828', '--raised': '#3C3836',
             '--separator': '#504945',
@@ -108,7 +108,7 @@ const THEMES = [
         },
     },
     {
-        id: 'sky', name: '晴空', note: '灰藍・亮色', scheme: 'light',
+        id: 'sky', name: '天藍', note: '冷藍白・亮色', scheme: 'light',
         vars: {
             '--bg': '#EEF2F7', '--card': '#FFFFFF', '--raised': '#E1E8F0',
             '--separator': '#C9D3DF',
@@ -118,6 +118,71 @@ const THEMES = [
             '--sleep': '#6247C4', '--heart': '#BE3D63', '--lime': '#4F7A16',
             '--calendar': '#C0622A',
             '--good': '#25794F', '--warn': '#B0741C', '--alert': '#C03A28',
+        },
+    },
+    {
+        id: 'nord', name: '深海', note: '冷灰藍・Nord', scheme: 'dark',
+        vars: {
+            '--bg': '#242933', '--card': '#2E3440', '--raised': '#3B4252',
+            '--separator': '#4C566A',
+            '--text': '#ECEFF4', '--text-2': '#AEB8C6', '--text-3': '#8996A6',
+            '--accent': '#88C0D0',
+            '--money': '#EBCB8B', '--memo': '#D8A48F', '--water': '#8FBCBB',
+            '--sleep': '#B48EAD', '--heart': '#BF616A', '--lime': '#A3BE8C',
+            '--calendar': '#D08770',
+            '--good': '#A3BE8C', '--warn': '#EBCB8B', '--alert': '#BF616A',
+        },
+    },
+    {
+        id: 'grape', name: '葡萄', note: '深紫・霓虹', scheme: 'dark',
+        vars: {
+            '--bg': '#1A1426', '--card': '#241C33', '--raised': '#332847',
+            '--separator': '#463861',
+            '--text': '#E9E1F7', '--text-2': '#AEA1C9', '--text-3': '#847799',
+            '--accent': '#C792EA',
+            '--money': '#F5C97B', '--memo': '#E0A9C0', '--water': '#7FD4D0',
+            '--sleep': '#B49BF0', '--heart': '#F07EA0', '--lime': '#B5DB77',
+            '--calendar': '#F0A275',
+            '--good': '#8FE0AF', '--warn': '#F0B45F', '--alert': '#F0786A',
+        },
+    },
+    {
+        id: 'cream', name: '奶油', note: '暖米黃・亮色', scheme: 'light',
+        vars: {
+            '--bg': '#FBF6EC', '--card': '#FFFFFF', '--raised': '#F2EADA',
+            '--separator': '#E0D5BF',
+            '--text': '#332F27', '--text-2': '#635C4E', '--text-3': '#8E8677',
+            '--accent': '#A0701A',
+            '--money': '#9C6A15', '--memo': '#8E6240', '--water': '#0D8078',
+            '--sleep': '#6350BC', '--heart': '#B84459', '--lime': '#57801B',
+            '--calendar': '#B25F26',
+            '--good': '#2A7F52', '--warn': '#A96D18', '--alert': '#B83E2A',
+        },
+    },
+    {
+        id: 'mint', name: '薄荷', note: '淺綠・亮色', scheme: 'light',
+        vars: {
+            '--bg': '#EDF5F0', '--card': '#FFFFFF', '--raised': '#DDEDE4',
+            '--separator': '#C3DACE',
+            '--text': '#1D2A24', '--text-2': '#4B5D54', '--text-3': '#77887E',
+            '--accent': '#0E7A66',
+            '--money': '#9A6A16', '--memo': '#8A6045', '--water': '#0C7B84',
+            '--sleep': '#5C4CB8', '--heart': '#B44059', '--lime': '#4E7A16',
+            '--calendar': '#B05C26',
+            '--good': '#237A4E', '--warn': '#A66A16', '--alert': '#B43A28',
+        },
+    },
+    {
+        id: 'fog', name: '霧', note: '中性灰・亮色', scheme: 'light',
+        vars: {
+            '--bg': '#F1F2F5', '--card': '#FFFFFF', '--raised': '#E5E7EC',
+            '--separator': '#D0D4DC',
+            '--text': '#21242A', '--text-2': '#4F545E', '--text-3': '#7B818C',
+            '--accent': '#4C5F8A',
+            '--money': '#96690F', '--memo': '#84604A', '--water': '#0B7880',
+            '--sleep': '#5A4EB0', '--heart': '#B03E58', '--lime': '#4C7714',
+            '--calendar': '#AC5A25',
+            '--good': '#217449', '--warn': '#A06714', '--alert': '#B03726',
         },
     },
 ];

@@ -108,9 +108,7 @@ const Prefs = {
         // 而且猜錯的地方剛好是中間調——例如 #7FB4E8 的亮度只有 0.43，
         // 看起來「不夠亮」，但它配深字的對比度是 6.3，配淺字只有 1.9。
         // 直接算兩邊的對比度取高的，就沒有需要猜的東西。
-        const dark = '#21331F', light = '#F2EFE4';
-        root.style.setProperty('--on-accent',
-            contrast(c, dark) >= contrast(c, light) ? dark : light);
+        root.style.setProperty('--on-accent', inkOn(c) === INK_DARK ? '#21331F' : '#F2EFE4');
     },
 
     setAccent(c) {
@@ -175,8 +173,9 @@ const Prefs = {
         });
 
         /* ── 主題 ── */
-        const themeRow = el('div', { class: 'theme-row' },
-            THEMES.map(t => el('button', {
+        // 分成深色和亮色兩區。十三組排成一片的話，「我要找一個亮的」
+        // 得一個一個看縮圖——而那正是打開這個面板最常見的理由。
+        const themeCard = t => el('button', {
                 type: 'button',
                 class: 'theme-card', 'data-id': t.id,
                 'aria-label': `${t.name}・${t.note}`,
@@ -205,7 +204,16 @@ const Prefs = {
                 ]),
                 el('div', { class: 'theme-name', text: t.name }),
                 el('div', { class: 'theme-note', text: t.note }),
-            ])));
+            ]);
+
+        const themeRow = el('div', {}, [
+            el('div', { class: 'theme-group', text: '深色' }),
+            el('div', { class: 'theme-row' },
+               THEMES.filter(t => t.scheme === 'dark').map(themeCard)),
+            el('div', { class: 'theme-group', text: '亮色' }),
+            el('div', { class: 'theme-row' },
+               THEMES.filter(t => t.scheme === 'light').map(themeCard)),
+        ]);
 
         /* ── 磨砂玻璃 ── */
         const glass = el('label', { class: 'switch-row' }, [
@@ -343,18 +351,3 @@ const Prefs = {
         };
     },
 };
-
-/** 兩個顏色的對比度（WCAG 的算法）。1 是一模一樣，21 是黑配白。 */
-function contrast(a, b) {
-    const la = luminance(a), lb = luminance(b);
-    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
-}
-
-/** 相對亮度（sRGB）。 */
-function luminance(hex) {
-    const n = parseInt(String(hex).slice(1), 16);
-    const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-        .map(v => v / 255)
-        .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
-    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
-}

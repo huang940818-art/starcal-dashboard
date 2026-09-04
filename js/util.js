@@ -88,6 +88,35 @@ function recentMonths(n) {
     return out;
 }
 
+/* ── 顏色 ──────────────────────────────────────────── */
+
+/** 相對亮度（sRGB）。 */
+function luminance(hex) {
+    const n = parseInt(String(hex).slice(1), 16);
+    const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
+        .map(v => v / 255)
+        .map(v => v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+}
+
+/** 兩個顏色的對比度（WCAG 的算法）。1 是一模一樣，21 是黑配白。 */
+function contrast(a, b) {
+    const la = luminance(a), lb = luminance(b);
+    return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/**
+ * 這個底色上該放深字還是淺字。
+ *
+ * **不要用「亮度超過某個值就配深字」那種門檻**——那個數字是猜的，
+ * 而且猜錯的地方剛好是中間調。直接算兩邊的對比度取高的。
+ */
+const INK_DARK = '#23231C';
+const INK_LIGHT = '#F5F2EA';
+function inkOn(bg) {
+    return contrast(bg, INK_DARK) >= contrast(bg, INK_LIGHT) ? INK_DARK : INK_LIGHT;
+}
+
 /* ── 提示 ──────────────────────────────────────────── */
 
 let toastTimer;

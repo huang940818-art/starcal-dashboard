@@ -742,6 +742,29 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
        st ? getComputedStyle(st).touchAction : '沒有便利貼');
     ok('便利貼上可以自己挑顏色', !!q('.wall .sticky .pick input[type=color]'));
 
+    // 深色便利貼上，字和按鈕都要看得見。寫死深色字的話挑一張深色的
+    // 就整張消失——字看不見，右下角那兩顆按鈕也一起不見。
+    {
+      const note = Wall.data.notes[0];
+      const bad = [];
+      for (const c of ['#F9D984', '#2B2438', '#123', '#FFFFFF', '#000000', '#5FC9C0']) {
+        note.color = c;
+        Wall.render(); await sleep(120);
+        const n = q('.wall .sticky');
+        const ink = n.style.getPropertyValue('--ink').trim();
+        const r = contrast(c.length === 4
+            ? '#' + c[1] + c[1] + c[2] + c[2] + c[3] + c[3] : c, ink);
+        if (r < 4.5) bad.push(c + '→' + ink + ' ' + r.toFixed(1));
+      }
+      ok('每一種便利貼顏色上的字都讀得到', bad.length === 0, bad.join('、'));
+      note.color = '#F9D984';
+      Wall.render(); await sleep(120);
+      const tools = q('.wall .sticky .tools button');
+      ok('按鈕的顏色跟著便利貼走，不是寫死的',
+         getComputedStyle(tools).color === getComputedStyle(q('.wall .sticky')).color,
+         getComputedStyle(tools).color);
+    }
+
     // 分頁名稱跟元素 id 撞名（#wall / #agenda），瀏覽器會照 hash 自己捲過去
     // 把上面的工具列捲出畫面——手機上就變成「貼一張」那顆按鈕不見了
     ok('切到想法牆不會把上面的工具列捲掉', scrollY < 10, 'scrollY=' + Math.round(scrollY));

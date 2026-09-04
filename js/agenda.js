@@ -392,14 +392,18 @@ const Agenda = {
      * 跟行程和待辦一樣重的話，這條線上唯一看得到的東西就只剩上課，
      * 真正要處理的事會被淹掉。這裡只是提醒「那幾個時段被佔走了」。
      *
-     * 點下去跳到課表，不在時間線上改：改一堂課是改「每個禮拜」，
-     * 從單一天的畫面上做那件事很容易改錯。
+     * 點下去直接開那一堂的編輯（含刪除）。
+     *
+     * 本來是「跳到課表分頁讓她自己找」，理由是改一堂課等於改每個禮拜，
+     * 從單一天的畫面上做容易改錯。**但那個理由是我的，不是她的**——
+     * 看到一件事卻不能動它，比改錯的風險真實得多。
+     * 對話框上寫清楚「改的是課表，每個禮拜都會變」就夠了。
      */
     classRow(c) {
         return el('div', {
             class: 'event-row class-row',
-            title: '課表裡的固定時段・點一下去課表改',
-            onclick: () => { this.view = 'class'; this.render(); },
+            title: '課表裡的固定時段・點一下改或刪',
+            onclick: () => Timetable.editSlot(c),
         }, [
             el('div', { class: 'event-time', text: Timetable.whenText(c) }),
             el('div', { class: 'grow' }, [
