@@ -52,10 +52,17 @@ const Prefs = {
         this.data.accent ??= DEFAULT_ACCENT;
         this.data.labels ??= [];
 
-        if (!this.data.labels.length
-            && !Cal.data.events.length
-            && !Todo.data.items.length) {
+        // 「從來沒有過」和「自己刪光了」是兩件事，要分得出來。
+        //
+        // 這裡本來的判斷是「已經有行程待辦就不補」，理由是尊重她刪光的選擇。
+        // **那個判斷是錯的**：分類是後來才加的功能，本來就在用的人
+        // 資料裡當然沒有 labels——結果一打開是一排空的篩選列，
+        // 跟「新資料的分類是空的，預算對話框打開一個欄位都沒有」同一種錯。
+        //
+        // 用一個旗標記「補過了」，補過就不再補，這樣兩種情況都對。
+        if (!this.data.labels.length && !this.data.labelsSeeded) {
             this.data.labels = DEFAULT_LABELS();
+            this.data.labelsSeeded = true;
             this.save();
         }
 
@@ -226,6 +233,8 @@ const Prefs = {
             if (orphan) { Cal.save(); Todo.save(); }
 
             this.data.labels = kept;
+            // 她自己動過分類了（包括刪光），之後就不要再自己長回來
+            this.data.labelsSeeded = true;
             this.save();
             dlg.close();
             Agenda.render();

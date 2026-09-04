@@ -375,6 +375,18 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     // ── 分類 ──
     await tab('agenda');
     ok('全新資料有預設分類', Prefs.labels().length > 0, Prefs.labels().length + ' 類');
+    // 「從來沒有過」和「自己刪光了」是兩件事。本來在用的人資料裡沒有
+    // labels，補；她自己刪光之後就不要再長回來。
+    ok('補過預設分類會留下記號', Prefs.data.labelsSeeded === true);
+    {
+      const keep = Prefs.data.labels;
+      Prefs.data.labels = [];
+      await Prefs.init();
+      ok('刪光之後不會自己長回來', Prefs.labels().length === 0,
+         Prefs.labels().length + ' 類');
+      Prefs.data.labels = keep;
+      Prefs.save();
+    }
     ok('分類篩選列畫得出來',
        document.querySelectorAll('#agenda-tools .chip').length >= Prefs.labels().length + 1);
     ok('三個檢視的切換鈕都在',
