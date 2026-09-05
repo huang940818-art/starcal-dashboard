@@ -275,6 +275,31 @@ const Agenda = {
      * 按「只看學校」的時候看到 2 件，清掉的就該是那 2 件，
      * 不是連沒顯示的那 3 件一起。看到什麼就清掉什麼。
      */
+    /**
+     * 把一件過去的行程收掉。
+     *
+     * 過期那一區本來只有「清掉全部」，單筆要點進去開對話框再按刪除——
+     * **她的原話是「過期的我不能按已完成」**。行程沒有「完成」這個狀態
+     * （那是待辦的事），但她要的其實是同一件事：**這件我處理完了，
+     * 讓它從版面上消失。**
+     *
+     * 所以給一顆勾，行為是刪掉，但復原留著——按錯了一秒內按得回來。
+     */
+    doneWithEvent(e) {
+        Cal.data.events = Cal.data.events.filter(x => x.id !== e.id);
+        Cal.save();
+        this.render();
+        Overview.render();
+
+        toastAction(`收掉「${e.title}」`, '復原', () => {
+            if (!Cal.data.events.some(x => x.id === e.id)) Cal.data.events.push(e);
+            Cal.save();
+            this.render();
+            Overview.render();
+            toast('放回去了');
+        });
+    },
+
     clearPastEvents() {
         const gone = this.overdue().events;
         if (!gone.length) return;
@@ -409,6 +434,8 @@ const Agenda = {
     },
 
     eventRow(e, late = false, showDate = false) {
+        // 過期的那幾件才給勾。還沒到的行程不需要「處理掉」，
+        // 多一顆勾只會讓人以為那是「完成」而不小心刪掉。
         // 在「更遠」那一區，左欄要放日期不是時間——那邊沒有按日期分組
         const time = showDate
             ? this.dayLabel(e.date).split('　')[0]
@@ -427,6 +454,14 @@ const Agenda = {
                     [showDate && e.time ? e.time : '', e.note || '']
                         .filter(Boolean).join('　') || null),
             ]),
+            late ? el('button', {
+                type: 'button',
+                class: 'check event-done',
+                'aria-label': `收掉「${e.title}」`,
+                title: '處理完了，收起來（可以復原）',
+                text: '✓',
+                onclick: ev => { ev.stopPropagation(); this.doneWithEvent(e); },
+            }) : null,
         ]);
     },
 

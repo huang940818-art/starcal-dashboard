@@ -721,6 +721,34 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 
 .star-btn.on { color: var(--accent); }
 
+/* 過期行程的「收掉」。
+ *
+ * 長得跟待辦的勾選框一樣，因為她要的是同一件事——
+ * **「這件我處理完了」**。行程沒有完成狀態，所以行為是刪掉，
+ * 但一定要有復原：長得像勾選框的東西被按下去會刪資料，
+ * 沒有退路的話那顆按鈕就太兇了。
+ */
+.event-done {
+    flex: 0 0 auto;
+    color: var(--text-3);
+    font-size: 12px;
+    opacity: .45;
+    transition: opacity .12s, border-color .12s, color .12s;
+}
+
+.event-row:hover .event-done { opacity: 1; }
+
+.event-done:hover {
+    border-color: var(--good);
+    color: var(--good);
+    background: color-mix(in srgb, var(--good) 15%, transparent);
+}
+
+/* 手機沒有 hover，常駐顯示 */
+@media (hover: none) {
+    .event-done { opacity: .8; }
+}
+
 .section-title {
     font-size: 12px;
     color: var(--text-3);

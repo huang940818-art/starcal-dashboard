@@ -286,6 +286,46 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     ok('遠一點的待辦看得到', q('#agenda-list').textContent.includes('25天後的待辦'));
     ok('有「更遠」那一區', q('#agenda-list').textContent.includes('更遠'));
 
+    // 過期的行程要能一件一件收掉。她的原話是「過期的我不能按已完成」——
+    // 行程沒有完成狀態，但她要的是同一件事：這件處理完了，讓它消失。
+    {
+      const past = new Date(Date.now() - 3 * 86400000);
+      const pastYmd = past.getFullYear() + '-'
+          + String(past.getMonth()+1).padStart(2,'0') + '-'
+          + String(past.getDate()).padStart(2,'0');
+      q('#add-event').click(); await sleep(160);
+      q('#e-title').value = '過期的行程';
+      q('#e-date').value = pastYmd;
+      q('#e-save').click(); await sleep(300);
+
+      const row = [...document.querySelectorAll('#agenda-list .overdue-group .event-row')]
+          .find(r => r.textContent.includes('過期的行程'));
+      ok('過期的行程出現在過期那一區', !!row);
+      const done = row?.querySelector('.event-done');
+      ok('過期的行程每一列都有收掉的鍵', !!done);
+      if (done) {
+        const before = Cal.data.events.length;
+        done.click(); await sleep(320);
+        ok('按了就收掉那一件', Cal.data.events.length === before - 1);
+        ok('收掉之後版面上就沒有了',
+           !q('#agenda-list').textContent.includes('過期的行程'));
+        // 長得像勾選框的東西會刪資料，一定要有退路
+        const undo = q('#toast button');
+        ok('收掉之後給得回來', !!undo);
+        if (undo) {
+          undo.click(); await sleep(320);
+          ok('復原真的放回去了', Cal.data.events.length === before);
+        }
+      }
+      // 清乾淨，不要影響後面的檢查
+      Cal.data.events = Cal.data.events.filter(e => e.title !== '過期的行程');
+      Cal.save(); Agenda.render(); await sleep(150);
+    }
+
+    // 還沒到的行程不該有那顆勾——多一顆勾只會讓人以為那是「完成」
+    ok('沒過期的行程不給收掉的鍵',
+       !q('#agenda-list .day-group:not(.overdue-group) .event-done'));
+
     // 看得到就要點得到、刪得掉
     const farRow = [...document.querySelectorAll('#agenda-list .todo-row')]
         .find(r => r.textContent.includes('25天後的待辦'));
