@@ -49,7 +49,7 @@ const Memo = {
         }
 
         for (const m of items) {
-            box.append(el('div', { class: 'memo-row', onclick: () => this.edit(m) }, [
+            box.append(el('div', { class: 'memo-row', onclick: () => this.read(m) }, [
                 el('div', { class: 'grow' }, [
                     el('div', { class: 'memo-title ellipsis' },
                         [m.pinned ? '📌 ' : '', this.titleOf(m.text)].join('')),
@@ -60,6 +60,29 @@ const Memo = {
                 el('div', { class: 'memo-date', text: relativeDay(ymd(new Date(m.updatedAt || Date.now()))) }),
             ]));
         }
+    },
+
+    /* 讀，不是改。
+     *
+     * 點一則備忘本來直接開編輯對話框——那是為「改一行字」設計的，
+     * 不是為「讀一份東西」設計的：內容擠在 190px 的 textarea 裡，
+     * 一次看到四分之一，而且人是站在刪除鍵旁邊讀的。
+     *
+     * 所以先進閱讀畫面，要改再按「編輯」。**多一步，但那一步是往安全的方向。**
+     */
+    read(m) {
+        $('#dlg-memo-read-title').textContent = this.titleOf(m.text);
+
+        const body = $('#mr-body');
+        clear(body);
+        body.append(MD.render(m.text));
+        body.scrollTop = 0;
+
+        const dlg = openDialog('#dlg-memo-read');
+        body.focus();
+
+        $('#mr-close').onclick = () => dlg.close();
+        $('#mr-edit').onclick = () => { dlg.close(); this.edit(m); };
     },
 
     edit(m) {

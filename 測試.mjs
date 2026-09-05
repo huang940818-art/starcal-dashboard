@@ -17,12 +17,18 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad'];
+    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'MD'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
+    //
+    // **沒定義的名字要給 undefined，不能直接丟出去。** names 是所有 load()
+    // 共用的一份清單，只載其中一支檔案的時候，其他名字本來就不存在——
+    // 直接 `return { MD }` 會 ReferenceError，而且錯在 eval 出來的
+    // <anonymous_script> 裡，行號對不回任何一個檔案，很難查。
+    const pick = names.map(n => `${n}: typeof ${n} === 'undefined' ? undefined : ${n}`);
     return new Function(`
         const document = { querySelector: () => null, querySelectorAll: () => [] };
         ${src}
-        return { ${names.join(', ')} };
+        return { ${pick.join(', ')} };
     `)();
 }
 
@@ -837,4 +843,88 @@ test('沒有點就給空字串，不是畫不出來的 M', () => {
 test('點串得成 SVG 的 d', () => {
     const d = Charts.linePath([{ x: 0, y: 10 }, { x: 5, y: 0 }]);
     assert.equal(d, 'M0.0 10.0 L5.0 0.0');
+});
+
+/* ── Markdown 排版 ────────────────────────────────────
+ *
+ * 只測 parse（純函式）。畫出來長怎樣用眼睛看比較快，
+ * 但「這一行到底算不算標題」用眼睛看不出來——`#1` 和 `# 1`
+ * 差一個空白，錯了畫面上只會少一個字級，不會有任何地方報錯。
+ */
+
+const { MD } = load('./js/md.js');
+
+test('標題要井字號加空白，沒空白的不是標題', () => {
+    assert.deepEqual(MD.parse('# 一'), [{ t: 'heading', level: 1, text: '一' }]);
+    assert.deepEqual(MD.parse('### 三'), [{ t: 'heading', level: 3, text: '三' }]);
+    assert.deepEqual(MD.parse('#1'), [{ t: 'para', text: '#1' }]);
+});
+
+test('五個井字號不是標題（只認到四級）', () => {
+    assert.equal(MD.parse('##### 五')[0].t, 'para');
+});
+
+test('三種項目符號都算清單', () => {
+    for (const mark of ['- ', '* ', '• ']) {
+        assert.deepEqual(MD.parse(mark + '項目'), [{ t: 'bullet', text: '項目' }]);
+    }
+});
+
+test('編號要數字加點，括號和字母都不算', () => {
+    assert.deepEqual(MD.parse('1. 第一'), [{ t: 'numbered', number: '1.', text: '第一' }]);
+    assert.deepEqual(MD.parse('12. 第十二'), [{ t: 'numbered', number: '12.', text: '第十二' }]);
+    assert.equal(MD.parse('1) 第一')[0].t, 'para');
+    assert.equal(MD.parse('a. 第一')[0].t, 'para');
+});
+
+test('連續的行併成一段，空行斷開', () => {
+    assert.deepEqual(MD.parse('上\n下'), [{ t: 'para', text: '上\n下' }]);
+    assert.deepEqual(MD.parse('上\n\n下'),
+        [{ t: 'para', text: '上' }, { t: 'para', text: '下' }]);
+});
+
+test('程式碼區塊裡的井字號和減號是內容不是語法', () => {
+    const b = MD.parse('```\n# 不是標題\n- 不是清單\n```');
+    assert.deepEqual(b, [{ t: 'code', text: '# 不是標題\n- 不是清單' }]);
+});
+
+test('沒收尾的程式碼區塊也要把內容吐出來，不能靜靜消失', () => {
+    const b = MD.parse('```\n還在寫');
+    assert.deepEqual(b, [{ t: 'code', text: '還在寫' }]);
+});
+
+test('三個減號是分隔線，兩個不是', () => {
+    assert.deepEqual(MD.parse('---'), [{ t: 'divider' }]);
+    assert.equal(MD.parse('--')[0].t, 'para');
+});
+
+test('引言要大於號加空白', () => {
+    assert.deepEqual(MD.parse('> 引'), [{ t: 'quote', text: '引' }]);
+    assert.equal(MD.parse('>引')[0].t, 'para');
+});
+
+test('空的和沒有東西都給空陣列，不是丟錯', () => {
+    assert.deepEqual(MD.parse(''), []);
+    assert.deepEqual(MD.parse('   \n\n  '), []);
+    assert.deepEqual(MD.parse(null), []);
+    assert.deepEqual(MD.parse(undefined), []);
+});
+
+test('沒寫 markdown 的舊備忘就是一段一段的文字', () => {
+    const b = MD.parse('停車位 B3-27\n\n店員說七天內可以換');
+    assert.deepEqual(b.map(x => x.t), ['para', 'para']);
+});
+
+test('行內：粗體優先於斜體，不然星號會被拆成兩個空的斜體', () => {
+    const parts = '很**重要**的'.split(MD.INLINE).filter(s => s !== '');
+    assert.deepEqual(parts, ['很', '**重要**', '的']);
+});
+
+test('行內：反引號先切走，裡面的星號是內容', () => {
+    const parts = '打 `a*b*c` 看看'.split(MD.INLINE).filter(s => s !== '');
+    assert.deepEqual(parts, ['打 ', '`a*b*c`', ' 看看']);
+});
+
+test('行內語法不跨行，避免整篇被一個落單的星號吃掉', () => {
+    assert.equal(MD.INLINE.test('*上\n下*'), false);
 });

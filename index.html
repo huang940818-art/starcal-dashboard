@@ -436,6 +436,17 @@
     </form>
 </dialog>
 
+<dialog id="dlg-memo-read" class="reader">
+    <div class="reader-head">
+        <h3 id="dlg-memo-read-title">備忘</h3>
+        <div class="dialog-actions">
+            <button type="button" class="btn" id="mr-edit">編輯</button>
+            <button type="button" class="btn primary" id="mr-close">關閉</button>
+        </div>
+    </div>
+    <div class="reader-body" id="mr-body" tabindex="0"></div>
+</dialog>
+
 <dialog id="dlg-memo">
     <form method="dialog">
         <h3 id="dlg-memo-title">備忘</h3>
@@ -574,6 +585,7 @@
      所以 util 一定要先載。 -->
 <script src="js/util.js"></script>
 <script src="js/icons.js"></script>
+<script src="js/md.js"></script>
 <script src="js/demo.js"></script>
 <script src="js/store.js"></script>
 <script src="js/data.js"></script>

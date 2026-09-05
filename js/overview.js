@@ -116,40 +116,60 @@ const Overview = {
         ]));
     },
 
+    /** 切到「接下來」的某一個檢視。網址和分頁鈕都交給 showPanel 處理。 */
+    goAgenda(view) {
+        Agenda.view = view;
+        showPanel('agenda');
+    },
+
     heroStats(openCount, todayCount) {
         const s = Money.monthSummary(thisMonth());
+        // **每一格都要有去處。** 這排數字本來是純顯示的 div，
+        // 底下那句「留一個點不進去的數字只會讓人找不到入口」講的是想法牆，
+        // 但同一句話對整排都成立——一個看得到又進不去的數字，
+        // 等於逼人自己去猜它住在哪一個分頁。
         const stats = [
             {
                 hue: 'var(--accent)', ico: 'calendar', name: '今天',
                 value: String(todayCount), unit: '件',
+                go: () => this.goAgenda('timeline'),
             },
             {
                 hue: 'var(--good)', ico: 'todo', name: '待辦',
                 value: String(openCount), unit: openCount ? '件沒做' : null,
+                go: () => this.goAgenda('timeline'),
             },
             {
                 hue: 'var(--money)', ico: 'money', name: '這個月',
                 value: money(s.net, true), unit: null,
                 negative: s.net < 0,
+                go: () => showPanel('money'),
             },
             {
                 hue: 'var(--calendar)', ico: 'clock', name: '今天的課',
                 value: String(Timetable.on(todayStr()).length), unit: '堂',
+                go: () => this.goAgenda('class'),
             },
             {
                 hue: 'var(--memo)', ico: 'memo', name: '備忘',
                 value: String(Memo.data.items.length), unit: '則',
+                go: () => showPanel('memo'),
             },
             // 想法牆在窄螢幕上整個分頁是收起來的（見 app.js 的 WALL_MIN_WIDTH），
             // 這一格也跟著收——留一個點不進去的數字只會讓人找不到入口。
             wallUsable() ? {
                 hue: 'var(--sleep)', ico: 'wall', name: '想法牆',
                 value: String(Wall.data.notes.length), unit: '張',
+                go: () => showPanel('wall'),
             } : null,
         ].filter(Boolean);
 
-        return el('div', { class: 'stats' }, stats.map(x => el('div', {
-            class: 'stat', style: `--hue:${x.hue}`,
+        // 用 <button> 不是 <div onclick>：鍵盤 Tab 進得去、Enter 按得動、
+        // 螢幕報讀器會說「按鈕」。長相由 CSS 剝乾淨，看起來還是一格數字。
+        return el('div', { class: 'stats' }, stats.map(x => el('button', {
+            class: 'stat', type: 'button', style: `--hue:${x.hue}`,
+            'aria-label': `${x.name} ${x.value}${x.unit || ''}`,
+            onclick: x.go,
         }, [
             el('div', { class: 'k' }, [icon(x.ico, 14), x.name]),
             el('div', { class: 'v' + (x.negative ? ' negative' : '') }, [
@@ -287,7 +307,7 @@ const Overview = {
                                onclick: () => { showPanel('memo'); Memo.edit(null); } })),
             shown.length
                 ? el('div', {}, shown.map(m => el('div', {
-                    class: 'memo-row', onclick: () => { showPanel('memo'); Memo.edit(m); },
+                    class: 'memo-row', onclick: () => { showPanel('memo'); Memo.read(m); },
                 }, [
                     el('div', { class: 'grow' }, [
                         el('div', { class: 'memo-title ellipsis', text: Memo.titleOf(m.text) }),
