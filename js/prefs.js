@@ -37,12 +37,9 @@ const LABEL_COLORS = [
  *  只在完全沒有分類、也還沒有任何行程待辦的時候才補：
  *  她自己刪光的話要尊重她。 */
 const DEFAULT_LABELS = () => [
-    { id: uid(), name: '學校',  color: '#7FB4E8' },
-    { id: uid(), name: '專題',  color: '#5FC9C0' },
-    { id: uid(), name: '生活',  color: '#B8D96F' },
-    { id: uid(), name: '身體',  color: '#EE8FA3' },
-    { id: uid(), name: '錢',    color: '#F0B45F' },
-];
+    ['學校', '#7FB4E8'], ['專題', '#5FC9C0'], ['生活', '#B8D96F'],
+    ['身體', '#EE8FA3'], ['錢', '#F0B45F'],
+].map(([name, color]) => ({ id: uid(), name, color, updatedAt: stamp() }));
 
 const Prefs = {
     data: null,
@@ -318,6 +315,7 @@ const Prefs = {
                     draft.push({
                         id: uid(), name: '',
                         color: LABEL_COLORS[draft.length % LABEL_COLORS.length],
+                        updatedAt: stamp(),
                     });
                     draw();
                 },
@@ -329,7 +327,16 @@ const Prefs = {
 
         $('#l-save').onclick = () => {
             const kept = draft.filter(l => l.name.trim());
-            for (const l of kept) l.name = l.name.trim();
+            const before = new Map(this.labels().map(l => [l.id, l]));
+            for (const l of kept) {
+                l.name = l.name.trim();
+                // 只有真的改過的才動時間戳。全部蓋一次的話，
+                // 每次打開這個視窗按存都會贏過手機那邊的修改。
+                const old = before.get(l.id);
+                if (!old || old.name !== l.name || old.color !== l.color) {
+                    l.updatedAt = stamp();
+                }
+            }
 
             // 分類被刪掉的話，指到它的行程和待辦要放掉那個 id——
             // 留著的話那些東西會永遠指向一個不存在的分類，

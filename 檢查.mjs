@@ -756,6 +756,21 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
          misplaced.length + ' 格沒對齊');
     }
 
+    // 同步要靠 updatedAt 比新舊。**沒有時間戳的話合併會靜靜地出錯**：
+    // 在網頁上改的課一律輸給手機那份，改了等於沒改。
+    ok('存課的時候有寫時間戳', !!Timetable.slots()[0].updatedAt,
+       Timetable.slots()[0].updatedAt || '沒有');
+    // **不要用正則。** PROBE 是外面那層的樣板字串，反斜線會先被吃掉一層，
+    // 今天已經因為這件事讓整段檢查靜靜不跑過一次了。
+    {
+      const ts = Timetable.slots()[0].updatedAt || '';
+      ok('時間戳帶毫秒（跟手機那邊同一種格式）',
+         ts.length === 24 && ts.endsWith('Z') && ts[ts.length - 5] === '.', ts);
+    }
+    ok('課表本身也有時間戳', !!Timetable.active().updatedAt);
+    ok('分類有時間戳', Prefs.labels().every(l => l.updatedAt),
+       Prefs.labels().map(l => l.updatedAt || '(沒有)').join(' '));
+
     // 節次沒設時間的時候，時間線要寫節次，不能生一個「–」出來假裝有時間
     ok('沒設節次時間就寫節次', Timetable.whenText(Timetable.slots()[0]) === '9–10 節',
        Timetable.whenText(Timetable.slots()[0]));

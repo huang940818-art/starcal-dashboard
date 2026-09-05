@@ -502,7 +502,7 @@ const Timetable = {
                 Object.assign(patch, { start, end, from: null, to: null });
             }
 
-            Object.assign(s, patch);
+            Object.assign(s, patch, { updatedAt: stamp() });
             if (isNew) this.active().slots.push(s);
             this.save();
             dlg.close();
@@ -586,12 +586,18 @@ const Timetable = {
                 // 改其中一份會連另一份一起改掉
                 const from = $('#p-copy-field').hidden ? '' : $('#p-copy').value;
                 const src = from ? this.set(from)?.slots || [] : [];
-                const fresh = { id: uid(), name, mode, slots: src.map(s => ({ ...s, id: uid() })) };
+                const fresh = {
+                    id: uid(), name, mode, updatedAt: stamp(),
+                    // 複製的話每一堂都要換 id 和時間戳，不然兩份課表
+                    // 共用同一個 id，改其中一份會連另一份一起改掉
+                    slots: src.map(s => ({ ...s, id: uid(), updatedAt: stamp() })),
+                };
                 this.data.sets.push(fresh);
                 this.data.active = fresh.id;
             } else {
                 set.name = name;
                 set.mode = mode;
+                set.updatedAt = stamp();
             }
             this.save();
             dlg.close();
