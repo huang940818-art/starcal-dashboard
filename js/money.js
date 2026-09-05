@@ -1061,6 +1061,157 @@ const Money = {
         };
     },
 
+    /* ── 從別的 App 匯進來 ──────────────────────────── */
+
+    openImport() {
+        const box = $('#csv-body');
+        clear(box);
+        $('#csv-go').hidden = true;
+        box.append(
+            el('p', { class: 'sub', style: 'margin:0 0 14px;line-height:1.75', text:
+                '大部分記帳 App 都能把資料匯出成 CSV。選好檔案之後，'
+                + '我會先猜每一欄是什麼、給你看前幾筆，確認過才真的匯進來。' }),
+            el('button', {
+                type: 'button', class: 'btn primary', text: '選一個 CSV 檔',
+                onclick: () => $('#csv-file').click(),
+            }));
+        openDialog('#dlg-csv');
+    },
+
+    async handleImportFile(file) {
+        const text = await file.text();
+        const { headers, rows } = Csv.parse(text);
+        const box = $('#csv-body');
+        clear(box);
+
+        if (!headers.length || !rows.length) {
+            $('#csv-go').hidden = true;
+            box.append(el('p', { class: 'rc-diff', text: '這個檔案裡沒有讀得到的資料。' }));
+            return;
+        }
+
+        const map = Csv.guessMapping(headers);
+        const accounts = this.data.accounts.map(a => a.name);
+        const fields = [
+            ['date', '日期', true],
+            ['amount', '金額', false],
+            ['income', '收入欄', false],
+            ['expense', '支出欄', false],
+            ['kind', '收支類型', false],
+            ['category', '分類', false],
+            ['note', '備註', false],
+            ['account', '帳戶', false],
+        ];
+
+        const preview = el('div', { id: 'csv-preview' });
+
+        const redraw = () => {
+            clear(preview);
+            const out = Csv.toTransactions(rows, map, {
+                accounts,
+                defaultAccount: this.data.accounts[0]?.name || '',
+            });
+            const { fresh, dup } = Csv.dedupe(out.rows, this.data.transactions);
+            this._pendingImport = fresh;
+            $('#csv-go').hidden = !fresh.length;
+            $('#csv-go').textContent = fresh.length ? `匯進 ${fresh.length} 筆` : '沒有可以匯的';
+
+            preview.append(el('p', { class: 'csv-count' }, [
+                `讀到 ${rows.length} 列，可以匯 `,
+                el('strong', { text: String(fresh.length) }),
+                ' 筆。',
+                dup.length ? `　${dup.length} 筆已經有了，會跳過。` : '',
+            ]));
+
+            // **解不開的要講出來。** 安靜地跳過等於偷偷少匯了幾筆。
+            if (out.problems.length) {
+                preview.append(el('details', { class: 'csv-problems' }, [
+                    el('summary', { text: `${out.problems.length} 列讀不懂，不會匯進來` }),
+                    el('div', {}, out.problems.slice(0, 20).map(p =>
+                        el('div', { class: 'sub', text: `第 ${p.line} 列：${p.why}`
+                            + (p.raw ? `（${p.raw}）` : '') }))),
+                ]));
+            }
+
+            if (!fresh.length) return;
+
+            // 前五筆長什麼樣。**看不到就不敢按**——兩百筆錯的混進來
+            // 之後要一筆一筆挑出來刪，比重打還累。
+            const table = el('table', { class: 'csv-table' }, [
+                el('tr', {}, ['日期', '收支', '金額', '分類', '備註', '帳戶']
+                    .map(h => el('th', { text: h }))),
+                ...fresh.slice(0, 5).map(t => el('tr', {}, [
+                    el('td', { text: t.date }),
+                    el('td', { text: { income: '收入', expense: '支出', transfer: '轉帳' }[t.kind] }),
+                    el('td', { class: 'money-num', text: money(t.amount) }),
+                    el('td', { text: t.category || '—' }),
+                    el('td', { class: 'ellipsis', text: t.note || '—' }),
+                    el('td', { text: t.account || '—' }),
+                ])),
+            ]);
+            preview.append(table);
+            if (fresh.length > 5) {
+                preview.append(el('p', { class: 'sub', text: `…還有 ${fresh.length - 5} 筆` }));
+            }
+        };
+
+        box.append(
+            el('p', { class: 'sub', style: 'margin:0 0 12px',
+                text: `${file.name}・讀到 ${rows.length} 列。下面是我猜的欄位對應，可以改。` }),
+            el('div', { class: 'csv-map' }, fields.map(([key, label, required]) =>
+                el('label', { class: 'field' }, [
+                    el('span', { text: label + (required ? '（一定要）' : '') }),
+                    (() => {
+                        const sel = el('select', {
+                            onchange: e => { map[key] = e.target.value || undefined; redraw(); },
+                        });
+                        fillSelect(sel, [{ value: '', label: '（沒有）' },
+                                         ...headers.map(h => ({ value: h, label: h }))],
+                                   map[key] || '');
+                        return sel;
+                    })(),
+                ]))),
+            preview);
+
+        redraw();
+    },
+
+    doImport() {
+        const rows = this._pendingImport || [];
+        if (!rows.length) return;
+
+        // 匯進來的分類如果本機沒有，補上去——不然那些帳會變成「未分類」，
+        // 統計就白做了。
+        const have = new Set(this.data.categories.expense.map(c => c.name));
+        const incomeHave = new Set(this.data.categories.income.map(c => c.name));
+        for (const t of rows) {
+            if (!t.category) continue;
+            if (t.kind === 'income' && !incomeHave.has(t.category)) {
+                incomeHave.add(t.category);
+                this.data.categories.income.push({ name: t.category });
+            } else if (t.kind !== 'income' && !have.has(t.category)) {
+                have.add(t.category);
+                this.data.categories.expense.push({ name: t.category, nature: 'flexible' });
+            }
+        }
+
+        this.data.transactions.push(...rows);
+        this.save();
+        $('#dlg-csv').close();
+        this.render();
+        Overview.render();
+
+        const ids = new Set(rows.map(t => t.id));
+        toastAction(`匯進 ${rows.length} 筆`, '全部收回', () => {
+            this.data.transactions = this.data.transactions.filter(t => !ids.has(t.id));
+            this.save();
+            this.render();
+            Overview.render();
+            toast('收回來了');
+        });
+        this._pendingImport = null;
+    },
+
     /* ── 對帳的畫面 ─────────────────────────────────── */
 
     openReconcile(a) {
@@ -1358,6 +1509,13 @@ const Money = {
         // 「哪些算固定」跟「管理分類」是同一個畫面。入口放兩個地方，
         // 因為她是在看那張卡的時候才想到要問「這是怎麼分的」。
         $('#edit-nature').onclick = () => this.editCategories();
+        $('#import-csv').onclick = () => this.openImport();
+        $('#csv-go').onclick = () => this.doImport();
+        $('#csv-file').onchange = e => {
+            const file = e.target.files?.[0];
+            e.target.value = '';       // 同一個檔連選兩次也要有反應
+            if (file) this.handleImportFile(file);
+        };
 
         $('#trend-range').onchange = () => this.renderTrend();
 

@@ -100,7 +100,10 @@
 
             <div class="card wide" data-hue="money">
                 <h2 data-icon="list"><span class="label">所有帳目</span>
-                    <button class="btn small ghost" id="manage-categories">管理分類</button>
+                    <span>
+                        <button class="btn small ghost" id="import-csv">從別的 App 匯入</button>
+                        <button class="btn small ghost" id="manage-categories">管理分類</button>
+                    </span>
                 </h2>
                 <div class="row" style="margin-bottom:14px">
                     <input id="q" type="search" placeholder="搜尋店名、備註、分類…" aria-label="搜尋">
@@ -284,6 +287,19 @@
         </div>
     </form>
 </dialog>
+
+<dialog id="dlg-csv">
+    <form method="dialog">
+        <h3>從別的記帳 App 匯進來</h3>
+        <div id="csv-body"></div>
+        <div class="dialog-actions">
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="csv-go" hidden>匯進來</button>
+        </div>
+    </form>
+</dialog>
+
+<input type="file" id="csv-file" accept=".csv,text/csv" hidden>
 
 <dialog id="dlg-reconcile">
     <form method="dialog">
@@ -554,6 +570,7 @@
 <script src="js/store.js"></script>
 <script src="js/data.js"></script>
 <script src="js/autocat.js"></script>
+<script src="js/csv.js"></script>
 <script src="js/money.js"></script>
 <script src="js/todo.js"></script>
 <script src="js/timetable.js"></script>

@@ -501,6 +501,45 @@ input:focus, select, textarea:focus {
 
 textarea { resize: vertical; min-height: 76px; line-height: 1.6; }
 
+/* 從別的 App 匯入 */
+.csv-map {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0 12px;
+}
+
+.csv-count { margin: 14px 0 8px; }
+
+.csv-problems {
+    margin-bottom: 12px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+
+.csv-problems summary { cursor: pointer; font-size: 13px; color: var(--warn); }
+.csv-problems .sub { margin-top: 4px; }
+
+.csv-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+}
+
+.csv-table th {
+    text-align: left;
+    font-weight: 500;
+    color: var(--text-3);
+    padding: 4px 6px;
+    border-bottom: 1px solid var(--separator);
+}
+
+.csv-table td {
+    padding: 5px 6px;
+    border-bottom: 1px solid color-mix(in srgb, var(--separator) 40%, transparent);
+    max-width: 120px;
+}
+
 /* 固定 vs 彈性 */
 .ff-split {
     display: flex;

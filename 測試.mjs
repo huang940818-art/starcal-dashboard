@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range'];
+    const names = ['Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
     return new Function(`
         const document = { querySelector: () => null, querySelectorAll: () => [] };
@@ -26,8 +26,8 @@ function load(...files) {
     `)();
 }
 
-const { Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO, AutoCat, Range } =
-    load('./js/util.js', './js/demo.js', './js/money.js', './js/autocat.js');
+const { Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO, AutoCat, Range, Csv } =
+    load('./js/util.js', './js/demo.js', './js/money.js', './js/autocat.js', './js/csv.js');
 
 /** 給一份乾淨的資料，避免測試互相影響 */
 function setup(overrides = {}) {
@@ -513,4 +513,157 @@ test('日期在不在區間裡，邊界那兩天算在裡面', () => {
     assert.equal(Range.contains(r, '2026-08-31'), false);
     assert.equal(Range.contains(r, '2026-10-01'), false);
     assert.equal(Range.contains(r, null), false);
+});
+
+/* ── 從別的記帳 App 匯進來 ────────────────────────────
+ *
+ * 匯錯的資料很糟：兩百筆混進來之後要一筆一筆挑出來刪，比重打還累。
+ * 所以每一種格式都要釘住，解不開的要講出來而不是安靜跳過。
+ */
+
+test('引號裡的逗號不會被當成分隔', () => {
+    const { headers, rows } = Csv.parse('日期,金額,備註\n2026-09-05,120,"全家,買飲料"');
+    assert.deepEqual(headers, ['日期', '金額', '備註']);
+    assert.equal(rows[0]['備註'], '全家,買飲料');
+});
+
+test('兩個引號是一個引號', () => {
+    const { rows } = Csv.parse('備註\n"他說""好"""');
+    assert.equal(rows[0]['備註'], '他說"好"');
+});
+
+test('BOM 不會黏在第一個欄位名上', () => {
+    // 有 BOM 的話「日期」會變成「﻿日期」，之後所有比對都對不上
+    const { headers } = Csv.parse('﻿日期,金額\n2026-09-05,120');
+    assert.deepEqual(headers, ['日期', '金額']);
+});
+
+test('結尾的空行不會變成一筆帳', () => {
+    const { rows } = Csv.parse('日期,金額\n2026-09-05,120\n\n');
+    assert.equal(rows.length, 1);
+});
+
+test('欄位猜得出來', () => {
+    const m = Csv.guessMapping(['日期', '金額', '分類', '備註', '帳戶']);
+    assert.equal(m.date, '日期');
+    assert.equal(m.amount, '金額');
+    assert.equal(m.category, '分類');
+    assert.equal(m.note, '備註');
+    assert.equal(m.account, '帳戶');
+});
+
+test('完整相同優先——「支出金額」不該被猜成金額欄', () => {
+    const m = Csv.guessMapping(['日期', '收入金額', '支出金額']);
+    assert.equal(m.income, '收入金額');
+    assert.equal(m.expense, '支出金額');
+});
+
+test('英文欄位名也認得', () => {
+    const m = Csv.guessMapping(['Date', 'Amount', 'Category', 'Note']);
+    assert.equal(m.date, 'Date');
+    assert.equal(m.amount, 'Amount');
+});
+
+test('一個欄位不會被猜成兩種用途', () => {
+    const m = Csv.guessMapping(['日期', '金額']);
+    const used = Object.values(m);
+    assert.equal(used.length, new Set(used).size);
+});
+
+test('三種日期寫法都認得', () => {
+    assert.equal(Csv.parseDate('2026/9/5'), '2026-09-05');
+    assert.equal(Csv.parseDate('2026-09-05'), '2026-09-05');
+    assert.equal(Csv.parseDate('2026.9.5'), '2026-09-05');
+    assert.equal(Csv.parseDate('2026年9月5日'), '2026-09-05');
+});
+
+test('猜不出月日順序的日期一律不收——猜錯的話整批都錯', () => {
+    assert.equal(Csv.parseDate('09/05/2026'), null);
+    assert.equal(Csv.parseDate(''), null);
+    assert.equal(Csv.parseDate('昨天'), null);
+});
+
+test('金額的千分位、貨幣符號、負號都認得', () => {
+    assert.equal(Csv.parseAmount('1,234'), 1234);
+    assert.equal(Csv.parseAmount('$1234'), 1234);
+    assert.equal(Csv.parseAmount('NT1,234'), 1234);
+    assert.equal(Csv.parseAmount('-120'), -120);
+    assert.equal(Csv.parseAmount('120.5'), 120.5);
+    assert.equal(Csv.parseAmount('abc'), null);
+});
+
+test('收入和支出分成兩欄的格式', () => {
+    const { rows } = Csv.parse('日期,收入,支出,備註\n2026-09-05,,120,全家\n2026-09-06,5000,,打工');
+    const map = Csv.guessMapping(['日期', '收入', '支出', '備註']);
+    const out = Csv.toTransactions(rows, map);
+    assert.equal(out.rows.length, 2);
+    assert.equal(out.rows[0].kind, 'expense');
+    assert.equal(out.rows[0].amount, 120);
+    assert.equal(out.rows[1].kind, 'income');
+    assert.equal(out.rows[1].amount, 5000);
+});
+
+test('單欄金額加類型欄的格式', () => {
+    const { rows } = Csv.parse('日期,類型,金額\n2026-09-05,支出,120\n2026-09-06,收入,5000');
+    const map = Csv.guessMapping(['日期', '類型', '金額']);
+    const out = Csv.toTransactions(rows, map);
+    assert.equal(out.rows[0].kind, 'expense');
+    assert.equal(out.rows[1].kind, 'income');
+});
+
+test('解不開的那幾列要講出來，不能安靜跳過', () => {
+    const { rows } = Csv.parse('日期,金額\n2026-09-05,120\n昨天,50\n2026-09-07,abc');
+    const map = Csv.guessMapping(['日期', '金額']);
+    const out = Csv.toTransactions(rows, map);
+    assert.equal(out.rows.length, 1);
+    assert.equal(out.problems.length, 2);
+    assert.equal(out.problems[0].line, 3);      // 行號要跟試算表對得起來
+    assert.match(out.problems[0].why, /日期/);
+    assert.match(out.problems[1].why, /金額/);
+});
+
+test('帳戶對不上現有的就用預設，不要憑空建一堆帳戶', () => {
+    const { rows } = Csv.parse('日期,金額,帳戶\n2026-09-05,120,悠遊卡儲值');
+    const map = Csv.guessMapping(['日期', '金額', '帳戶']);
+    const out = Csv.toTransactions(rows, map,
+        { accounts: ['現金', '郵局'], defaultAccount: '現金' });
+    assert.equal(out.rows[0].account, '現金');
+});
+
+test('帳戶名對得上就用那個', () => {
+    const { rows } = Csv.parse('日期,金額,帳戶\n2026-09-05,120,郵局');
+    const map = Csv.guessMapping(['日期', '金額', '帳戶']);
+    const out = Csv.toTransactions(rows, map,
+        { accounts: ['現金', '郵局'], defaultAccount: '現金' });
+    assert.equal(out.rows[0].account, '郵局');
+});
+
+test('已經有的不要再匯一次', () => {
+    const existing = [{ date: '2026-09-05', kind: 'expense', amount: 120, note: '全家' }];
+    const incoming = [
+        { date: '2026-09-05', kind: 'expense', amount: 120, note: '全家' },
+        { date: '2026-09-06', kind: 'expense', amount: 90, note: '7-11' },
+    ];
+    const { fresh, dup } = Csv.dedupe(incoming, existing);
+    assert.equal(fresh.length, 1);
+    assert.equal(dup.length, 1);
+    assert.equal(fresh[0].note, '7-11');
+});
+
+test('同一批裡面自己重複的也只留一筆', () => {
+    const incoming = [
+        { date: '2026-09-05', kind: 'expense', amount: 120, note: '全家' },
+        { date: '2026-09-05', kind: 'expense', amount: 120, note: '全家' },
+    ];
+    const { fresh, dup } = Csv.dedupe(incoming, []);
+    assert.equal(fresh.length, 1);
+    assert.equal(dup.length, 1);
+});
+
+test('同一天同金額但備註不同的是兩筆，不能當成重複', () => {
+    const incoming = [
+        { date: '2026-09-05', kind: 'expense', amount: 50, note: '早餐' },
+        { date: '2026-09-05', kind: 'expense', amount: 50, note: '飲料' },
+    ];
+    assert.equal(Csv.dedupe(incoming, []).fresh.length, 2);
 });

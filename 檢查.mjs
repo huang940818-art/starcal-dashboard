@@ -242,6 +242,69 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     ok('按了會開管理分類', q('#dlg-categories').open);
     q('#dlg-categories button[value=\"cancel\"]').click(); await sleep(180);
 
+    // ── 從別的記帳 App 匯進來 ──
+    // 匯錯的資料很糟：兩百筆混進來之後要一筆一筆挑出來刪，比重打還累。
+    // 所以一定要有預覽，而且解不開的那幾列要講出來。
+    {
+      ok('「所有帳目」那張卡有匯入的入口', !!q('#import-csv'));
+      q('#import-csv').click(); await sleep(220);
+      ok('匯入視窗開得起來', q('#dlg-csv').open);
+      ok('一開始只給選檔案，還不能按匯入', q('#csv-go').hidden);
+
+      // 直接餵一份 CSV 進去，不經過檔案選擇器
+      const csv = [
+        '日期,類型,金額,分類,備註,帳戶',
+        '2026-09-01,支出,120,飲食,全家,現金',
+        '2026-09-02,收入,5000,打工,九月薪水,現金',
+        '昨天,支出,50,飲食,讀不懂的那列,現金',
+      ].join(String.fromCharCode(10));
+      await Money.handleImportFile(new File([csv], '別的App.csv', { type: 'text/csv' }));
+      await sleep(300);
+
+      ok('欄位對應猜出來了',
+         document.querySelectorAll('#csv-body .csv-map select').length === 8);
+      ok('有預覽表格', !!q('#csv-table') || !!q('.csv-table'));
+      ok('讀不懂的那列有講出來',
+         q('.csv-problems')?.textContent.includes('讀不懂') === true
+         || q('.csv-problems')?.textContent.includes('1 列') === true,
+         q('.csv-problems')?.textContent.slice(0, 40) || '沒有那一區');
+      ok('可以按匯入了', !q('#csv-go').hidden, q('#csv-go').textContent);
+
+      const before = Money.data.transactions.length;
+      q('#csv-go').click(); await sleep(350);
+      ok('真的匯進來了', Money.data.transactions.length === before + 2,
+         String(Money.data.transactions.length - before));
+      ok('讀不懂的那列沒有被硬塞進來',
+         !Money.data.transactions.some(t => (t.note || '').includes('讀不懂')));
+      ok('匯進來的分類有補到分類清單',
+         Money.data.categories.income.some(c => c.name === '打工'));
+
+      // 兩百筆匯錯之後要一筆一筆刪，所以一定要能整批收回
+      const undo = q('.toast-btn');
+      ok('匯完給得起「全部收回」', !!undo, undo ? undo.textContent : '沒有');
+      if (undo) {
+        undo.click(); await sleep(350);
+        ok('收回之後真的清乾淨', Money.data.transactions.length === before);
+      }
+
+      // 同一份再匯一次不該重複
+      await Money.handleImportFile(new File([csv], '別的App.csv', { type: 'text/csv' }));
+      await sleep(300);
+      q('#csv-go').click(); await sleep(350);
+      const after = Money.data.transactions.length;
+      await Money.handleImportFile(new File([csv], '別的App.csv', { type: 'text/csv' }));
+      await sleep(300);
+      ok('已經匯過的會被認出來，不給重複匯',
+         q('#csv-go').hidden || q('#csv-body').textContent.includes('已經有了'),
+         q('#csv-body').textContent.slice(0, 60));
+      q('#dlg-csv button[value=\"cancel\"]').click(); await sleep(200);
+
+      // 清乾淨
+      Money.data.transactions = Money.data.transactions.filter(
+          t => !['全家', '九月薪水'].includes(t.note));
+      Money.save(); Money.render(); await sleep(200);
+    }
+
     // ── 對帳 ──
     // 「為什麼會有差價」沒辦法真的知道——漏記的那筆已經不在資料裡了。
     // 能做的是把範圍縮到最小。
