@@ -230,6 +230,67 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
        getComputedStyle(q('#t-category-field')).display === 'none');
     q('#dlg-txn button[value=\"cancel\"]').click(); await sleep(200);
 
+    // ── 對帳 ──
+    // 「為什麼會有差價」沒辦法真的知道——漏記的那筆已經不在資料裡了。
+    // 能做的是把範圍縮到最小。
+    {
+      q('#add-account').click(); await sleep(160);
+      q('#a-name').value = '郵局';
+      q('#a-opening').value = '1000';
+      q('#a-save').click(); await sleep(280);
+
+      const acc = Money.data.accounts.find(a => a.name === '郵局');
+      ok('帳戶列上有對帳的入口',
+         [...document.querySelectorAll('#accounts-list button')]
+           .some(b => b.textContent === '對帳'));
+
+      Money.openReconcile(acc); await sleep(220);
+      ok('對帳視窗開得起來', q('#dlg-reconcile').open);
+      ok('帳上算出來的填好了', q('#rc-computed').value.includes('1,000'),
+         q('#rc-computed').value);
+
+      // 對得起來
+      q('#rc-actual').value = '1000';
+      q('#rc-actual').dispatchEvent(new Event('input'));
+      await sleep(200);
+      ok('對得起來的時候說對得起來',
+         q('#rc-result').textContent.includes('一塊錢都沒差'));
+
+      // 對不起來
+      q('#rc-actual').value = '800';
+      q('#rc-actual').dispatchEvent(new Event('input'));
+      await sleep(200);
+      ok('對不起來的時候講出差多少',
+         q('#rc-result').textContent.includes('200'), q('#rc-result').textContent.slice(0, 60));
+      ok('第一次對帳不會假裝知道是什麼時候漏的',
+         q('#rc-result').textContent.includes('第一次對帳'));
+
+      const before = Money.data.transactions.length;
+      q('#rc-adjust').click(); await sleep(320);
+      ok('補一筆之後帳就平了', Money.balance('郵局') === 800, String(Money.balance('郵局')));
+      ok('真的多了一筆', Money.data.transactions.length === before + 1);
+      ok('補的那筆看得出是對帳補的',
+         Money.data.transactions.some(t => (t.note || '').includes('對帳')));
+      ok('記下了對帳的日期', !!Money.data.accounts.find(a => a.name === '郵局').checkedAt);
+
+      // 第二次對帳：範圍縮到上次之後
+      Money.openReconcile(Money.data.accounts.find(a => a.name === '郵局'));
+      await sleep(220);
+      q('#rc-actual').value = '700';
+      q('#rc-actual').dispatchEvent(new Event('input'));
+      await sleep(200);
+      ok('對過一次之後就講得出範圍',
+         q('#rc-result').textContent.includes('對過一次'),
+         q('#rc-result').textContent.slice(0, 80));
+      q('#dlg-reconcile button[value=\"cancel\"]').click(); await sleep(200);
+
+      // 清乾淨，不要影響後面的檢查
+      Money.data.transactions = Money.data.transactions
+          .filter(t => !(t.note || '').includes('對帳'));
+      Money.data.accounts = Money.data.accounts.filter(a => a.name !== '郵局');
+      Money.save(); Money.render(); await sleep(200);
+    }
+
     // ── 記一筆整條路 ──
     q('#add-account').click(); await sleep(160);
     q('#a-name').value = '現金';

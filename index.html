@@ -267,10 +267,40 @@
             <input id="a-include" type="checkbox" checked style="width:auto">
             <span style="margin:0">算進存款總額</span>
         </label>
+        <label class="field" style="display:flex;align-items:center;gap:9px">
+            <input id="a-savings" type="checkbox" style="width:auto">
+            <span style="margin:0">這是存錢罐</span>
+        </label>
+        <p class="sub" style="margin:-4px 0 12px">
+            存錢罐還是算進總資產，但不算進「可以花的」。
+            存錢的動作用轉帳，那本來就不算花掉。
+        </p>
         <div class="dialog-actions">
             <button type="button" class="btn danger spacer" id="a-delete" hidden>刪除</button>
             <button class="btn" value="cancel" formnovalidate>取消</button>
             <button type="button" class="btn primary" id="a-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-reconcile">
+    <form method="dialog">
+        <h3 id="dlg-reconcile-title">對帳</h3>
+        <p class="sub" style="margin:-8px 0 14px">
+            打開銀行 App 或數一下錢包，把<strong>現在實際有多少</strong>填進來。
+            對不起來的話，我會把範圍縮到上次對帳之後。
+        </p>
+        <div class="row">
+            <label class="field"><span>帳上算出來是</span>
+                <input id="rc-computed" disabled></label>
+            <label class="field"><span>實際上有</span>
+                <input id="rc-actual" type="number" step="1" inputmode="decimal"></label>
+        </div>
+        <div id="rc-result"></div>
+        <div class="dialog-actions">
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn" id="rc-save">只記下對過了</button>
+            <button type="button" class="btn primary" id="rc-adjust">補一筆差額</button>
         </div>
     </form>
 </dialog>

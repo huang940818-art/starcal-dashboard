@@ -95,6 +95,96 @@ const Money = {
             .reduce((s, a) => s + this.balance(a.name), 0);
     },
 
+    /* ── 存錢罐 ────────────────────────────────────────
+     *
+     * 她要的是「生活費另外記」「存錢要再轉進銀行」「銀行裡的如果有要算，
+     * 另外記」——三句話講的是同一件事：**錢要分成幾個桶，但總數還是要
+     * 看得到。**
+     *
+     * 所以不做「分帳本」（那會讓兩邊完全看不到彼此），做「存錢罐帳戶」：
+     * 標成存錢罐的帳戶還是算進總資產，但**不算進「可以花的」**。
+     * 存錢的動作是轉帳（本來就不算收支），所以存進去不會被當成花掉。
+     */
+
+    /** 可以花的：不含存錢罐 */
+    spendable() {
+        return this.data.accounts
+            .filter(a => a.includeInTotal !== false && !a.isSavings)
+            .reduce((s, a) => s + this.balance(a.name), 0);
+    },
+
+    /** 存起來的 */
+    saved() {
+        return this.data.accounts
+            .filter(a => a.includeInTotal !== false && a.isSavings)
+            .reduce((s, a) => s + this.balance(a.name), 0);
+    },
+
+    hasSavings() {
+        return this.data.accounts.some(a => a.isSavings);
+    },
+
+    /* ── 對帳 ──────────────────────────────────────────
+     *
+     * 她的原話是「如果有差價，要計算一下為什麼」。
+     *
+     * **「為什麼」我沒辦法真的知道**——漏記的那筆已經不在資料裡了。
+     * 能做的是把範圍縮到最小：記下上次對帳的時間點，下次對帳時
+     * 就變成「9/1 對過一次，之後記了 12 筆，帳上該少 1,404，
+     * 但實際少了 1,604 —— 那 200 是 9/1 之後漏掉的」。
+     *
+     * 從「不知道哪裡不見了」變成「9/1 之後漏了 200」，
+     * 那才是幫得上忙的答案。
+     */
+
+    /** 上次對帳之後這個帳戶的變動（照帳目算出來的） */
+    changeSince(name, sinceDate) {
+        let sum = 0;
+        for (const t of this.data.transactions) {
+            if (sinceDate && t.date < sinceDate) continue;
+            const amt = Number(t.amount) || 0;
+            if (t.kind === 'income' && t.account === name) sum += amt;
+            else if (t.kind === 'expense' && t.account === name) sum -= amt;
+            else if (t.kind === 'transfer') {
+                if (t.account === name) sum -= amt;
+                if (t.toAccount === name) sum += amt;
+            }
+        }
+        return sum;
+    },
+
+    /** 上次對帳之後記了幾筆 */
+    countSince(name, sinceDate) {
+        return this.data.transactions.filter(t =>
+            (!sinceDate || t.date >= sinceDate)
+            && (t.account === name || t.toAccount === name)).length;
+    },
+
+    /**
+     * 對一次帳。
+     *
+     * @param name    帳戶名
+     * @param actual  她從銀行 App 或錢包裡數出來的實際金額
+     * @returns 差額和能講得出來的範圍
+     */
+    reconcile(name, actual) {
+        const acc = this.data.accounts.find(a => a.name === name);
+        const computed = this.balance(name);
+        const diff = Number(actual) - computed;
+        const since = acc?.checkedAt || null;
+
+        return {
+            computed,
+            actual: Number(actual),
+            diff,
+            since,
+            // 上次對帳之後的變動和筆數。**沒對過帳的話這兩個沒有意義**——
+            // 差額可能來自任何時候，講「最近漏了多少」會是騙人的。
+            changeSince: since ? this.changeSince(name, since) : null,
+            countSince: since ? this.countSince(name, since) : null,
+        };
+    },
+
     /** 某個月的收入與支出。**轉帳兩者都不算**——錢從左口袋到右口袋，
      *  算成支出的話每轉一次帳就多花一次錢。 */
     monthSummary(ym) {
@@ -215,6 +305,20 @@ const Money = {
         total.append(
             el('div', { class: 'big money-num', text: money(this.total()) }),
             el('div', { class: 'sub', text: '算進總額的帳戶合計' }));
+
+        // 有存錢罐才拆開講。沒有的話多兩個數字只是噪音。
+        if (this.hasSavings()) {
+            total.append(el('div', { class: 'split-row' }, [
+                el('div', {}, [
+                    el('div', { class: 'sub', text: '可以花的' }),
+                    el('div', { class: 'money-num', text: money(this.spendable()) }),
+                ]),
+                el('div', {}, [
+                    el('div', { class: 'sub', text: '存起來的' }),
+                    el('div', { class: 'money-num saved', text: money(this.saved()) }),
+                ]),
+            ]));
+        }
         list.style.marginTop = '14px';
 
         const kindName = { cash: '現金', bank: '銀行', credit: '信用卡', invest: '投資', other: '其他' };
@@ -224,12 +328,19 @@ const Money = {
                 el('div', { class: 'grow' }, [
                     el('div', { class: 'ellipsis', text: a.name }),
                     el('div', { class: 'sub' },
-                        [kindName[a.kind] || '其他', a.includeInTotal === false ? '　不計入總額' : '']
+                        [kindName[a.kind] || '其他',
+                         a.isSavings ? '　存錢罐' : '',
+                         a.includeInTotal === false ? '　不計入總額' : '']
                             .join('')),
                 ]),
                 el('div', {
                     class: 'money-num' + (bal < 0 ? ' negative' : ''),
                     text: money(bal),
+                }),
+                el('button', {
+                    class: 'btn small ghost', text: '對帳',
+                    title: a.checkedAt ? `上次對帳 ${a.checkedAt}` : '還沒對過帳',
+                    onclick: () => this.openReconcile(a),
                 }),
                 el('button', {
                     class: 'btn small ghost', text: '改',
@@ -754,6 +865,91 @@ const Money = {
         };
     },
 
+    /* ── 對帳的畫面 ─────────────────────────────────── */
+
+    openReconcile(a) {
+        $('#dlg-reconcile-title').textContent = `對帳・${a.name}`;
+        $('#rc-computed').value = money(this.balance(a.name));
+        $('#rc-actual').value = '';
+        clear($('#rc-result'));
+
+        const dlg = openDialog('#dlg-reconcile');
+        const show = () => {
+            const box = $('#rc-result');
+            clear(box);
+            const raw = $('#rc-actual').value;
+            if (raw === '') return;
+
+            const r = this.reconcile(a.name, raw);
+            if (r.diff === 0) {
+                box.append(el('p', { class: 'rc-ok', text: '對得起來，一塊錢都沒差。' }));
+                return;
+            }
+
+            const more = r.diff > 0;
+            box.append(el('p', { class: 'rc-diff' }, [
+                `實際${more ? '多' : '少'}了 `,
+                el('strong', { text: money(Math.abs(r.diff)) }),
+                more ? '　（有筆收入沒記到）' : '　（有筆支出沒記到）',
+            ]));
+
+            // **範圍是這裡最有用的東西。** 差額本身她自己看銀行也知道，
+            // 「9/1 之後漏了 200」才是幫得上忙的答案。
+            if (r.since) {
+                box.append(el('p', { class: 'sub' },
+                    `${r.since} 對過一次，之後記了 ${r.countSince} 筆、`
+                    + `合計 ${money(r.changeSince, true)}。`
+                    + `這 ${money(Math.abs(r.diff))} 是那之後漏掉的。`));
+            } else {
+                // 沒對過帳就不要假裝知道範圍——那個差額可能來自任何時候
+                box.append(el('p', { class: 'sub' },
+                    '這是第一次對帳，所以沒辦法說是什麼時候漏的。'
+                    + '補完這一筆之後，下次就只要找這次到下次之間。'));
+            }
+        };
+
+        $('#rc-actual').oninput = show;
+
+        $('#rc-adjust').onclick = () => {
+            const raw = $('#rc-actual').value;
+            if (raw === '') return toast('先填實際有多少', true);
+            const r = this.reconcile(a.name, raw);
+            if (r.diff !== 0) {
+                // 補一筆把帳做平。**分類寫清楚是「對帳補的」**——
+                // 混在飲食裡的話，月底統計會多出一筆她沒花過的錢。
+                this.data.transactions.push({
+                    id: uid(),
+                    date: todayStr(),
+                    kind: r.diff > 0 ? 'income' : 'expense',
+                    amount: Math.abs(r.diff),
+                    category: '其他',
+                    account: a.name,
+                    note: `對帳補的差額（${r.since ? r.since + ' 之後' : '第一次對帳'}）`,
+                    updatedAt: stamp(),
+                });
+            }
+            a.checkedBalance = Number(raw);
+            a.checkedAt = todayStr();
+            a.updatedAt = stamp();
+            this.save();
+            dlg.close();
+            this.render();
+            Overview.render();
+            toast(r.diff === 0 ? '對過了' : `補了一筆 ${money(Math.abs(r.diff))}`);
+        };
+
+        $('#rc-save').onclick = () => {
+            const raw = $('#rc-actual').value;
+            a.checkedBalance = raw === '' ? undefined : Number(raw);
+            a.checkedAt = todayStr();
+            a.updatedAt = stamp();
+            this.save();
+            dlg.close();
+            this.render();
+            toast('記下對過了，差額沒有補');
+        };
+    },
+
     editAccount(a) {
         const isNew = !a;
         const old = a?.name;
@@ -764,6 +960,7 @@ const Money = {
         $('#a-kind').value = a.kind;
         $('#a-opening').value = a.opening;
         $('#a-include').checked = a.includeInTotal !== false;
+        $('#a-savings').checked = !!a.isSavings;
         $('#a-delete').hidden = isNew;
 
         const dlg = openDialog('#dlg-account');
@@ -778,6 +975,7 @@ const Money = {
                 name, kind: $('#a-kind').value,
                 opening: Number($('#a-opening').value) || 0,
                 includeInTotal: $('#a-include').checked,
+                isSavings: $('#a-savings').checked,
             });
 
             // 改名的話，帳目裡的帳戶名要一起改，不然那些帳會變成孤兒

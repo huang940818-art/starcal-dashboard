@@ -494,6 +494,24 @@ input:focus, select, textarea:focus {
 
 textarea { resize: vertical; min-height: 76px; line-height: 1.6; }
 
+/* 可以花的 vs 存起來的 */
+.split-row {
+    display: flex;
+    gap: 22px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid color-mix(in srgb, var(--separator) 60%, transparent);
+}
+
+.split-row .money-num { font-size: 18px; font-weight: 600; margin-top: 2px; }
+.split-row .saved { color: var(--good); }
+
+/* 對帳的結果 */
+.rc-ok { color: var(--good); margin: 0 0 12px; }
+.rc-diff { color: var(--alert); margin: 0 0 6px; }
+#rc-result .sub { margin: 0 0 12px; line-height: 1.7; }
+#rc-computed { color: var(--text-3); }
+
 /* 自動分類的說明。**要看得出這是猜的**——她一眼分得出
  * 「我選的」和「它猜的」，才敢讓它繼續猜。 */
 .cat-hint {

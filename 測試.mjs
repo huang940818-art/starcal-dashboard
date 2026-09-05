@@ -301,3 +301,132 @@ test('新的記錄排前面就贏——同一家店改記到別的分類，之�
     const 改過 = [{ note: '全家', category: '日用' }, { note: '全家', category: '飲食' }];
     assert.equal(AutoCat.guess('全家', 改過, 她的分類).category, '日用');
 });
+
+/* ── 對帳 ─────────────────────────────────────────────
+ *
+ * 「為什麼會有差價」沒辦法真的知道——漏記的那筆已經不在資料裡了。
+ * 能做的是把範圍縮到最小：從「不知道哪裡不見了」變成
+ * 「9/1 之後漏了 200」。
+ */
+
+function 對帳用的帳() {
+    return {
+        accounts: [{ name: '郵局', kind: 'bank', opening: 1000, includeInTotal: true }],
+        transactions: [
+            { id: 'a', date: '2026-08-20', kind: 'expense', amount: 100, account: '郵局', category: '飲食' },
+            { id: 'b', date: '2026-09-02', kind: 'expense', amount: 300, account: '郵局', category: '飲食' },
+            { id: 'c', date: '2026-09-03', kind: 'income', amount: 500, account: '郵局', category: '打工' },
+        ],
+        subscriptions: [], budgets: [], categories: { expense: [], income: [] },
+    };
+}
+
+test('對得起來的時候差額是零', () => {
+    Money.data = 對帳用的帳();
+    const r = Money.reconcile('郵局', 1100);   // 1000 - 100 - 300 + 500
+    assert.equal(r.computed, 1100);
+    assert.equal(r.diff, 0);
+});
+
+test('實際比帳上少，差額是負的', () => {
+    Money.data = 對帳用的帳();
+    const r = Money.reconcile('郵局', 900);
+    assert.equal(r.diff, -200);
+});
+
+test('沒對過帳的話不講「最近漏了多少」——那會是騙人的', () => {
+    Money.data = 對帳用的帳();
+    const r = Money.reconcile('郵局', 900);
+    assert.equal(r.since, null);
+    assert.equal(r.changeSince, null);
+    assert.equal(r.countSince, null);
+});
+
+test('對過帳之後，範圍縮到上次對帳那天以後', () => {
+    Money.data = 對帳用的帳();
+    Money.data.accounts[0].checkedAt = '2026-09-01';
+    const r = Money.reconcile('郵局', 900);
+    // 9/1 之後：-300 +500 = +200，兩筆
+    assert.equal(r.changeSince, 200);
+    assert.equal(r.countSince, 2);
+    assert.equal(r.since, '2026-09-01');
+});
+
+test('轉帳兩邊都算——只算一邊的話對帳永遠對不起來', () => {
+    Money.data = 對帳用的帳();
+    Money.data.accounts.push({ name: '現金', kind: 'cash', opening: 0, includeInTotal: true });
+    Money.data.transactions.push({
+        id: 'd', date: '2026-09-04', kind: 'transfer',
+        amount: 200, account: '郵局', toAccount: '現金',
+    });
+    assert.equal(Money.balance('郵局'), 900);
+    assert.equal(Money.balance('現金'), 200);
+});
+
+test('上次對帳之後的筆數含轉出和轉入', () => {
+    Money.data = 對帳用的帳();
+    Money.data.accounts[0].checkedAt = '2026-09-01';
+    Money.data.transactions.push({
+        id: 'd', date: '2026-09-04', kind: 'transfer',
+        amount: 200, account: '現金', toAccount: '郵局',
+    });
+    assert.equal(Money.countSince('郵局', '2026-09-01'), 3);
+});
+
+/* ── 存錢罐 ───────────────────────────────────────────
+ *
+ * 「生活費另外記」「存錢要再轉進銀行」「銀行裡的如果有要算，另外記」
+ * 講的是同一件事：錢要分成幾個桶，但總數還是要看得到。
+ */
+
+function 有存錢罐的帳() {
+    return {
+        accounts: [
+            { name: '現金', kind: 'cash', opening: 3000, includeInTotal: true },
+            { name: '存錢罐', kind: 'bank', opening: 10000, includeInTotal: true, isSavings: true },
+            { name: '不算的', kind: 'other', opening: 999, includeInTotal: false },
+        ],
+        transactions: [],
+        subscriptions: [], budgets: [], categories: { expense: [], income: [] },
+    };
+}
+
+test('總資產含存錢罐', () => {
+    Money.data = 有存錢罐的帳();
+    assert.equal(Money.total(), 13000);
+});
+
+test('可以花的不含存錢罐', () => {
+    Money.data = 有存錢罐的帳();
+    assert.equal(Money.spendable(), 3000);
+});
+
+test('存起來的只算存錢罐', () => {
+    Money.data = 有存錢罐的帳();
+    assert.equal(Money.saved(), 10000);
+});
+
+test('不計入總額的帳戶兩邊都不算', () => {
+    Money.data = 有存錢罐的帳();
+    assert.equal(Money.spendable() + Money.saved(), Money.total());
+});
+
+test('存錢是轉帳，不會被當成花掉', () => {
+    Money.data = 有存錢罐的帳();
+    Money.data.transactions.push({
+        id: 'x', date: '2026-09-05', kind: 'transfer',
+        amount: 1000, account: '現金', toAccount: '存錢罐',
+    });
+    // 總資產不變，只是從一個桶挪到另一個
+    assert.equal(Money.total(), 13000);
+    assert.equal(Money.spendable(), 2000);
+    assert.equal(Money.saved(), 11000);
+    // 而且這個月沒有多花一毛
+    assert.equal(Money.monthSummary('2026-09').expense, 0);
+});
+
+test('沒有存錢罐的時候不要多講兩個數字', () => {
+    Money.data = 有存錢罐的帳();
+    Money.data.accounts = Money.data.accounts.filter(a => !a.isSavings);
+    assert.equal(Money.hasSavings(), false);
+});
