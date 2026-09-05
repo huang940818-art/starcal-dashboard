@@ -72,6 +72,24 @@
  */
 [hidden] { display: none !important; }
 
+/* **金額不要上下按鈕。**
+ *
+ * `type="number"` 附贈的那對小箭頭是「加一減一」，但沒有人記帳是
+ * 一塊一塊加上去的——她的原話是「感覺沒意義」。而且它們很細，
+ * 手指按下去常常按到隔壁。
+ *
+ * 保留 type="number" 是為了手機跳出數字鍵盤，那個才是重點。 */
+input[type="number"] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
 body {
     margin: 0;
     /* 純平色會扁。頂端一層極淡的暖光，像有東西照著，
@@ -514,6 +532,24 @@ input:focus, select, textarea:focus {
 }
 
 textarea { resize: vertical; min-height: 76px; line-height: 1.6; }
+
+/* 管理分類的每一列：名稱吃剩下的寬度，兩個小的靠右。
+ *
+ * **不要用 .row**——那是給表單欄位的，手機上會被拆成直的
+ * （一個分類佔三行，十三個分類就是三十九行）。
+ *
+ * **也不要叫 .cat-row**——「這個月花在哪」那些列已經用了那個名字，
+ * 兩邊會互相污染。第一版就是這樣，改名前檢查一直說「被拆開了」。 */
+.cat-edit-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.cat-edit-row > input { flex: 1; min-width: 0; }
+.cat-edit-row > select { flex: 0 0 auto; width: auto; }
+.cat-edit-row > .btn { flex: 0 0 auto; }
 
 /* 從別的 App 匯入 */
 .csv-map {
@@ -1459,6 +1495,19 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 /* 待辦用虛線邊，跟行程分得出來——兩種東西同一個樣子的話，
  * 就得點進去才知道自己在看什麼 */
 .cal-item.todo { border-left-style: dotted; border-left-width: 4px; }
+
+/* 篩了某一個分類的時候，課才會一堂一堂寫出來。
+ * 樣式比行程和待辦輕——課是每週固定的，那個月真正不一樣的
+ * 還是行程和待辦。 */
+.cal-item.cls {
+    border-left: none;
+    background: none;
+    padding-left: 0;
+    color: var(--text-3);
+    cursor: default;
+}
+
+.cal-item.cls .label-dot { width: 6px; height: 6px; margin-right: 4px; }
 .cal-item.done { opacity: .5; text-decoration: line-through; }
 
 .cal-more {
@@ -1516,6 +1565,8 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
     .cal-grid { gap: 3px; }
     .cal-cell { min-height: 52px; padding: 4px; }
     .cal-items, .cal-more { display: none; }
+    /* 手機格子只有五十幾像素寬，篩選了也塞不下課名 */
+    .cal-item.cls { display: none; }
     /* 課的點在手機上也留著——那是「這天要不要出門」唯一的線索 */
     .cal-cls-dots { margin-left: 4px; }
     .cls-dot { width: 4px; height: 4px; }
@@ -1844,15 +1895,16 @@ footer {
 .toast.bad { border-color: var(--alert); color: var(--alert); }
 
 @media (max-width: 620px) {
-    /* **對話框裡的兩欄一行在手機上要拆開。**
+    /* **兩個一樣寬的欄位並排在手機上要拆開。**
      *
      * `.row > * { min-width: 120px }` 在窄螢幕上擠不下兩個，日期欄
      * 會壓到旁邊的分類欄——她的截圖上「2026年9月5日」蓋在「飲食」上。
-     * 手機一行只放一個欄位，寧可捲一點也不要疊在一起。 */
-    dialog .row { flex-direction: column; align-items: stretch; }
-    dialog .row > * { min-width: 0; }
-    /* 篩選那一排例外：那些是小小的下拉，並排才好用 */
-    dialog .row > .shrink { flex: 0 0 auto; }
+     *
+     * **但只有 `.field` 那種整欄的才拆。** 第一版寫成 `dialog .row`
+     * 一律直排，把管理分類每一列（名稱＋固定／彈性＋刪）也拆成三行——
+     * 一個分類佔三行，十三個分類就是三十九行，完全讀不了。
+     * 那一列本來就是「一個大的加兩個小的」，並排才對。 */
+    dialog .row > .field { min-width: 100%; }
 
     /* 十二個月擠在一支手機上，字要更小才不會疊 */
     .chart-label { font-size: 9.5px; }

@@ -1434,13 +1434,14 @@ const Money = {
 
                 for (const c of this.data.categories[group]) {
                     const used = this.data.transactions.some(t => t.category === c.name);
-                    box.append(el('div', { class: 'row', style: 'margin-bottom:8px' }, [
+                    box.append(el('div', { class: 'cat-edit-row' }, [
                         el('input', {
                             value: c.name,
+                            'aria-label': '分類名稱',
                             oninput: e => { c.name = e.target.value; },
                         }),
                         group === 'expense' ? el('select', {
-                            class: 'shrink', style: 'width:auto',
+                            'aria-label': `${c.name} 是固定還是彈性`,
                             onchange: e => { c.nature = e.target.value; },
                         }, [
                             el('option', { value: 'flexible', text: '彈性', selected: c.nature !== 'fixed' }),
@@ -1448,7 +1449,7 @@ const Money = {
                         ]) : null,
                         el('button', {
                             type: 'button',
-                            class: 'btn small shrink ' + (used ? 'ghost' : 'danger'),
+                            class: 'btn small ' + (used ? 'ghost' : 'danger'),
                             text: used ? '有帳目' : '刪',
                             title: used ? '已經有帳目用這個分類，改名可以，刪掉不行' : '',
                             onclick: () => {

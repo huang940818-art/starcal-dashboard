@@ -183,6 +183,28 @@ const MonthView = {
                         onclick: e => { e.stopPropagation(); this.picked = c.day; this.render(); },
                     })
                     : null,
+                // 課平常用一行摘要，不一堂一堂列——**每天四五堂課列進格子的話，
+                // 這個月只剩下上課看得到**，而月曆要回答的是
+                // 「這個月哪幾天不一樣」。
+                //
+                // **但篩了某一個分類就整堂寫出來。** 她的原話是
+                // 「比如我按學校 就可以完全顯示課表」——篩選之後格子裡
+                // 只剩那一類，量少了就有空間，而且那時候她要看的
+                // 就是「這個月的學校課長什麼樣」。
+                ...(Agenda.filter
+                    ? c.classes.slice(0, 3).map(k => el('div', { class: 'cal-item cls' }, [
+                        el('span', {
+                            class: 'label-dot',
+                            style: `background:${Prefs.label(k.label)?.color || 'var(--lime)'}`,
+                        }),
+                        el('span', { class: 'ellipsis', text: k.name }),
+                      ]))
+                    : [c.classes.length
+                        ? el('div', { class: 'cal-class', text: `${c.classes.length} 堂課` })
+                        : null]),
+                Agenda.filter && c.classes.length > 3
+                    ? el('div', { class: 'cal-more', text: `＋${c.classes.length - 3} 堂` })
+                    : null,
                 el('div', { class: 'cal-dots' },
                     items.slice(0, 5).map(x => {
                         const l = Prefs.label(x.it.label);

@@ -83,6 +83,35 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
              .join('、'));
       }
 
+      // 管理分類的每一列要在同一行。
+      //
+      // 一度被我改壞：為了修表單欄位重疊，加了「對話框裡的 .row 一律直排」，
+      // 結果把這裡每一列（名稱＋固定／彈性＋刪）也拆成三行——
+      // 一個分類佔三行，十三個分類就是三十九行，完全讀不了。
+      await tab('money'); await sleep(260);
+      q('#manage-categories').click(); await sleep(300);
+      {
+        const rows = [...document.querySelectorAll('#category-editor .cat-edit-row')];
+        ok('管理分類列得出分類', rows.length > 0, rows.length + ' 列');
+        const broken = rows.filter(r => {
+          const kids = [...r.children];
+          if (kids.length < 2) return false;
+          // **比垂直中心，不是 top。** align-items: center 之下，
+          // 比較矮的元素 top 本來就不一樣——比 top 會一直誤報。
+          const mids = kids.map(k => {
+            const b = k.getBoundingClientRect();
+            return Math.round(b.top + b.height / 2);
+          });
+          return Math.max(...mids) - Math.min(...mids) > 4;
+        });
+        ok('每一列的名稱、固定彈性、刪都在同一行', broken.length === 0,
+           broken.length + ' 列被拆開了');
+        ok('名稱欄吃得到寬度',
+           rows[0].querySelector('input').getBoundingClientRect().width > 100,
+           Math.round(rows[0].querySelector('input').getBoundingClientRect().width) + 'px');
+      }
+      q('#dlg-categories button[value=\"cancel\"]').click(); await sleep(200);
+
       // 想法牆在窄螢幕上整個收起來。便利貼的價值是空間關係，
       // 一面只有一張半便利貼寬的牆擺不出那個——那不是「做得爛一點」，
       // 是不該出現在這個尺寸上。
@@ -246,6 +275,14 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     ok('「新增帳戶」的區塊預設是收起來的',
        getComputedStyle(q('#t-new-account')).display === 'none',
        getComputedStyle(q('#t-new-account')).display);
+    // 金額的上下箭頭沒意義——沒有人記帳是一塊一塊加上去的，
+    // 而且那對箭頭很細，手指按下去常常按到隔壁。
+    ok('金額沒有上下按鈕',
+       getComputedStyle(q('#t-amount')).appearance === 'textfield'
+       || getComputedStyle(q('#t-amount'), '::-webkit-inner-spin-button').appearance === 'none',
+       getComputedStyle(q('#t-amount')).appearance);
+    ok('但還是數字鍵盤', q('#t-amount').type === 'number');
+
     ok('記一筆一打開就有選好的分類',
        !!q('#t-category').value, JSON.stringify(q('#t-category').value));
     q('#t-kind').value = 'transfer';
@@ -973,6 +1010,26 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
          !q('#calendar .cal-day').textContent.includes('分類測試行程'));
     } else ok('點別天會換掉底下的內容', false, '找不到別的格子');
     MonthView.shift(1); await sleep(260);
+    // 篩了某一個分類，月曆格子要把那一類的課整堂寫出來。
+    // 她的原話是「比如我按學校 就可以完全顯示課表」——篩選之後
+    // 格子裡只剩那一類，量少了就有空間。
+    {
+      const before = document.querySelectorAll('#calendar .cal-item.cls').length;
+      ok('沒篩選的時候課只寫「N 堂課」', before === 0,
+         before + ' 個');
+      const label = Prefs.labels()[0];
+      if (label) {
+        Agenda.filter = label.id;
+        Agenda.render(); await sleep(280);
+        ok('篩了分類之後月曆上寫得出課名',
+           document.querySelectorAll('#calendar .cal-item.cls').length > 0
+           || !Timetable.slots().some(k => k.label === label.id),
+           document.querySelectorAll('#calendar .cal-item.cls').length + ' 堂');
+        Agenda.filter = null;
+        Agenda.render(); await sleep(220);
+      }
+    }
+
     ok('翻得到下個月', MonthView.ym !== thisMonth());
     MonthView.today(); await sleep(220);
     ok('回得到這個月', MonthView.ym === thisMonth());
