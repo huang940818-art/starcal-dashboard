@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'MD'];
+    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'MD', 'Weather'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
     //
     // **沒定義的名字要給 undefined，不能直接丟出去。** names 是所有 load()
@@ -927,4 +927,109 @@ test('行內：反引號先切走，裡面的星號是內容', () => {
 
 test('行內語法不跨行，避免整篇被一個落單的星號吃掉', () => {
     assert.equal(MD.INLINE.test('*上\n下*'), false);
+});
+
+/* ── 天氣 ──────────────────────────────────────────────
+ *
+ * 只測純的那幾支：代碼對照、回傳整形、快取鍵。
+ * 抓網路和定位權限測不了，但「API 少給一個欄位的時候會不會畫出半張卡片」
+ * 測得到——而那正是最容易出事、又最不會有人報錯的地方。
+ */
+
+const { Weather } = load('./js/weather.js');
+
+test('天氣代碼分成七類，看得懂的都對得上', () => {
+    assert.equal(Weather.describe(0).text, '晴');
+    assert.equal(Weather.describe(1).text, '多雲');
+    assert.equal(Weather.describe(2).text, '多雲');
+    assert.equal(Weather.describe(3).text, '陰');
+    assert.equal(Weather.describe(45).text, '有霧');
+    assert.equal(Weather.describe(63).text, '下雨');
+    assert.equal(Weather.describe(71).text, '下雪');
+    assert.equal(Weather.describe(81).text, '陣雨');
+    assert.equal(Weather.describe(95).text, '雷雨');
+});
+
+test('認不得的代碼當多雲，不要讓畫面開天窗', () => {
+    assert.equal(Weather.describe(999).ico, 'cloud');
+    assert.equal(Weather.describe(null).ico, 'cloud');
+    assert.equal(Weather.describe('晴天').ico, 'cloud');
+    assert.equal(Weather.describe(undefined).text, '—');
+});
+
+test('每一類都指到真的存在的圖示名字', () => {
+    const names = ['sun', 'cloudsun', 'cloud', 'fog', 'rain', 'snow', 'storm'];
+    for (const c of Weather.CODES) {
+        assert.ok(names.includes(c.ico), `${c.ico} 不在圖示清單裡`);
+    }
+});
+
+const FULL = {
+    current: { temperature_2m: 28.4, apparent_temperature: 31.2, weather_code: 3 },
+    daily: {
+        temperature_2m_max: [31.8],
+        temperature_2m_min: [24.1],
+        precipitation_probability_max: [70],
+    },
+};
+
+test('完整的回應整形成畫得出來的形狀，溫度四捨五入', () => {
+    assert.deepEqual(Weather.shape(FULL), {
+        now: 28, feels: 31, code: 3, high: 32, low: 24, rain: 70,
+    });
+});
+
+test('沒有 current 或 daily 就回 null，不畫半張卡片', () => {
+    assert.equal(Weather.shape({ daily: FULL.daily }), null);
+    assert.equal(Weather.shape({ current: FULL.current }), null);
+    assert.equal(Weather.shape({}), null);
+    assert.equal(Weather.shape(null), null);
+});
+
+test('連現在的溫度都沒有就整份不要', () => {
+    assert.equal(Weather.shape({ current: { weather_code: 0 }, daily: FULL.daily }), null);
+});
+
+test('缺的欄位給 null，不要變成 NaN 印在畫面上', () => {
+    const s = Weather.shape({
+        current: { temperature_2m: 20 },
+        daily: {},
+    });
+    assert.equal(s.now, 20);
+    assert.equal(s.feels, null);
+    assert.equal(s.high, null);
+    assert.equal(s.low, null);
+    assert.equal(s.rain, null);
+});
+
+test('降雨機率 0% 是資料不是缺值', () => {
+    const s = Weather.shape({
+        current: { temperature_2m: 20 },
+        daily: { precipitation_probability_max: [0] },
+    });
+    assert.equal(s.rain, 0);
+});
+
+test('快取鍵綁地點，換了地方就不是同一份', () => {
+    const a = Weather.keyOf({ lat: 22.645, lon: 120.605 });
+    const b = Weather.keyOf({ lat: 25.033, lon: 121.565 });
+    assert.notEqual(a, b);
+    // 小數點後第四位以後不算——那個精度的差別對天氣沒有意義，
+    // 只會讓快取每次都失效
+    assert.equal(Weather.keyOf({ lat: 22.6451, lon: 120.6052 }), a);
+});
+
+test('網址帶得齊要用的欄位', () => {
+    const u = Weather.url({ lat: 22.645, lon: 120.605 });
+    assert.ok(u.startsWith('https://api.open-meteo.com/'), u);
+    for (const k of ['latitude=22.645', 'longitude=120.605', 'temperature_2m',
+                     'weather_code', 'precipitation_probability_max', 'forecast_days=1']) {
+        assert.ok(u.includes(k), `網址少了 ${k}`);
+    }
+});
+
+test('預設地點寫在程式裡，而且是台灣的經緯度', () => {
+    assert.ok(Weather.DEFAULT.lat > 21 && Weather.DEFAULT.lat < 26, '緯度不在台灣');
+    assert.ok(Weather.DEFAULT.lon > 119 && Weather.DEFAULT.lon < 122, '經度不在台灣');
+    assert.ok(Weather.DEFAULT.name.length > 0, '一定要有地名，不然看的人會以為是自己的天氣');
 });

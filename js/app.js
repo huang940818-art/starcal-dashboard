@@ -143,6 +143,11 @@ async function main() {
 
     renderAll();
 
+    // 天氣是附加的東西，**刻意不跟資料一起 await**：
+    // 網路慢的時候不該讓整個儀表板等它，抓不到更不該掉進上面那個
+    // 「資料讀不出來」的分支——那個分支是為了保護檔案存在的。
+    Weather.init().then(() => Overview.render());
+
     // 程式換了就自己更新。展示模式沒有 /api，這支會早退。
     Update.init();
 

@@ -2579,3 +2579,31 @@ dialog.reader[open] { display: flex; }
     dialog.reader { padding: 16px 16px 18px; max-height: 90vh; }
     .md { font-size: 14.5px; }
 }
+
+/* ── 今天的天氣 ────────────────────────────────────── */
+.weather-now {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-top: 2px;
+}
+
+.weather-temp {
+    font-size: 34px;
+    font-weight: 600;
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+}
+
+.weather-word { font-size: 15px; color: var(--text-2); }
+
+.weather-bits {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+}
+
+/* 過期的時間戳要看得出來是註記，不是資料本身 */
+.weather-stale { color: var(--text-3); }

@@ -16,6 +16,7 @@ const Overview = {
 
         const grid = $('#overview-grid');
         clear(grid);
+        this.renderWeather(grid);
         this.renderAttention(grid);
         this.renderMoney(grid);
         this.renderUpcoming(grid);
@@ -221,6 +222,47 @@ const Overview = {
         grid.append(el('div', { class: 'card wide', 'data-hue': 'alert' }, [
             this.head('alert', '要注意的'),
             ...items.map(text => el('div', { style: 'padding:7px 0', text: '・' + text })),
+        ]));
+    },
+
+    /* ── 今天的天氣 ────────────────────────────────────
+     *
+     * **抓不到就整張不畫。** 天氣是附加的東西，沒有網路的時候
+     * 不該在畫面上留一塊「載入失敗」——那一格會變成每天都要看一次的雜訊。
+     */
+    renderWeather(grid) {
+        const w = Weather.data;
+        if (!w) return;
+
+        const d = Weather.describe(w.code);
+        const stamp = Weather.stampText();
+
+        // 下半排的細節。缺的欄位就不寫，不要印「--」。
+        const bits = [];
+        if (w.high !== null && w.low !== null) bits.push(`${w.high}° / ${w.low}°`);
+        if (w.rain !== null) bits.push(`降雨 ${w.rain}%`);
+        if (w.feels !== null && w.feels !== w.now) bits.push(`體感 ${w.feels}°`);
+
+        grid.append(el('div', { class: 'card', 'data-hue': 'calendar' }, [
+            this.head(d.ico, '今天的天氣',
+                Weather.usingDefault() && navigator.geolocation
+                    ? el('button', {
+                        class: 'btn small',
+                        text: Weather.asking ? '定位中…' : '用我的位置',
+                        disabled: Weather.asking,
+                        onclick: () => Weather.useMyLocation(),
+                    })
+                    : null),
+            el('div', { class: 'weather-now' }, [
+                el('div', { class: 'weather-temp', text: `${w.now}°` }),
+                el('div', { class: 'weather-word', text: d.text }),
+            ]),
+            bits.length ? el('div', { class: 'weather-bits', text: bits.join('　') }) : null,
+            // **地名一定要寫出來。** 不寫的話，看的人會以為那是他自己所在地的天氣。
+            el('div', { class: 'sub' }, [
+                Weather.place.name,
+                stamp ? el('span', { class: 'weather-stale', text: '　' + stamp }) : null,
+            ]),
         ]));
     },
 
