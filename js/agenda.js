@@ -120,6 +120,11 @@ const Agenda = {
             { k: 'timeline', name: '時間線', ico: 'todo' },
             { k: 'month', name: '月曆', ico: 'calendar' },
             { k: 'class', name: '課表', ico: 'clock' },
+            // 做完的自己一個地方。**本來擺在時間線最底下**——
+            // 收起來了但還是佔著版面，而且愈積愈長。
+            // 她的話：「做完的東西不要留在版面，可以把做完的集合起來
+            // 放在某一個地方」。
+            { k: 'done', name: '做完的', ico: 'todo' },
         ];
         box.append(el('div', { class: 'view-switch', role: 'tablist' },
             views.map(v => el('button', {
@@ -256,15 +261,23 @@ const Agenda = {
         if ($('#panel-agenda').hidden) return;
         this.tools();
 
-        $('#agenda-list').hidden = this.view !== 'timeline';
+        // 時間線和「做完的」共用同一個容器——兩邊都是一條一條的列表，
+        // 各開一個 div 只會讓兩份幾乎一樣的樣式各自漂移
+        const isList = this.view === 'timeline' || this.view === 'done';
+        $('#agenda-list').hidden = !isList;
         $('#calendar').hidden = this.view !== 'month';
         $('#timetable').hidden = this.view !== 'class';
 
-        // 那段開場白講的是時間線的道理，換到月曆和課表就不成立了。
+        // 那段開場白講的是時間線的道理，換到別的檢視就不成立了。
         // 手機上它佔三行，比課表的前四節還高。
         $('#agenda-why').hidden = this.view !== 'timeline';
 
+        // 「清掉完成的」只在「做完的」那一頁出現。做完的已經不在時間線上了，
+        // 把它們的刪除鍵留在那裡，等於一顆看不到目標的按鈕。
+        $('#clear-done').hidden = this.view !== 'done';
+
         if (this.view === 'timeline') this.renderTimeline();
+        else if (this.view === 'done') this.renderDone();
         else if (this.view === 'month') MonthView.render();
         else Timetable.render();
     },
@@ -346,11 +359,12 @@ const Agenda = {
         const upcoming = this.days();
         const later = this.later();
         const someday = Todo.open().filter(t => !t.due && this.match(t));
-        const done = Todo.data.items.filter(t => t.done && this.match(t))
-            .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0));
 
+        // 做完的不算在「有沒有事」裡面——它們在「做完的」那個檢視。
+        // 算進來的話，只剩做完的東西時這條線會是一片空白而不是
+        // 「接下來沒有事」，看起來像壞掉。
         if (!late.todos.length && !late.events.length && !upcoming.length
-            && !later.length && !someday.length && !done.length) {
+            && !later.length && !someday.length) {
             box.append(el('div', { class: 'empty' }, [
                 icon('todo', 26),
                 this.filter ? '這個分類接下來沒有事' : '接下來沒有事',
@@ -431,23 +445,77 @@ const Agenda = {
             ]));
         }
 
-        // 完成的待辦 ＋ 收起來的行程放同一區。
-        //
-        // **她問「那些被收掉的待辦事項去哪裡可以看」，這裡就是答案。**
-        // 收掉的東西一定要有地方去——會讓東西永遠消失的按鈕太兇了。
-        const archivedEvents = Cal.data.events
-            .filter(e => e.done && this.match(e))
-            .sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+        // **做完的不畫在這裡。** 它們在「做完的」那個檢視裡，
+        // 收掉的東西一定要有地方去（會讓東西永遠消失的按鈕太兇了），
+        // 但那個地方不該是這條時間線的尾巴。
+    },
 
-        if (done.length || archivedEvents.length) {
-            const total = done.length + archivedEvents.length;
+    /* ── 做完的 ─────────────────────────────────────
+     *
+     * 完成的待辦 ＋ 收起來的行程，按「什麼時候做完的」分組。
+     *
+     * 分組是重點：一年份的已完成排成一長串，跟沒有一樣。
+     * 今天做完的那幾件才是她會想看的——證明今天有做事。
+     */
+    doneGroups() {
+        /* **兩邊的欄位名字不一樣。** 待辦是 completedAt（js/todo.js），
+         * 行程是 doneAt（這支檔案）。寫錯一邊不會報錯，那一邊會整批
+         * 掉進「不知道什麼時候」——看起來像功能壞了，但其實只是讀錯欄位。 */
+        const rows = [
+            ...Todo.data.items.filter(t => t.done && this.match(t))
+                .map(t => ({ at: t.completedAt || 0, kind: 'todo', item: t })),
+            ...Cal.data.events.filter(e => e.done && this.match(e))
+                .map(e => ({ at: e.doneAt || 0, kind: 'event', item: e })),
+        ].sort((a, b) => b.at - a.at);
+
+        const today = parseYmd(todayStr()).getTime();
+        const week = today - 6 * 86400000;
+
+        const buckets = [
+            { name: '今天', rows: [] },
+            { name: '這七天', rows: [] },
+            { name: '更早', rows: [] },
+            // **沒有時間戳的要有地方去。** doneAt 是後來才加的欄位，
+            // 舊資料沒有；掉出所有分組的話那幾件會憑空消失。
+            { name: '不知道什麼時候', rows: [] },
+        ];
+        for (const r of rows) {
+            if (!r.at) buckets[3].rows.push(r);
+            else if (r.at >= today) buckets[0].rows.push(r);
+            else if (r.at >= week) buckets[1].rows.push(r);
+            else buckets[2].rows.push(r);
+        }
+        return buckets.filter(b => b.rows.length);
+    },
+
+    renderDone() {
+        const box = $('#agenda-list');
+        clear(box);
+
+        const groups = this.doneGroups();
+        if (!groups.length) {
+            box.append(el('div', { class: 'empty' }, [
+                icon('todo', 26), '還沒有做完的事',
+                el('div', { class: 'hint', text: '打勾之後會收到這裡，不會不見' }),
+            ]));
+            return;
+        }
+
+        const total = groups.reduce((n, g) => n + g.rows.length, 0);
+        // 講清楚是點哪裡。整列點下去是開編輯，放回去要點左邊那個勾——
+        // 只寫「點一下可以放回去」的話她會點到編輯視窗
+        box.append(el('div', { class: 'sub', style: 'margin-bottom:12px' }, [
+            `一共 ${total} 件。點左邊的勾可以放回去。`,
+        ]));
+
+        for (const g of groups) {
             box.append(el('div', { class: 'day-group muted' }, [
                 el('div', { class: 'day-head' }, [
-                    el('span', { class: 'day-name', text: '收起來的' }),
-                    el('span', { class: 'day-count', text: `${total} 件` }),
+                    el('span', { class: 'day-name', text: g.name }),
+                    el('span', { class: 'day-count', text: `${g.rows.length} 件` }),
                 ]),
-                ...archivedEvents.slice(0, 15).map(e => this.archivedRow(e)),
-                ...done.slice(0, 15).map(t => Todo.row(t)),
+                ...g.rows.map(r => r.kind === 'event'
+                    ? this.archivedRow(r.item) : Todo.row(r.item)),
             ]));
         }
     },

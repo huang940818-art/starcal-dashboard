@@ -153,7 +153,9 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
       {
         // 只看現在顯示的那一頁——隱藏分頁裡的元素量出來是 0，
         // 會變成一整排假的失敗
-        const small = [...document.querySelectorAll('#panel-agenda .card h2 .btn.small')];
+        // 收起來的按鈕量出來是 0 高，會變成一整排假的失敗
+        const small = [...document.querySelectorAll('#panel-agenda .card h2 .btn.small')]
+            .filter(b => !b.hidden && b.getBoundingClientRect().height > 0);
         ok('抓得到按鈕來量', small.length > 0, small.length + ' 顆');
         const tooSmall = small.filter(b => b.getBoundingClientRect().height < 30);
         ok('手機上的小按鈕夠大按', tooSmall.length === 0,
@@ -806,15 +808,39 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
         ok('收掉之後不在「過期了」那一區',
            !q('#agenda-list .overdue-group')
            || !q('#agenda-list .overdue-group').textContent.includes('過期的行程'));
-        // 她問「那些被收掉的待辦事項去哪裡可以看」——這裡就是答案
-        const archived = [...document.querySelectorAll('#agenda-list .day-group')]
-            .find(g => g.querySelector('.day-name')?.textContent === '收起來的');
-        ok('收起來的東西有地方可以看', !!archived
-           && archived.textContent.includes('過期的行程'),
-           archived ? archived.textContent.slice(0, 40) : '找不到那一區');
-        ok('收起來的那一列有「放回去」',
-           !!archived && [...archived.querySelectorAll('button')]
-             .some(b => b.textContent === '放回去'));
+        // **做完的不留在時間線上。** 她的話：「做完的東西不要留在版面，
+        // 可以把做完的集合起來放在某一個地方」——那個地方是「做完的」檢視。
+        ok('收掉之後不留在時間線上',
+           !q('#agenda-list').textContent.includes('過期的行程'),
+           q('#agenda-list').textContent.slice(0, 60));
+
+        // 但一定找得到。收掉就等於不見的按鈕太兇了。
+        const doneBtn = [...document.querySelectorAll('#agenda-tools .view-btn')]
+            .find(b => b.textContent.includes('做完的'));
+        ok('有「做完的」這個檢視', !!doneBtn);
+        if (doneBtn) {
+          doneBtn.click(); await sleep(300);
+          ok('做完的那一頁看得到剛收掉的',
+             q('#agenda-list').textContent.includes('過期的行程'),
+             q('#agenda-list').textContent.slice(0, 60));
+          // 按什麼時候做完的分組。一年份排成一長串跟沒有一樣
+          const heads = [...document.querySelectorAll('#agenda-list .day-name')]
+              .map(n => n.textContent);
+          ok('做完的有按時間分組',
+             heads.some(h => ['今天', '這七天', '更早', '不知道什麼時候'].includes(h)),
+             heads.join('、'));
+          ok('做完的那一列有「放回去」',
+             [...document.querySelectorAll('#agenda-list button')]
+               .some(b => b.textContent === '放回去'));
+          // 「清掉完成的」只在這一頁出現——做完的已經不在時間線上了，
+          // 把刪除鍵留在那裡等於一顆看不到目標的按鈕
+          ok('「清掉完成的」在做完的那一頁', !q('#clear-done').hidden);
+
+          const back = [...document.querySelectorAll('#agenda-tools .view-btn')]
+              .find(b => b.textContent.includes('時間線'));
+          back.click(); await sleep(300);
+          ok('回到時間線時「清掉完成的」收起來', q('#clear-done').hidden);
+        }
 
         const undo = q('#toast button');
         ok('剛收掉的時候也給得回來', !!undo);
@@ -1166,8 +1192,10 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     }
     ok('分類篩選列畫得出來',
        document.querySelectorAll('#agenda-tools .chip').length >= Prefs.labels().length + 1);
-    ok('三個檢視的切換鈕都在',
-       document.querySelectorAll('#agenda-tools .view-btn').length === 3);
+    ok('四個檢視的切換鈕都在（時間線／月曆／課表／做完的）',
+       document.querySelectorAll('#agenda-tools .view-btn').length === 4,
+       [...document.querySelectorAll('#agenda-tools .view-btn')]
+         .map(b => b.textContent).join('、'));
 
     const lid = Prefs.labels()[0].id;
     const lid2 = Prefs.labels()[1].id;

@@ -89,13 +89,24 @@ const Todo = {
     },
 
     clearDone() {
-        const n = this.data.items.filter(i => i.done).length;
-        if (!n) return toast('沒有完成的可以清');
+        const gone = this.data.items.filter(i => i.done);
+        if (!gone.length) return toast('沒有完成的可以清');
+
         this.data.items = this.data.items.filter(i => !i.done);
         this.save();
         this.render();
+        Agenda.render();
         Overview.render();
-        toast(`清掉 ${n} 件`);
+
+        // **給得起復原就別問「你確定嗎」。** 這是唯一會讓東西永久不見的
+        // 動作，之前按下去就沒了，連一秒的反悔時間都沒有。
+        toastAction(`清掉 ${gone.length} 件`, '復原', () => {
+            this.data.items.push(...gone);
+            this.save();
+            this.render();
+            Agenda.render();
+            Overview.render();
+        });
     },
 
     /** @param defaultDay 從月曆的某一天按「加待辦」進來時，期限先填那天 */
