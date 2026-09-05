@@ -590,7 +590,11 @@ const Money = {
             $('#t-to-field').hidden = !transfer;
             $('#t-account-label').textContent = transfer ? '從' : '帳戶';
             const list = kind === 'income' ? this.data.categories.income : this.data.categories.expense;
-            fillSelect($('#t-category'), list.map(c => c.name), t.category);
+            // 新的一筆沒有分類，`value = ''` 對不到任何選項，下拉會顯示一片空白——
+            // 看起來像壞掉的，而且存下去會變成「未分類」。**預設選第一個。**
+            const names = list.map(c => c.name);
+            const want = names.includes(t.category) ? t.category : names[0];
+            fillSelect($('#t-category'), names, want);
         };
         $('#t-kind').onchange = syncKind;
         syncKind();

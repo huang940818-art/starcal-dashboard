@@ -186,6 +186,27 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
       ok('預算卡看得到數字', q('#budgets').textContent.includes('3,000'));
     }
 
+    // hidden 一定要贏。瀏覽器內建的 [hidden] 權重只有 (0,1,0)，
+    // 隨便一條 label.field { display: block } 就蓋得過去——JS 設了
+    // .hidden = true 但畫面上那一欄照樣在，而且程式一行都沒錯。
+    q('#add-txn').click(); await sleep(200);
+    ok('支出的時候不該出現「轉到」',
+       getComputedStyle(q('#t-to-field')).display === 'none',
+       getComputedStyle(q('#t-to-field')).display);
+    ok('「新增帳戶」的區塊預設是收起來的',
+       getComputedStyle(q('#t-new-account')).display === 'none',
+       getComputedStyle(q('#t-new-account')).display);
+    ok('記一筆一打開就有選好的分類',
+       !!q('#t-category').value, JSON.stringify(q('#t-category').value));
+    q('#t-kind').value = 'transfer';
+    q('#t-kind').dispatchEvent(new Event('change'));
+    await sleep(200);
+    ok('轉帳的時候「轉到」才出現',
+       getComputedStyle(q('#t-to-field')).display !== 'none');
+    ok('轉帳的時候不用選分類',
+       getComputedStyle(q('#t-category-field')).display === 'none');
+    q('#dlg-txn button[value=\"cancel\"]').click(); await sleep(200);
+
     // ── 記一筆整條路 ──
     q('#add-account').click(); await sleep(160);
     q('#a-name').value = '現金';

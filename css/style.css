@@ -56,6 +56,17 @@
 
 * { box-sizing: border-box; }
 
+/* **hidden 一定要贏。**
+ *
+ * 瀏覽器內建的 `[hidden] { display: none }` 權重只有 (0,1,0)，
+ * 隨便一條 `label.field { display: block }` (0,1,1) 就蓋得過去——
+ * 於是 JS 明明設了 `.hidden = true`，畫面上那個欄位照樣在。
+ *
+ * 2026-09-05 她的截圖就是這樣：類型明明選「支出」，
+ * 「轉到」那一欄還在，而且「新增帳戶」的區塊自己展開著蓋住版面。
+ * 程式一行都沒錯，錯在這條規則不存在。 */
+[hidden] { display: none !important; }
+
 body {
     margin: 0;
     /* 純平色會扁。頂端一層極淡的暖光，像有東西照著，
