@@ -9,3 +9,8 @@
 
 # 個人用的臨時頁面，不進公開 repo
 私人-*.html
+
+# Claude 的 worktree。**一定要擋。** git add -A 會把它當成
+# 嵌入的 git repo 加進索引，推上去之後那一格是空的，
+# clone 的人什麼都拿不到。
+.claude/
