@@ -564,7 +564,7 @@ const Money = {
                     style: `width:${(fixed / sum * 100).toFixed(1)}%;background:var(--water)`,
                 }),
             ]),
-            el('div', { style: 'display:flex;justify-content:space-between;margin-top:12px;gap:14px' }, [
+            el('div', { class: 'ff-split' }, [
                 el('div', {}, [
                     el('div', {}, [el('span', { class: 'tag fixed', text: '固定' })]),
                     el('div', { class: 'money-num', style: 'font-size:19px;margin-top:6px', text: money(fixed) }),
@@ -576,6 +576,19 @@ const Money = {
                     el('div', { class: 'sub', text: `佔 ${Math.round(flexible / sum * 100)}%　可以省的部分` }),
                 ]),
             ]));
+
+        // **把「哪些算固定」寫出來。**
+        //
+        // 她的原話是「固定支出不知道怎麼算的」——本來這張卡只給兩個數字，
+        // 怎麼分的完全看不到，設定又藏在「所有帳目」那張卡的「管理分類」裡，
+        // 等於沒有。
+        const fixedNames = this.data.categories.expense
+            .filter(c => c.nature === 'fixed').map(c => c.name);
+        box.append(el('p', { class: 'sub ff-note' },
+            fixedNames.length
+                ? `算固定的：${fixedNames.join('、')}。其他都算彈性。`
+                : '現在每一類都算彈性。按右上角挑出非花不可的那幾類'
+                  + '（房租、訂閱、交通…），才看得出真正能省的有多少。'));
     },
 
     renderBudgets() {
@@ -662,7 +675,12 @@ const Money = {
                         title: `${r.ym} 支出 ${money(r.expense)}`,
                     }),
                 ]),
-                el('div', { class: 'chart-label', text: monthLabel(r.ym) }),
+                // 十二個月一起看的時候只寫數字。「10月」在一支手機上
+                // 塞不下十二欄，而上面已經寫了「近 12 個月」，
+                // 每一欄再寫一次「月」是重複的。
+                el('div', { class: 'chart-label',
+                            text: rows.length > 8 ? String(Number(r.ym.slice(5)))
+                                                  : monthLabel(r.ym) }),
             ]))),
             el('div', { class: 'legend' }, [
                 el('span', {}, [el('i', { style: 'background:var(--good)' }), '收入']),
@@ -1337,6 +1355,9 @@ const Money = {
         $('#add-sub').onclick = () => this.editSub(null);
         $('#edit-budgets').onclick = () => this.editBudgets();
         $('#manage-categories').onclick = () => this.editCategories();
+        // 「哪些算固定」跟「管理分類」是同一個畫面。入口放兩個地方，
+        // 因為她是在看那張卡的時候才想到要問「這是怎麼分的」。
+        $('#edit-nature').onclick = () => this.editCategories();
 
         $('#trend-range').onchange = () => this.renderTrend();
 

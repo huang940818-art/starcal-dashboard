@@ -501,6 +501,16 @@ input:focus, select, textarea:focus {
 
 textarea { resize: vertical; min-height: 76px; line-height: 1.6; }
 
+/* 固定 vs 彈性 */
+.ff-split {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 12px;
+    gap: 14px;
+}
+
+.ff-note { margin: 14px 0 0; line-height: 1.7; }
+
 /* 期間切換 */
 .range-kinds { margin-bottom: 10px; }
 
@@ -673,12 +683,22 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 
 .chart-col {
     flex: 1;
+    min-width: 0;
     height: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 5px;
     min-width: 0;
+}
+
+/* **月份標籤不准斷行。** 「10月」被拆成「10」和「月」兩行的話，
+ * 那一欄會比別欄高，整排標籤就參差不齊——她的原話是「兩位數的都跑掉」。
+ * 寧可字小一點，也不要斷行。 */
+.chart-label {
+    white-space: nowrap;
+    font-size: 11px;
+    color: var(--text-3);
 }
 
 .bars {
@@ -1771,6 +1791,20 @@ footer {
 .toast.bad { border-color: var(--alert); color: var(--alert); }
 
 @media (max-width: 620px) {
+    /* **對話框裡的兩欄一行在手機上要拆開。**
+     *
+     * `.row > * { min-width: 120px }` 在窄螢幕上擠不下兩個，日期欄
+     * 會壓到旁邊的分類欄——她的截圖上「2026年9月5日」蓋在「飲食」上。
+     * 手機一行只放一個欄位，寧可捲一點也不要疊在一起。 */
+    dialog .row { flex-direction: column; align-items: stretch; }
+    dialog .row > * { min-width: 0; }
+    /* 篩選那一排例外：那些是小小的下拉，並排才好用 */
+    dialog .row > .shrink { flex: 0 0 auto; }
+
+    /* 十二個月擠在一支手機上，字要更小才不會疊 */
+    .chart-label { font-size: 9.5px; }
+    .chart { gap: 3px; }
+
     main { padding: 16px 14px 60px; }
     .topbar { padding: 10px 14px; }
     nav { padding: 0 14px 8px; }

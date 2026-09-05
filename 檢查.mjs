@@ -230,6 +230,18 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
        getComputedStyle(q('#t-category-field')).display === 'none');
     q('#dlg-txn button[value=\"cancel\"]').click(); await sleep(200);
 
+    // 「固定支出不知道怎麼算的」——那個答案要在看得到的地方，
+    // 不能藏在別張卡的「管理分類」裡。
+    ok('固定 vs 彈性那張卡有「哪些算固定」的入口', !!q('#edit-nature'));
+    ok('卡片上寫得出怎麼分的',
+       q('#fixed-flexible').textContent.includes('算固定的')
+       || q('#fixed-flexible').textContent.includes('每一類都算彈性')
+       || q('#fixed-flexible').textContent.includes('沒有支出'),
+       q('#fixed-flexible').textContent.slice(0, 50));
+    q('#edit-nature').click(); await sleep(220);
+    ok('按了會開管理分類', q('#dlg-categories').open);
+    q('#dlg-categories button[value=\"cancel\"]').click(); await sleep(180);
+
     // ── 對帳 ──
     // 「為什麼會有差價」沒辦法真的知道——漏記的那筆已經不在資料裡了。
     // 能做的是把範圍縮到最小。
@@ -303,6 +315,19 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     q('#t-save').click(); await sleep(280);
     ok('記一筆記得進去', Money.data.transactions.length === 1);
     ok('金額對', (Money.data.transactions[0] || {}).amount === 120);
+
+    // 圖表的月份標籤不准斷行——「10月」拆成兩行的話那一欄會比別欄高，
+    // 整排標籤參差不齊。她的原話是「兩位數的都跑掉」。
+    {
+      const labels = [...document.querySelectorAll('.chart-label')];
+      ok('趨勢圖有月份標籤', labels.length > 0, labels.length + ' 個');
+      const heights = labels.map(l => Math.round(l.getBoundingClientRect().height));
+      ok('每個月份標籤都一樣高（沒有被拆成兩行）',
+         new Set(heights).size <= 1, heights.join(','));
+      ok('十二個月的時候只寫數字，不寫「月」',
+         labels.length < 9 || !labels[0].textContent.includes('月'),
+         labels.map(l => l.textContent).join(','));
+    }
 
     // ── 記到一半才發現沒有那個帳戶 ──
     //
