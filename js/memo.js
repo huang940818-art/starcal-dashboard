@@ -31,7 +31,19 @@ const Memo = {
     },
 
     previewOf(text) {
-        const rest = text.split('\n').slice(1).join(' ').trim();
+        // 預覽是一行純文字，**要把 markdown 的記號擦掉**——
+        // 清單上出現 `> **決定…` 這種東西，看起來像壞掉而不像有排版。
+        const rest = text.split('\n').slice(1)
+            .map(l => l.trim()
+                .replace(/^#{1,4}\s+/, '')      // 標題
+                .replace(/^>\s+/, '')           // 引言
+                .replace(/^[-*•]\s+/, '')       // 清單
+                .replace(/^\d+\.\s+/, '')       // 編號
+                .replace(/\*\*/g, '')           // 粗體
+                .replace(/`/g, ''))             // 行內程式碼
+            .filter(l => l && l !== '---' && l !== '***')
+            .join(' ')
+            .trim();
         return rest.length > 90 ? rest.slice(0, 90) + '…' : rest;
     },
 
@@ -75,7 +87,8 @@ const Memo = {
 
         const body = $('#mr-body');
         clear(body);
-        body.append(MD.render(m.text));
+        // 第一行已經是對話框的標題了，內文再印一次等於同一句話看兩遍
+        body.append(MD.render(m.text.split('\n').slice(1).join('\n')));
         body.scrollTop = 0;
 
         const dlg = openDialog('#dlg-memo-read');
