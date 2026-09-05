@@ -56,6 +56,33 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
            document.documentElement.scrollWidth + ' > ' + innerWidth);
       }
 
+      // **每一顆按鈕都要在畫面裡。**
+      //
+      // 她的截圖上「加待辦」只剩半顆——那群按鈕包在一個 span 裡，
+      // 外層的 flex-wrap 只會讓標題和整群分兩行，群裡面照樣擠成一條，
+      // 超出去的被切在畫面外，整頁還跟著能左右捲。
+      for (const p of ['overview', 'money', 'agenda', 'memo']) {
+        await tab(p);
+        await sleep(280);
+        const cut = [...document.querySelectorAll('#panel-' + p + ' .card h2 button')]
+            .filter(b => b.getBoundingClientRect().right > innerWidth + 1);
+        ok('手機上「' + p + '」的按鈕都在畫面裡', cut.length === 0,
+           cut.map(b => b.textContent).join('、'));
+      }
+
+      // 手指比游標粗。並排的小按鈕摸不準的話等於沒有。
+      await tab('agenda'); await sleep(260);
+      {
+        // 只看現在顯示的那一頁——隱藏分頁裡的元素量出來是 0，
+        // 會變成一整排假的失敗
+        const small = [...document.querySelectorAll('#panel-agenda .card h2 .btn.small')];
+        ok('抓得到按鈕來量', small.length > 0, small.length + ' 顆');
+        const tooSmall = small.filter(b => b.getBoundingClientRect().height < 30);
+        ok('手機上的小按鈕夠大按', tooSmall.length === 0,
+           tooSmall.map(b => b.textContent + '=' + Math.round(b.getBoundingClientRect().height))
+             .join('、'));
+      }
+
       // 想法牆在窄螢幕上整個收起來。便利貼的價值是空間關係，
       // 一面只有一張半便利貼寬的牆擺不出那個——那不是「做得爛一點」，
       // 是不該出現在這個尺寸上。

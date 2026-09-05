@@ -248,6 +248,20 @@ main {
     row-gap: 10px;
 }
 
+/* **標題右邊那群按鈕自己也要會換行。**
+ *
+ * 它們包在一個 <span> 裡，span 是單一個 flex item——外層的 flex-wrap
+ * 只會讓「標題」和「這一整群」分兩行，群裡面照樣擠成一條橫的，
+ * 超出去的按鈕直接被切在畫面外（她的截圖上「加待辦」只剩半顆），
+ * 而且整頁跟著能左右捲，右邊的日期也跟著不見。 */
+.card h2 > span:not(.label) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: flex-end;
+    min-width: 0;
+}
+
 /* 標題左邊那個圖示。顏色由 .card 上的 --hue 決定，
  * 每個區塊一種——掃視的時候眼睛才有落腳點。 */
 .card h2 .label {
@@ -1852,6 +1866,20 @@ footer {
     /* 手機上一屏只放得下三四張卡，留白就要省一點——
      * 桌機的內距搬過來會變成一直捲都看不到重點。 */
     .card { padding: 14px; }
+
+    /* 手機上按鈕自己一行，靠左排。標題和按鈕擠同一行的話
+     * 按鈕會被壓到只剩半顆。 */
+    .card h2 > span:not(.label) {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    /* **手指比游標粗。** 桌機那個 4px 的內距在手機上很難按準，
+     * 尤其是並排的幾顆。 */
+    .btn.small { padding: 7px 12px; }
+    .btn.icon { padding: 7px 14px; }
+    .chip { padding: 6px 13px; }
+    .view-btn { padding: 8px 14px; }
     .card h2 { margin-bottom: 10px; }
     .grid { gap: 12px; }
     .card.wide > .empty { padding: 18px 4px; }
