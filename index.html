@@ -82,6 +82,10 @@
                         <option value="12" selected>近 12 個月</option>
                         <option value="year">今年</option>
                     </select>
+                    <span class="view-switch tight" id="trend-shape">
+                        <button type="button" class="view-btn on" data-shape="bar">長條</button>
+                        <button type="button" class="view-btn" data-shape="line">折線</button>
+                    </span>
                 </h2>
                 <div id="trend"></div>
             </div>
@@ -142,7 +146,11 @@
                         <button class="btn small primary" id="add-todo">加待辦</button>
                     </span>
                 </h2>
-                <p class="sub" style="margin:-8px 0 14px">
+                <!-- 這段講的是「時間線」為什麼把行程和待辦混在一起。
+                     切到月曆或課表的時候它就不成立了，所以那兩個檢視下
+                     會被收起來（js/agenda.js 的 setView）——手機上這三行
+                     佔掉的高度比課表的前四節還多。 -->
+                <p class="sub" id="agenda-why" style="margin:-8px 0 14px">
                     行程和待辦排在同一條線上——它們是同一件事的兩個面向。
                     分開看，就得自己在腦子裡合併，那正是最容易漏掉東西的地方。
                 </p>
@@ -571,6 +579,7 @@
 <script src="js/data.js"></script>
 <script src="js/autocat.js"></script>
 <script src="js/csv.js"></script>
+<script src="js/charts.js"></script>
 <script src="js/money.js"></script>
 <script src="js/todo.js"></script>
 <script src="js/timetable.js"></script>

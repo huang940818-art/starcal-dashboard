@@ -260,6 +260,10 @@ const Agenda = {
         $('#calendar').hidden = this.view !== 'month';
         $('#timetable').hidden = this.view !== 'class';
 
+        // 那段開場白講的是時間線的道理，換到月曆和課表就不成立了。
+        // 手機上它佔三行，比課表的前四節還高。
+        $('#agenda-why').hidden = this.view !== 'timeline';
+
         if (this.view === 'timeline') this.renderTimeline();
         else if (this.view === 'month') MonthView.render();
         else Timetable.render();

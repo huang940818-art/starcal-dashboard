@@ -26,6 +26,84 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+/**
+ * 開一個**真的是手機寬度**的視窗，回傳頁面的 document.title。
+ *
+ * 為什麼不能用 `--headless --window-size=390,844 --dump-dom`：
+ * headless 的視窗寬度有下限，給 390 也會變成 500（版面拿到 485，
+ * 扣掉捲軸）。那比她的手機寬了快一百像素——**課表在 485 排得下、
+ * 在 390 排不下**，而檢查會全部通過。這一整輪的意義就是量她真正
+ * 看到的那個寬度，所以走 CDP 的裝置模擬。
+ */
+async function phoneTitle(url, width = 390, height = 844) {
+    const port = 9310 + Math.floor(Math.random() * 300);
+    const profile = mkdtempSync(join(tmpdir(), 'starcal-phone-'));
+    const chrome = spawn(CHROME, [
+        '--headless=new', '--disable-gpu', '--no-first-run',
+        '--remote-debugging-port=' + port, '--user-data-dir=' + profile,
+        'about:blank',
+    ], { stdio: 'ignore' });
+
+    try {
+        let wsUrl = null;
+        for (let i = 0; i < 60 && !wsUrl; i++) {
+            try {
+                const r = await fetch('http://127.0.0.1:' + port + '/json/version');
+                wsUrl = (await r.json()).webSocketDebuggerUrl;
+            } catch { await sleep(200); }
+        }
+        if (!wsUrl) throw new Error('連不上 Chrome 的除錯埠');
+
+        const sock = new WebSocket(wsUrl);
+        await new Promise((ok, no) => { sock.onopen = ok; sock.onerror = no; });
+
+        let id = 0;
+        const waiting = new Map();
+        sock.onmessage = e => {
+            const m = JSON.parse(e.data);
+            const w = m.id && waiting.get(m.id);
+            if (!w) return;
+            waiting.delete(m.id);
+            m.error ? w.no(new Error(JSON.stringify(m.error))) : w.ok(m.result);
+        };
+        const send = (method, params = {}, sessionId) => new Promise((ok, no) => {
+            const n = ++id;
+            waiting.set(n, { ok, no });
+            sock.send(JSON.stringify({ id: n, method, params, sessionId }));
+        });
+
+        const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
+        const { sessionId } = await send('Target.attachToTarget',
+                                         { targetId, flatten: true });
+        const call = (m, p) => send(m, p, sessionId);
+
+        await call('Page.enable');
+        await call('Runtime.enable');
+        await call('Emulation.setDeviceMetricsOverride', {
+            width, height, deviceScaleFactor: 1, mobile: true,
+        });
+        await call('Page.navigate', { url });
+
+        // 頁面自己會把結果寫進 title。等它出現，不要等固定秒數——
+        // 太短會拿到空的，太長是白等。
+        for (let i = 0; i < 90; i++) {
+            await sleep(400);
+            const r = await call('Runtime.evaluate', {
+                expression: 'document.title', returnByValue: true,
+            });
+            const t = r.result && r.result.value;
+            if (t && (t.includes('✓') || t.includes('✗'))) return t;
+        }
+        return '';
+    } finally {
+        chrome.kill();
+        // Chrome 收工前還在寫東西，馬上刪會 ENOTEMPTY。等它一下，
+        // 刪不掉也不要讓整支檢查因為清垃圾而失敗。
+        await sleep(400);
+        try { rmSync(profile, { recursive: true, force: true, maxRetries: 5 }); } catch {}
+    }
+}
+
 /** 塞進頁面裡跑的檢查。每一條回一行文字，開頭是 ✓ 或 ✗。 */
 const PROBE = `
 <script>
@@ -164,6 +242,40 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
            g.scrollWidth + ' vs ' + g.clientWidth);
         ok('手機上星期表頭用單字',
            getComputedStyle(q('.tt-p-wd .wd-short')).display !== 'none');
+
+        /* 節次制的時候底下那份清單要是收起來的。
+         *
+         * 攤開的話手機上同一週的課從頭到尾講兩遍——先一張網格，
+         * 再往下捲過五個星期的清單。**那不是壞掉，只是很長**，
+         * 所以沒有人會回報，只會覺得「課表在手機上很難看」。 */
+        const list = q('.tt-list');
+        ok('節次制時清單是收起來的', !!list && !list.open);
+        ok('收起來的那顆按鈕看得到誰在裡面',
+           !!list && list.querySelector('.tt-more').textContent.includes('老師'),
+           list ? list.querySelector('.tt-more').textContent : '沒有清單');
+        // 收起來不等於拿不到。按一下要打得開。
+        if (list) {
+          list.querySelector('.tt-more').click(); await sleep(160);
+          ok('按了打得開', list.open);
+          ok('打開後看得到老師和教室',
+             list.textContent.includes('某老師') && list.textContent.includes('某教室'));
+          list.querySelector('.tt-more').click(); await sleep(120);
+        }
+
+        // 時間制那份反過來：網格在手機上是藏起來的，清單就是唯一的
+        // 入口，收起來等於整份課表不見。
+        Timetable.data.sets.push({
+          id: 'm-time', name: '手機時間制', mode: 'time',
+          slots: [{ id: 'mt1', name: '打工', day: 2, start: '18:00', end: '22:00',
+                    teacher: '', place: '店裡', label: null }],
+        });
+        Timetable.data.active = 'm-time';
+        Agenda.render(); await sleep(300);
+        const tl = q('.tt-list');
+        ok('時間制的清單是攤開的', !!tl && tl.open);
+        ok('時間制看得到課', !!tl && tl.textContent.includes('打工'));
+        Timetable.data.active = 'm-test';
+        Agenda.render(); await sleep(260);
       }
 
       Agenda.view = 'month'; Agenda.render(); await sleep(300);
@@ -263,6 +375,107 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
         ok('預算卡有講這個月另外設過',
            q('#budgets').textContent.includes('自己的一套'));
       }
+    }
+
+    // ── 報表：圓餅、折線、帳戶篩選 ──
+    //
+    // 圖畫錯了只是「有點怪」，不會有任何錯誤訊息；篩錯帳戶更糟，
+    // 會給一個看起來很合理的小數字。
+    {
+      await tab('money');
+
+      // **這一段會把記帳的資料換掉，做完要換回來。**
+      // 後面還有一串檢查是接著前面建好的帳戶和帳目跑的，
+      // 忘了還原的話那些會整批倒掉，而且看起來像是它們自己壞了。
+      const keep = JSON.stringify(Money.data);
+
+      // 先放幾筆帳，不然報表全是空的什麼都驗不到
+      Money.data.accounts = [
+        { id: 'ck1', name: '甲行', kind: 'bank', opening: 0, includeInTotal: true },
+        { id: 'ck2', name: '乙行', kind: 'bank', opening: 0, includeInTotal: true },
+      ];
+      const t = todayStr();
+      Money.data.transactions = [
+        { id: 'x1', date: t, kind: 'expense', amount: 300, category: '餐飲', account: '甲行' },
+        { id: 'x2', date: t, kind: 'expense', amount: 200, category: '房租', account: '乙行' },
+        { id: 'x3', date: t, kind: 'income', amount: 900, category: '打工', account: '甲行' },
+      ];
+      Money.reportAccount = '';
+      Money.render();
+      await sleep(220);
+
+      const donut = q('#by-category .donut');
+      ok('圓餅畫得出來', !!donut);
+      if (donut) {
+        // 一個底環加兩塊
+        const arcs = donut.querySelectorAll('circle');
+        ok('圓餅的塊數對得上分類數', arcs.length === 3, arcs.length + ' 個圓');
+        const legend = document.querySelectorAll('#by-category .pie-key');
+        ok('圓餅有圖例', legend.length === 2, legend.length + ' 列');
+        // 圖例的顏色要跟下面那條一樣，不然眼睛得重新認一次
+        const key = q('#by-category .pie-key i');
+        const bar = q('#by-category .cat-bar');
+        ok('圖例和長條同色',
+           getComputedStyle(key).backgroundColor === getComputedStyle(bar).backgroundColor,
+           getComputedStyle(key).backgroundColor + ' vs ' + getComputedStyle(bar).backgroundColor);
+      }
+
+      // 折線
+      const shapeBtns = document.querySelectorAll('#trend-shape .view-btn');
+      ok('有長條／折線可以切', shapeBtns.length === 2);
+      if (shapeBtns.length === 2) {
+        shapeBtns[1].click(); await sleep(260);
+        const line = q('#trend .linechart');
+        ok('切得到折線', !!line);
+        if (line) {
+          ok('折線有兩條（收入、支出）',
+             line.querySelectorAll('path[fill="none"]').length === 2);
+          const axis = document.querySelectorAll('#trend .chart-axis .chart-label');
+          const dots = line.querySelectorAll('circle');
+          ok('每個月都有一個點', dots.length === axis.length * 2,
+             dots.length + ' 點 / ' + axis.length + ' 個月');
+          // 點要在圖裡面，跑到框外就是幾何算錯了
+          const box = line.getBoundingClientRect();
+          const outside = [...dots].filter(c => {
+            const b = c.getBoundingClientRect();
+            return b.left < box.left - 6 || b.right > box.right + 6
+                || b.top < box.top - 6 || b.bottom > box.bottom + 6;
+          });
+          ok('點都在圖裡面', outside.length === 0, outside.length + ' 個跑出去');
+        }
+        shapeBtns[0].click(); await sleep(200);
+        ok('切得回長條', !!q('#trend .chart'));
+      }
+
+      // 帳戶篩選
+      const acct = q('.acct-filter select');
+      ok('有「報表只看哪個帳戶」', !!acct);
+      if (acct) {
+        const all = q('#month-summary').textContent;
+        ok('全部帳戶時支出是 500', all.includes('500'), all.replace(/\s+/g, ' '));
+        acct.value = '甲行';
+        acct.dispatchEvent(new Event('change'));
+        await sleep(260);
+        const one = q('#month-summary').textContent;
+        ok('篩了甲行支出剩 300', one.includes('300') && !one.includes('500'),
+           one.replace(/\s+/g, ' '));
+        ok('篩了之後圓餅只剩一塊',
+           document.querySelectorAll('#by-category .pie-key').length === 1);
+
+        // 預算不吃篩選，這件事一定要寫出來
+        Money.data.budgets = [{ category: '餐飲', limit: 1000 }];
+        Money.render(); await sleep(220);
+        ok('篩帳戶時預算卡有講它不受影響',
+           q('#budgets').textContent.includes('不受上面的帳戶篩選'));
+
+        q('.acct-filter .btn').click(); await sleep(220);
+        ok('按「看全部」回得去', Money.reportAccount === '');
+      }
+
+      Money.data = JSON.parse(keep);
+      Money.reportAccount = '';
+      Money.render();
+      await sleep(200);
     }
 
     // CSS 有沒有被切壞。
@@ -1479,14 +1692,12 @@ try {
         `--window-size=1512,1400 --dump-dom "http://127.0.0.1:${PORT}/_檢查.html" 2>/dev/null`,
         { maxBuffer: 32 * 1024 * 1024 }).toString();
 
-    // 手機那一輪。同一份 probe，靠視窗寬度自己分岔。
-    const domM = execSync(
-        `"${CHROME}" --headless --disable-gpu --virtual-time-budget=60000 ` +
-        `--window-size=390,844 --dump-dom "http://127.0.0.1:${PORT}/_檢查.html" 2>/dev/null`,
-        { maxBuffer: 32 * 1024 * 1024 }).toString();
+    // 手機那一輪。同一份 probe，靠視窗寬度自己分岔——
+    // 走 CDP 的裝置模擬，才拿得到真正的 390。
+    const phone = await phoneTitle(`http://127.0.0.1:${PORT}/_檢查.html`);
 
     const title = ((dom.match(/<title>([^<]*)<\/title>/) || [])[1] || '')
-        + ' ||| ' + ((domM.match(/<title>([^<]*)<\/title>/) || [])[1] || '');
+        + ' ||| ' + phone;
     const lines = title.split(' ||| ').filter(Boolean);
 
     if (!lines.length) {

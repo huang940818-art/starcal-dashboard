@@ -45,7 +45,9 @@ const Overview = {
         const open = Todo.open();
 
         const spent = new Map(Money.byCategory(thisMonth()).map(c => [c.category, c.amount]));
-        const over = Money.data.budgets
+        // 走 budgetsFor 不是 data.budgets——後者現在同時放著「平常」和
+        // 「某個月另外設的」兩種，直接讀會把同一個分類算兩次
+        const over = Money.budgetsFor(thisMonth())
             .filter(b => Number(b.limit) > 0 && (spent.get(b.category) || 0) > b.limit)
             .map(b => ({ ...b, used: spent.get(b.category) || 0 }));
 
@@ -172,7 +174,7 @@ const Overview = {
         const items = [];
 
         const spent = new Map(Money.byCategory(thisMonth()).map(c => [c.category, c.amount]));
-        for (const b of Money.data.budgets) {
+        for (const b of Money.budgetsFor(thisMonth())) {
             const used = spent.get(b.category) || 0;
             if (!b.limit) continue;
             if (used > b.limit) {

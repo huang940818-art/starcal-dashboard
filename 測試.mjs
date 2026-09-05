@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad'];
+    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
     return new Function(`
         const document = { querySelector: () => null, querySelectorAll: () => [] };
@@ -26,8 +26,9 @@ function load(...files) {
     `)();
 }
 
-const { Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO, AutoCat, Range, Csv } =
-    load('./js/util.js', './js/demo.js', './js/money.js', './js/autocat.js', './js/csv.js');
+const { Charts, Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO, AutoCat, Range, Csv } =
+    load('./js/util.js', './js/demo.js', './js/money.js', './js/autocat.js', './js/csv.js',
+         './js/charts.js');
 
 /** 給一份乾淨的資料，避免測試互相影響 */
 function setup(overrides = {}) {
@@ -713,4 +714,127 @@ test('查得出這個月有沒有自己的一套', () => {
     ] });
     assert.ok(m.hasOwnBudget('2026-09'));
     assert.ok(!m.hasOwnBudget('2026-10'));
+});
+
+/* ── 報表：帳戶篩選 ─────────────────────────────────
+ *
+ * 篩錯了不會報錯，只會給一個看起來很合理的小數字。
+ */
+
+test('不篩帳戶就是全部', () => {
+    const m = setup({ transactions: [
+        { id: '1', date: day(3), kind: 'expense', amount: 100, category: '餐飲', account: '郵局' },
+        { id: '2', date: day(4), kind: 'expense', amount: 50, category: '餐飲', account: '現金' },
+    ] });
+    assert.equal(m.summaryIn(Range.make('month'), '').expense, 150);
+});
+
+test('篩了帳戶只算那個帳戶', () => {
+    const m = setup({ transactions: [
+        { id: '1', date: day(3), kind: 'expense', amount: 100, category: '餐飲', account: '郵局' },
+        { id: '2', date: day(4), kind: 'expense', amount: 50, category: '餐飲', account: '現金' },
+    ] });
+    assert.equal(m.summaryIn(Range.make('month'), '郵局').expense, 100);
+    assert.equal(m.summaryIn(Range.make('month'), '現金').expense, 50);
+});
+
+test('分類統計也吃帳戶篩選', () => {
+    const m = setup({ transactions: [
+        { id: '1', date: day(3), kind: 'expense', amount: 100, category: '餐飲', account: '郵局' },
+        { id: '2', date: day(4), kind: 'expense', amount: 80, category: '房租', account: '現金' },
+    ] });
+    const rows = m.byCategoryIn(Range.make('month'), '郵局');
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].category, '餐飲');
+});
+
+test('每月收支也吃帳戶篩選', () => {
+    const m = setup({ transactions: [
+        { id: '1', date: day(3), kind: 'expense', amount: 100, category: '餐飲', account: '郵局' },
+        { id: '2', date: day(4), kind: 'expense', amount: 80, category: '餐飲', account: '現金' },
+    ] });
+    assert.equal(m.monthSummary(thisMonthStr, '現金').expense, 80);
+});
+
+test('轉帳不算收入也不算支出，篩了帳戶還是一樣', () => {
+    const m = setup({ transactions: [
+        { id: '1', date: day(3), kind: 'transfer', amount: 500, account: '郵局', toAccount: '現金' },
+    ] });
+    const s = m.summaryIn(Range.make('month'), '郵局');
+    assert.equal(s.income, 0);
+    assert.equal(s.expense, 0);
+});
+
+/* ── 圖表的幾何 ─────────────────────────────────────
+ *
+ * 角度算錯、點位算錯，畫出來只是「有點怪」，不會有任何錯誤訊息。
+ */
+
+test('圓餅每一塊照比例，而且首尾接得起來', () => {
+    const p = Charts.slices([50, 30, 20]);
+    assert.equal(p.length, 3);
+    assert.equal(p[0].fraction, 0.5);
+    assert.equal(p[0].start, 0);
+    assert.ok(Math.abs(p[2].end - 1) < 1e-9);
+});
+
+test('全部是零的時候圓餅不畫，也不會除以零', () => {
+    assert.deepEqual(Charts.slices([0, 0]), []);
+    assert.deepEqual(Charts.slices([]), []);
+});
+
+test('負數當成零，不能把別塊撐大', () => {
+    const p = Charts.slices([-100, 50, 50]);
+    assert.equal(p[0].fraction, 0);
+    assert.equal(p[1].fraction, 0.5);
+});
+
+test('折線的底從零起算，不是從最小值', () => {
+    // 30000 和 31000 差 3%，畫出來也該只差一點點，
+    // 不能因為「最小值當底」被拉成谷底到山頂
+    const pts = Charts.points([30000, 31000], 100, 100, 0);
+    assert.ok(Math.abs(pts[0].y - pts[1].y) < 5,
+              `兩點差 ${Math.abs(pts[0].y - pts[1].y)}，太誇張了`);
+});
+
+test('折線最高的那點貼著上緣，最低的貼著下緣', () => {
+    const pts = Charts.points([0, 100], 100, 100, 0);
+    assert.equal(pts[1].y, 0);
+    assert.equal(pts[0].y, 100);
+});
+
+test('只有一個點的時候擺中間，不會除以零', () => {
+    for (const mode of ['center', 'edge']) {
+        const pts = Charts.points([500], 100, 100, 0, 0, mode);
+        assert.equal(pts.length, 1, mode);
+        assert.equal(pts[0].x, 50, mode);
+        assert.ok(Number.isFinite(pts[0].y), mode);
+    }
+});
+
+test('點站在自己那一格的中間，才對得上底下等寬的月份', () => {
+    // 四格、寬 100 → 格寬 25，中心在 12.5 / 37.5 / 62.5 / 87.5
+    const pts = Charts.points([1, 1, 1, 1], 100, 100, 0);
+    assert.deepEqual(pts.map(p => p.x), [12.5, 37.5, 62.5, 87.5]);
+});
+
+test('edge 模式頭尾貼著兩端', () => {
+    const pts = Charts.points([1, 1, 1], 100, 100, 0, 0, 'edge');
+    assert.deepEqual(pts.map(p => p.x), [0, 50, 100]);
+});
+
+test('幾條線共用同一個尺標，才不會三萬和三千一樣高', () => {
+    const a = Charts.points([30000], 100, 100, 0, 30000);
+    const b = Charts.points([3000], 100, 100, 0, 30000);
+    assert.equal(a[0].y, 0);
+    assert.ok(b[0].y > 80, `y=${b[0].y} 應該很矮`);
+});
+
+test('沒有點就給空字串，不是畫不出來的 M', () => {
+    assert.equal(Charts.linePath([]), '');
+});
+
+test('點串得成 SVG 的 d', () => {
+    const d = Charts.linePath([{ x: 0, y: 10 }, { x: 5, y: 0 }]);
+    assert.equal(d, 'M0.0 10.0 L5.0 0.0');
 });

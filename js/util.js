@@ -105,6 +105,14 @@ const stamp = () => new Date().toISOString();
 
 /* ── 顏色 ──────────────────────────────────────────── */
 
+/** 分類色票。十二個色相繞一圈，相鄰兩個都分得出來——
+ *  分類的用途就是「一眼看出不一樣」，區分度不夠就沒有意義。 */
+const LABEL_COLORS = [
+    '#EE8FA3', '#E8836F', '#F0B45F', '#F9D984',
+    '#B8D96F', '#7FD9A8', '#5FC9C0', '#7FB4E8',
+    '#A99BE8', '#D49BE0', '#D9B48F', '#9FB3A6',
+];
+
 /** 相對亮度（sRGB）。 */
 function luminance(hex) {
     const n = parseInt(String(hex).slice(1), 16);

@@ -255,10 +255,11 @@ const Money = {
 
     /** 某個月的收入與支出。**轉帳兩者都不算**——錢從左口袋到右口袋，
      *  算成支出的話每轉一次帳就多花一次錢。 */
-    monthSummary(ym) {
+    monthSummary(ym, acct = '') {
         let income = 0, expense = 0;
         for (const t of this.data.transactions) {
             if (monthOf(t.date) !== ym) continue;
+            if (acct && t.account !== acct) continue;
             const amt = Number(t.amount) || 0;
             if (t.kind === 'income') income += amt;
             else if (t.kind === 'expense') expense += amt;
@@ -267,10 +268,11 @@ const Money = {
     },
 
     /** 一段期間的收入與支出。轉帳一樣兩者都不算。 */
-    summaryIn(range) {
+    summaryIn(range, acct = '') {
         let income = 0, expense = 0;
         for (const t of this.data.transactions) {
             if (!Range.contains(range, t.date)) continue;
+            if (acct && t.account !== acct) continue;
             const amt = Number(t.amount) || 0;
             if (t.kind === 'income') income += amt;
             else if (t.kind === 'expense') expense += amt;
@@ -279,10 +281,11 @@ const Money = {
     },
 
     /** 一段期間各分類花了多少，多的在前 */
-    byCategoryIn(range) {
+    byCategoryIn(range, acct = '') {
         const map = new Map();
         for (const t of this.data.transactions) {
             if (t.kind !== 'expense' || !Range.contains(range, t.date)) continue;
+            if (acct && t.account !== acct) continue;
             const key = t.category || '未分類';
             map.set(key, (map.get(key) || 0) + (Number(t.amount) || 0));
         }
@@ -330,6 +333,19 @@ const Money = {
         return this.data.budgets.some(b => b.month === ym);
     },
 
+    /**
+     * 分類的顏色。
+     *
+     * **照分類在清單裡的位置給，不照金額排名。** 照排名的話，
+     * 這個月餐飲最多是紅色，下個月房租超過它，紅色就換人了——
+     * 翻月份的時候顏色一直在動，等於沒有顏色。
+     */
+    colorOf(category) {
+        const i = this.data.categories.expense.findIndex(c => c.name === category);
+        if (i < 0) return 'var(--text-3)';        // 未分類、或已經被刪掉的分類
+        return LABEL_COLORS[i % LABEL_COLORS.length];
+    },
+
     natureOf(category) {
         return this.data.categories.expense.find(c => c.name === category)?.nature || 'flexible';
     },
@@ -338,6 +354,15 @@ const Money = {
 
     /** 現在在看哪一段。預設是這個月。 */
     range: null,
+
+    /**
+     * 報表只看哪個帳戶（空字串＝全部）。存的是帳戶**名字**，
+     * 因為每一筆帳裡記的就是名字。
+     *
+     * **預算不吃這個篩選。** 只看郵局的花費卻拿全部的預算去比，
+     * 會顯示「還有很多」——那是錯的，而且錯得讓人放心。
+     */
+    reportAccount: '',
 
     isNow() { return Range.hasToday(this.range); },
 
@@ -459,6 +484,38 @@ const Money = {
 
         box.append(nav);
 
+        /* 只看哪個帳戶。
+         *
+         * 她的帳戶很多（郵局、學生證、幾張卡、證券），問的是
+         * 「這張卡到底花了多少」。放在期間旁邊而不是每張卡各自一個——
+         * 分開放的話翻報表要一張一張改，而且很容易兩張卡設得不一樣，
+         * 看到的數字對不起來卻不知道為什麼。
+         */
+        const names = this.data.accounts.map(a => a.name);
+        if (names.length > 1) {
+            // 帳戶被改名或刪掉之後，篩選卡在一個不存在的名字上會讓
+            // 每張報表都空白，看起來像資料不見了
+            if (this.reportAccount && !names.includes(this.reportAccount)) {
+                this.reportAccount = '';
+            }
+            const sel = el('select', { class: 'shrink', 'aria-label': '只看哪個帳戶' });
+            fillSelect(sel, [{ value: '', label: '全部帳戶' },
+                             ...names.map(n => ({ value: n, label: n }))],
+                       this.reportAccount);
+            sel.onchange = () => { this.reportAccount = sel.value; this.render(); };
+
+            box.append(el('div', { class: 'acct-filter' }, [
+                el('span', { class: 'sub', text: '報表只看' }),
+                sel,
+                this.reportAccount
+                    ? el('button', {
+                        class: 'btn small ghost', text: '看全部',
+                        onclick: () => { this.reportAccount = ''; this.render(); },
+                    })
+                    : null,
+            ]));
+        }
+
         // 這幾張卡的標題要跟著期間走，不然翻到七月還寫「這個月」
         const title = this.isNow() && this.range.kind === 'month'
             ? '這個月' : Range.label(this.range);
@@ -546,7 +603,7 @@ const Money = {
     renderMonth() {
         const box = $('#month-summary');
         clear(box);
-        const s = this.summaryIn(this.range);
+        const s = this.summaryIn(this.range, this.reportAccount);
         box.append(
             el('div', { class: 'big money-num' + (s.net < 0 ? ' negative' : ''), text: money(s.net, true) }),
             el('div', { class: 'sub', text: this.rangeWord() + '收支相抵' }),
@@ -570,6 +627,7 @@ const Money = {
         let fixed = 0, flexible = 0;
         for (const t of this.data.transactions) {
             if (t.kind !== 'expense' || !Range.contains(this.range, t.date)) continue;
+            if (this.reportAccount && t.account !== this.reportAccount) continue;
             const amt = Number(t.amount) || 0;
             if (this.natureOf(t.category) === 'fixed') fixed += amt;
             else flexible += amt;
@@ -651,6 +709,13 @@ const Money = {
                 text: `預算是按月算的，這裡看的是 ${y} 年 ${Number(m)} 月。` }));
         }
 
+        // 上面篩了帳戶，這張卡卻是全部一起算——不寫出來的話，
+        // 她會以為看到的是「郵局還剩多少」
+        if (this.reportAccount) {
+            box.append(el('p', { class: 'sub budget-note',
+                text: '預算是全部帳戶一起算的，不受上面的帳戶篩選影響。' }));
+        }
+
         for (const b of budgets) {
             const used = spent.get(b.category) || 0;
             const limit = Number(b.limit);
@@ -675,6 +740,9 @@ const Money = {
         }
     },
 
+    /** 每月收支畫成長條還是折線 */
+    trendShape: 'bar',
+
     renderTrend() {
         const box = $('#trend');
         clear(box);
@@ -689,7 +757,7 @@ const Money = {
             months = recentMonths(Number(range));
         }
 
-        const rows = months.map(ym => ({ ym, ...this.monthSummary(ym) }));
+        const rows = months.map(ym => ({ ym, ...this.monthSummary(ym, this.reportAccount) }));
         const peak = Math.max(1, ...rows.map(r => Math.max(r.income, r.expense)));
 
         if (!rows.some(r => r.income || r.expense)) {
@@ -697,7 +765,27 @@ const Money = {
             return;
         }
 
-        box.append(
+        if (this.trendShape === 'line') {
+            /* 折線。
+             *
+             * 長條看的是「這個月多少」，折線看的是「一路走下來的形狀」——
+             * 看十二個月的時候折線清楚得多，看六個月的時候長條比較好比。
+             * 所以給她自己切，不預設哪個比較好。
+             */
+            // **照容器的實際寬度畫。** 固定比例的 viewBox 在寬螢幕上會把
+            // 整條線壓成扁扁一條、下面留一大片空白；用 preserveAspectRatio
+            // 硬拉又會把圓點拉成橢圓。量一次最準。
+            const w = Math.max(280, box.clientWidth || 320);
+            box.append(
+                Charts.lines([
+                    { values: rows.map(r => r.income), color: 'var(--good)' },
+                    { values: rows.map(r => r.expense), color: 'var(--money)' },
+                ], { width: w, height: 150 }),
+                el('div', { class: 'chart-axis' }, rows.map(r => el('span', {
+                    class: 'chart-label',
+                    text: rows.length > 8 ? String(Number(r.ym.slice(5))) : monthLabel(r.ym),
+                }))));
+        } else box.append(
             el('div', { class: 'chart' }, rows.map(r => el('div', { class: 'chart-col' }, [
                 el('div', { class: 'bars' }, [
                     el('div', {
@@ -715,11 +803,14 @@ const Money = {
                 el('div', { class: 'chart-label',
                             text: rows.length > 8 ? String(Number(r.ym.slice(5)))
                                                   : monthLabel(r.ym) }),
-            ]))),
+            ]))));
+
+        box.append(
             el('div', { class: 'legend' }, [
                 el('span', {}, [el('i', { style: 'background:var(--good)' }), '收入']),
                 el('span', {}, [el('i', { style: 'background:var(--money)' }), '支出']),
             ]));
+
 
         // 年度回顧：把這段期間總結成一句話
         const income = rows.reduce((s, r) => s + r.income, 0);
@@ -739,7 +830,7 @@ const Money = {
         const box = $('#by-category');
         clear(box);
 
-        const rows = this.byCategoryIn(this.range);
+        const rows = this.byCategoryIn(this.range, this.reportAccount);
         if (!rows.length) {
             box.append(el('div', { class: 'empty' }, [
                 icon('list', 26), this.rangeWord() + '沒有支出',
@@ -749,6 +840,42 @@ const Money = {
 
         const peak = rows[0].amount;
         const sum = rows.reduce((s, r) => s + r.amount, 0);
+
+        /* 圓餅（甜甜圈）。
+         *
+         * 條狀圖回答的是「哪一類最多」，圓餅回答的是「這一類佔我多少」——
+         * 兩個問題不一樣，所以兩個都留著，不是二選一。
+         *
+         * 只畫前六類，剩下的併成「其他」。十四類各佔百分之七的話，
+         * 畫出來是十四條看不出誰是誰的細縫。
+         */
+        const TOP = 6;
+        const head = rows.slice(0, TOP);
+        const tail = rows.slice(TOP);
+        const pie = head.map(r => ({
+            label: r.category, value: r.amount, color: this.colorOf(r.category),
+        }));
+        if (tail.length) {
+            pie.push({
+                label: '其他 ' + tail.length + ' 類',
+                value: tail.reduce((a, b) => a + b.amount, 0),
+                color: 'var(--text-3)',
+            });
+        }
+
+        box.append(el('div', { class: 'pie-wrap' }, [
+            Charts.donut(pie, {
+                center: [
+                    el('div', { class: 'money-num', text: money(sum) }),
+                    el('div', { class: 'sub', text: '總支出' }),
+                ],
+            }),
+            el('div', { class: 'pie-legend' }, pie.map(p => el('div', { class: 'pie-key' }, [
+                el('i', { style: `background:${p.color}` }),
+                el('span', { class: 'ellipsis', text: p.label }),
+                el('span', { class: 'sub', text: Math.round(p.value / sum * 100) + '%' }),
+            ]))),
+        ]));
 
         for (const r of rows.slice(0, 8)) {
             box.append(el('div', { class: 'cat-row' }, [
@@ -761,7 +888,11 @@ const Money = {
                     }),
                 ]),
                 el('span', { class: 'money-num', text: `${money(r.amount)}　${Math.round(r.amount / sum * 100)}%` }),
-                el('div', { class: 'cat-bar', style: `width:${r.amount / peak * 100}%` }),
+                // 條的顏色跟上面圓餅同一套——兩張圖講的是同一批分類，
+                // 顏色對不起來的話眼睛要重新認一次
+                el('div', { class: 'cat-bar',
+                            style: `width:${r.amount / peak * 100}%;`
+                                 + `background:${this.colorOf(r.category)}` }),
             ]));
         }
     },
@@ -1593,6 +1724,29 @@ const Money = {
         };
 
         $('#trend-range').onchange = () => this.renderTrend();
+
+        /* 折線圖是照容器寬度畫死的，視窗變寬變窄要重畫。
+         *
+         * 也順便處理「在別的分頁時 clientWidth 是 0」——切回記帳的那一刻
+         * 寬度從 0 變成實際值，這裡就會被叫到。 */
+        let lastWidth = 0;
+        new ResizeObserver(entries => {
+            const w = Math.round(entries[0].contentRect.width);
+            // 只認寬度。重畫會改高度，跟著高度重畫會沒完沒了
+            if (!w || w === lastWidth) return;
+            lastWidth = w;
+            if (this.trendShape === 'line' && !$('#panel-money').hidden) this.renderTrend();
+        }).observe($('#trend'));
+
+        for (const b of $$('#trend-shape .view-btn')) {
+            b.onclick = () => {
+                this.trendShape = b.dataset.shape;
+                for (const x of $$('#trend-shape .view-btn')) {
+                    x.classList.toggle('on', x === b);
+                }
+                this.renderTrend();
+            };
+        }
 
         let t;
         const refilter = () => { clearTimeout(t); t = setTimeout(() => this.renderTxns(), 120); };

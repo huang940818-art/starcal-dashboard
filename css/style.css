@@ -1262,6 +1262,114 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
     font-weight: 600;
 }
 
+/* 標題列裡那種小一號的分段控制（長條／折線）。
+ * 卡片標題本來就擠，用一般的尺寸會把標題擠成兩行。
+ *
+ * `.card h2 > span:not(.label)` 那條會把標題裡的每個 span 變成
+ * 撐滿的 flex 容器（那是給按鈕群用的）。這顆自己就是一個控制項，
+ * 被撐開的話在手機上會佔掉一整行，所以要把它搶回來。 */
+.card h2 > span.view-switch.tight { display: inline-flex; flex: 0 0 auto; }
+.view-switch.tight { padding: 2px; border-radius: 9px; }
+.view-switch.tight .view-btn { padding: 4px 10px; font-size: 12.5px; }
+
+/* ── 報表 ──────────────────────────────────────────
+ *
+ * 圓餅（甜甜圈）回答的是「這一類佔我多少」，跟下面條狀圖的
+ * 「哪一類最多」是兩個問題，所以兩個都留著。
+ */
+
+.pie-wrap {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    flex-wrap: wrap;
+    margin-bottom: 18px;
+}
+
+.donut-box {
+    position: relative;
+    flex: 0 0 auto;
+    line-height: 0;
+}
+
+/* svg 上有 width/height 屬性，不寫這條的話它在窄畫面不肯縮 */
+.donut { width: 100%; height: auto; max-width: 168px; }
+
+.donut-center {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    line-height: 1.3;
+    /* 中間那行字不能吃掉滑鼠事件，不然圓環的 <title> 提示叫不出來 */
+    pointer-events: none;
+}
+
+.donut-center .money-num { font-size: 18px; }
+
+.pie-legend {
+    flex: 1 1 150px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.pie-key {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13.5px;
+    min-width: 0;
+}
+
+.pie-key i {
+    flex: 0 0 auto;
+    width: 11px;
+    height: 11px;
+    border-radius: 3px;
+}
+
+/* 百分比推到最右邊，一整欄對齊才掃得下來 */
+.pie-key .sub { margin-left: auto; flex: 0 0 auto; }
+
+/* 手機上圖例會換到下面整整一行，圓環留在左邊看起來像沒排好 */
+@media (max-width: 620px) {
+    .pie-wrap { justify-content: center; gap: 12px; }
+    .pie-legend { flex-basis: 100%; }
+}
+
+.linechart {
+    display: block;
+    /* 寬度是照容器量出來畫進 viewBox 的，這裡不要再縮放一次 */
+    max-width: 100%;
+    overflow: visible;
+}
+
+/* 折線圖下面那排月份。用 grid 讓每一格等寬，跟折線的點對得上——
+ * flex + space-between 的話首尾兩格只有半格寬，會偏掉。 */
+.chart-axis {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    margin-top: 4px;
+}
+
+.chart-axis .chart-label { text-align: center; }
+
+.acct-filter {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 10px;
+}
+
+.acct-filter select { width: auto; min-width: 0; }
+
 .chips {
     display: flex;
     flex-wrap: wrap;
@@ -1783,25 +1891,73 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
  * 細節往下捲就有；反過來（格子塞滿細節、星期五被推到螢幕外）比較糟。
  */
 @media (max-width: 620px) {
+    /* 一欄只有五十幾像素，課名每多擠出兩三個字就少換一行。
+     * 節次欄和內距各省一點，加起來剛好夠「訊號與系統」排成一行。 */
     .tt-p {
-        grid-template-columns: 34px repeat(var(--cols), minmax(0, 1fr));
+        grid-template-columns: 28px repeat(var(--cols), minmax(0, 1fr));
         gap: 2px;
     }
-    .tt-p-slot { padding: 4px 5px; }
-    .tt-p-title { font-size: 11px; line-height: 1.3; }
+    .tt-p-slot {
+        padding: 4px 4px 4px 5px;
+        border-left-width: 2px;
+    }
+    /* balance 讓五個字斷成 2+3，不是 4+1——最後一行只剩一個字
+     * 是這張表上最刺眼的東西 */
+    .tt-p-title {
+        font-size: 11px;
+        line-height: 1.25;
+        letter-spacing: -.02em;
+        text-wrap: balance;
+    }
     .tt-p-sub { display: none; }
     .tt-p-n, .tt-p-empty { min-height: 38px; }
-    .tt-p-name { font-size: 11.5px; }
-    .tt-p-corner { font-size: 10px; }
+    .tt-p-name { font-size: 11px; }
+    .tt-p-corner { font-size: 9.5px; }
     .tt-p-wd { font-size: 12px; }
     .tt-p-wd .wd-long { display: none; }
     .tt-p-wd .wd-short { display: inline; }
     .tt-p-fold { padding: 8px 10px; font-size: 11.5px; }
+
+    /* 十四列乘五欄的虛線在手機上是一整片網目，有課的那幾格反而
+     * 被淹在裡面。空格淡到剩下暗示就好，反正它本來就只是「可以點」。 */
+    .tt-p-empty { border-color: color-mix(in srgb, var(--separator) 30%, transparent); }
+
+    /* 選課表的下拉自己佔一行，動作按鈕排在下面一排——
+     * 混在同一行的話四顆按鈕會斷成兩三段，長短不一 */
+    .tt-bar { gap: 7px; }
+    .tt-bar > select { flex: 1 1 100%; width: auto; }
+    .tt-bar > .grow { display: none; }
+    .tt-bar > .btn { flex: 1 1 auto; justify-content: center; }
 }
 
 /* 清單是**手機的替代品**，不是網格的補充。桌機兩份都畫的話，
  * 同一週的課會講兩遍，畫面長度翻倍卻沒有多講任何事。 */
 .tt-list { display: none; }
+
+/* 節次制的時候這份是闔起來的，summary 就是那顆可以按的標題。 */
+.tt-more {
+    cursor: pointer;
+    list-style: none;
+    padding: 10px 12px;
+    margin-top: 12px;
+    border: 1px solid var(--separator);
+    border-radius: 10px;
+    color: var(--text-3);
+    font-size: 12.5px;
+    user-select: none;
+}
+
+.tt-more::-webkit-details-marker { display: none; }
+
+/* 自己畫箭頭。原生的三角形在深色主題下幾乎看不見，
+ * 而且左右兩種語系的位置不一樣。 */
+.tt-more::after { content: '　▾'; font-size: 10px; }
+.tt-list[open] > .tt-more::after { content: '　▴'; }
+.tt-list[open] > .tt-more { margin-bottom: 4px; }
+
+/* 攤開來當主體的時候（時間制）不要那顆框，它只是個分隔標題 */
+.tt-list.plain > .tt-more { border: 0; padding: 0 2px; pointer-events: none; }
+.tt-list.plain > .tt-more::after { content: ''; }
 
 /* 時間軸網格在手機上就算能橫捲也很難讀，那邊反過來：給清單，收網格。
  * **節次網格不收**——它只有五欄，而且那正是課表該有的樣子。 */
@@ -1925,6 +2081,10 @@ footer {
         width: 100%;
         justify-content: flex-start;
     }
+
+    /* 但控制項本身不算「按鈕群」。撐滿一整行的分段控制看起來
+     * 像一條沒東西的長條，而且把標題頂成三行。 */
+    .card h2 > span.view-switch.tight { width: auto; }
 
     /* **手指比游標粗。** 桌機那個 4px 的內距在手機上很難按準，
      * 尤其是並排的幾顆。 */

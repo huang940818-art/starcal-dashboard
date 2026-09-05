@@ -402,10 +402,31 @@ const Timetable = {
         return el('div', { class: 'tt-wrap' }, [grid]);
     },
 
-    /** 網格底下的清單。手機上網格太窄，這份才是真正讀得到的。 */
+    /**
+     * 網格底下的清單。
+     *
+     * 手機上格子放不下老師和教室（`.tt-p-sub` 在小螢幕是收起來的），
+     * 這份補的就是那些細節。
+     *
+     * **但它預設是闔上的。** 之前直接攤開，手機上等於同一週的課
+     * 從頭到尾講兩遍——先看一張網格，再往下捲過五個星期的清單，
+     * 頁面長度翻倍卻沒有多講幾個字。要老師教室的時候再打開。
+     */
     list() {
-        const box = el('div', { class: 'tt-list' });
-        if (!this.slots().length) {
+        const count = this.slots().length;
+
+        // **時間制的時候不能收。** 手機上時間軸網格是整個藏起來的
+        // （橫捲的表在手機上讀不了），這份清單就是唯一看得到課的地方，
+        // 收起來等於課表整個不見。節次制才收——上面已經有一張網格了。
+        const foldable = this.mode() === 'period' && count > 0;
+
+        const box = el('details', {
+            class: 'tt-list' + (foldable ? '' : ' plain'), open: !foldable,
+        }, [
+            el('summary', { class: 'tt-more',
+                text: foldable ? `老師、教室（${count} 堂）` : '這禮拜的課' }),
+        ]);
+        if (!count) {
             box.append(el('div', { class: 'empty', style: 'padding:26px 4px' }, [
                 icon('clock', 24), '這份還是空的',
                 el('div', { class: 'hint', text: this.mode() === 'period'
