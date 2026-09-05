@@ -667,3 +667,50 @@ test('同一天同金額但備註不同的是兩筆，不能當成重複', () =>
     ];
     assert.equal(Csv.dedupe(incoming, []).fresh.length, 2);
 });
+
+/* ── 每個月自己的預算 ────────────────────────────────
+ *
+ * 平常一份，某個月可以另外設。查錯了不會報錯，只會安靜地
+ * 拿平常的數字去比九月的花費，然後告訴她「還沒超支」。
+ */
+
+test('沒有另外設的月份，用平常那份', () => {
+    const m = setup({ budgets: [{ category: '餐飲', limit: 3000 }] });
+    const out = m.budgetsFor('2026-09');
+    assert.equal(out.length, 1);
+    assert.equal(out[0].limit, 3000);
+});
+
+test('那個月另外設過就用那個月的', () => {
+    const m = setup({ budgets: [
+        { category: '餐飲', limit: 3000 },
+        { category: '餐飲', limit: 5000, month: '2026-09' },
+    ] });
+    assert.equal(m.budgetsFor('2026-09')[0].limit, 5000);
+    assert.equal(m.budgetsFor('2026-10')[0].limit, 3000);
+});
+
+test('那個月沒提到的分類，還是照平常的走', () => {
+    const m = setup({ budgets: [
+        { category: '餐飲', limit: 3000 },
+        { category: '房租', limit: 6000 },
+        { category: '餐飲', limit: 5000, month: '2026-09' },
+    ] });
+    const out = new Map(m.budgetsFor('2026-09').map(b => [b.category, b.limit]));
+    assert.equal(out.get('餐飲'), 5000);
+    assert.equal(out.get('房租'), 6000);
+});
+
+test('別的月份設的不會漏到這個月', () => {
+    const m = setup({ budgets: [{ category: '餐飲', limit: 5000, month: '2026-09' }] });
+    assert.equal(m.budgetsFor('2026-10').length, 0);
+});
+
+test('查得出這個月有沒有自己的一套', () => {
+    const m = setup({ budgets: [
+        { category: '餐飲', limit: 3000 },
+        { category: '餐飲', limit: 5000, month: '2026-09' },
+    ] });
+    assert.ok(m.hasOwnBudget('2026-09'));
+    assert.ok(!m.hasOwnBudget('2026-10'));
+});

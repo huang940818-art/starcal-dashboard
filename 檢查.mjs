@@ -240,6 +240,29 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
       q('#b-save').click(); await sleep(280);
       ok('預算存得進去', Money.data.budgets.length === 1);
       ok('預算卡看得到數字', q('#budgets').textContent.includes('3,000'));
+
+      // 某個月另外設，不能把平常那份洗掉
+      q('#edit-budgets').click(); await sleep(180);
+      const scopeBtns = document.querySelectorAll('#budget-fields .view-btn');
+      ok('預算對話框有平常/單月兩個切換', scopeBtns.length === 2, scopeBtns.length + ' 個');
+      if (scopeBtns.length === 2) {
+        scopeBtns[1].click(); await sleep(120);
+        const only = document.querySelectorAll('#budget-fields input');
+        ok('切到單月後平常那份寫在提示裡',
+           (only[0].placeholder || '').includes('3,000'), only[0].placeholder);
+        only[0].value = '5000';
+        q('#b-save').click(); await sleep(280);
+
+        const base = Money.data.budgets.filter(b => !b.month);
+        const own = Money.data.budgets.filter(b => b.month);
+        ok('平常那份還在', base.length === 1 && base[0].limit === 3000,
+           JSON.stringify(base));
+        ok('單月那份存下來了', own.length === 1 && own[0].limit === 5000,
+           JSON.stringify(own));
+        ok('預算卡改用這個月的數字', q('#budgets').textContent.includes('5,000'));
+        ok('預算卡有講這個月另外設過',
+           q('#budgets').textContent.includes('自己的一套'));
+      }
     }
 
     // CSS 有沒有被切壞。

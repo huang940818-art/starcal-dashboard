@@ -304,6 +304,32 @@ const Money = {
             .sort((a, b) => b.amount - a.amount);
     },
 
+    /* ── 預算 ──────────────────────────────────────────
+     *
+     * 她問「每個月的預算可以自訂嗎」。
+     *
+     * **平常一份，某個月可以另外設。** 每個月都要重設一次太累，
+     * 但九月有註冊費、二月有紅包——那幾個月的預算本來就不該跟平常一樣。
+     *
+     * 所以 budgets 裡有兩種：沒有 month 的是平常的，有 month 的
+     * 只套用那個月。查的時候先找那個月的，沒有才用平常的。
+     */
+    budgetsFor(ym) {
+        const base = this.data.budgets.filter(b => !b.month);
+        const override = this.data.budgets.filter(b => b.month === ym);
+        if (!override.length) return base;
+
+        // 那個月有設就用那個月的，那個月沒提到的分類還是用平常的
+        const map = new Map(base.map(b => [b.category, b]));
+        for (const b of override) map.set(b.category, b);
+        return [...map.values()];
+    },
+
+    /** 這個月有沒有自己的一套 */
+    hasOwnBudget(ym) {
+        return this.data.budgets.some(b => b.month === ym);
+    },
+
     natureOf(category) {
         return this.data.categories.expense.find(c => c.name === category)?.nature || 'flexible';
     },
@@ -595,7 +621,8 @@ const Money = {
         const box = $('#budgets');
         clear(box);
 
-        const budgets = this.data.budgets.filter(b => Number(b.limit) > 0);
+        const budgetMonthEarly = monthOf(this.range.start);
+        const budgets = this.budgetsFor(budgetMonthEarly).filter(b => Number(b.limit) > 0);
         if (!budgets.length) {
             box.append(el('div', { class: 'empty' }, [
                 icon('budget', 26), '還沒設預算',
@@ -608,8 +635,15 @@ const Money = {
         // 看「這一週」的時候拿一週的花費去比月預算，會顯示「還有很多」——
         // 那是錯的，而且錯得讓人放心。所以一律用期間所在的那個月，
         // 並且在非月粒度的時候講清楚看的是哪個月。
-        const budgetMonth = monthOf(this.range.start);
+        const budgetMonth = budgetMonthEarly;
         const spent = new Map(this.byCategory(budgetMonth).map(c => [c.category, c.amount]));
+
+        // 這個月另外設過的話要講出來，不然她會以為改到的是平常那份
+        if (this.hasOwnBudget(budgetMonth)) {
+            const [y, m] = budgetMonth.split('-');
+            box.append(el('p', { class: 'sub budget-note',
+                text: `${y} 年 ${Number(m)} 月有自己的一套預算。` }));
+        }
 
         if (this.range.kind !== 'month') {
             const [y, m] = budgetMonth.split('-');
@@ -1393,9 +1427,37 @@ const Money = {
 
     editBudgets() {
         const box = $('#budget-fields');
-        clear(box);
+        const ym = monthOf(this.range.start);
+        const [yy, mm] = ym.split('-');
+        // 這個月已經有自己的一套就直接編那一套，不然先編平常的
+        let scope = this.hasOwnBudget(ym) ? ym : '';
 
-        const current = new Map(this.data.budgets.map(b => [b.category, b.limit]));
+        const draw = () => {
+            clear(box);
+
+            box.append(el('div', { class: 'view-switch', style: 'margin-bottom:14px' }, [
+                el('button', {
+                    type: 'button', class: 'view-btn' + (scope === '' ? ' on' : ''),
+                    text: '平常',
+                    onclick: () => { scope = ''; draw(); },
+                }),
+                el('button', {
+                    type: 'button', class: 'view-btn' + (scope ? ' on' : ''),
+                    text: `只有 ${Number(mm)} 月`,
+                    onclick: () => { scope = ym; draw(); },
+                }),
+            ]));
+
+            box.append(el('p', { class: 'sub', style: 'margin:-6px 0 12px', text: scope
+                ? `只改 ${yy} 年 ${Number(mm)} 月。這個月沒填的分類還是照平常的走。`
+                : '每個月都套用這一份。某個月不一樣的話，切到右邊那個。' }));
+
+            const base = new Map(this.data.budgets.filter(b => !b.month)
+                .map(b => [b.category, b.limit]));
+            const own = new Map(this.data.budgets.filter(b => b.month === ym)
+                .map(b => [b.category, b.limit]));
+            const current = scope ? own : base;
+
         for (const c of this.data.categories.expense) {
             box.append(el('label', { class: 'field' }, [
                 el('span', {}, [
@@ -1405,21 +1467,33 @@ const Money = {
                 ]),
                 el('input', {
                     type: 'number', min: '0', step: '100', 'data-cat': c.name,
-                    value: current.get(c.name) ?? '', placeholder: '不設限',
+                    value: current.get(c.name) ?? '',
+                    // 只設這個月的時候，平常那份是背景值——寫出來她才知道
+                    // 「留白」不等於「不設限」，而是「照平常的」
+                    placeholder: scope && base.get(c.name)
+                        ? `平常 ${money(base.get(c.name))}` : '不設限',
                 }),
             ]));
         }
+        };
 
+        draw();
         const dlg = openDialog('#dlg-budget');
 
         $('#b-save').onclick = () => {
-            this.data.budgets = $$('#budget-fields input')
+            const rows = $$('#budget-fields input')
                 .map(i => ({ category: i.dataset.cat, limit: Number(i.value) || 0 }))
                 .filter(b => b.limit > 0);
+
+            // 只換掉正在編的那一份，另一份不動
+            this.data.budgets = this.data.budgets.filter(b =>
+                scope ? b.month !== ym : !!b.month);
+            this.data.budgets.push(...rows.map(b => scope ? { ...b, month: ym } : b));
+
             this.save();
             dlg.close();
             this.render();
-            toast('預算存好了');
+            toast(scope ? `${Number(mm)} 月的預算存好了` : '預算存好了');
         };
     },
 
