@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO'];
+    const names = ['Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
     return new Function(`
         const document = { querySelector: () => null, querySelectorAll: () => [] };
@@ -26,8 +26,8 @@ function load(...files) {
     `)();
 }
 
-const { Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO } =
-    load('./js/util.js', './js/demo.js', './js/money.js');
+const { Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO, AutoCat } =
+    load('./js/util.js', './js/demo.js', './js/money.js', './js/autocat.js');
 
 /** 給一份乾淨的資料，避免測試互相影響 */
 function setup(overrides = {}) {
@@ -231,4 +231,73 @@ test('示範資料涵蓋近 12 個月，趨勢圖不會有空洞', () => {
         const s = m.monthSummary(ym);
         assert.ok(s.income || s.expense, `${ym} 沒有任何帳目`);
     }
+});
+
+/* ── 自動分類 ─────────────────────────────────────────
+ *
+ * 猜錯不會有任何地方報錯，只會安靜地把一筆帳記到錯的分類裡，
+ * 然後月底的統計就是錯的。所以每一條規則都要釘住。
+ */
+
+// 她真正記過的那幾筆，拿來當歷史
+const 她的帳 = [
+    { note: '7-11', category: '飲食' },
+    { note: '全家', category: '飲食' },
+    { note: '健康餐盒', category: '飲食' },
+    { note: '調理水', category: '日用' },
+    { note: 'Mac訂金', category: '日用' },
+    { note: '萊爾富', category: '飲食' },
+];
+const 她的分類 = ['飲食', '交通', '居家', '日用', '醫療', '服飾', '娛樂', '學習', '人情', '其他'];
+
+test('她自己記過的贏過內建的表', () => {
+    // 「調理水」照常識是喝的，但她記在日用——她的分法說了算
+    const g = AutoCat.guess('調理水', 她的帳, 她的分類);
+    assert.equal(g.category, '日用');
+});
+
+test('完全一樣的備註直接對上', () => {
+    assert.equal(AutoCat.guess('全家', 她的帳, 她的分類).category, '飲食');
+});
+
+test('打得比較長也對得上（包含關係）', () => {
+    assert.equal(AutoCat.guess('全家買飲料', 她的帳, 她的分類).category, '飲食');
+});
+
+test('大小寫和空白不影響', () => {
+    assert.equal(AutoCat.guess(' 7-11 ', 她的帳, 她的分類).category, '飲食');
+    assert.equal(AutoCat.guess('mac訂金', 她的帳, 她的分類).category, '日用');
+});
+
+test('她沒記過的用內建關鍵字', () => {
+    assert.equal(AutoCat.guess('星巴克', 她的帳, 她的分類).category, '飲食');
+    assert.equal(AutoCat.guess('高鐵票', 她的帳, 她的分類).category, '交通');
+    assert.equal(AutoCat.guess('房租', 她的帳, 她的分類).category, '居家');
+});
+
+test('猜不到就回 null，不要硬塞一個', () => {
+    assert.equal(AutoCat.guess('asdfghjkl', 她的帳, 她的分類), null);
+    assert.equal(AutoCat.guess('', 她的帳, 她的分類), null);
+    assert.equal(AutoCat.guess('   ', 她的帳, 她的分類), null);
+});
+
+test('不在她分類名單裡的一律不猜', () => {
+    // 她把「交通」刪掉了，就不該猜出一個不存在的分類
+    const 少了交通 = 她的分類.filter(c => c !== '交通');
+    assert.equal(AutoCat.guess('高鐵票', [], 少了交通), null);
+});
+
+test('會講出理由——她要看得出這是猜的', () => {
+    assert.match(AutoCat.guess('全家', 她的帳, 她的分類).reason, /全家/);
+    assert.match(AutoCat.guess('星巴克', [], 她的分類).reason, /星巴克/);
+});
+
+test('歷史裡沒有分類的那幾筆跳過，不要拿空的來猜', () => {
+    const 髒資料 = [{ note: '全家', category: '' }, { note: '全家', category: '飲食' }];
+    assert.equal(AutoCat.guess('全家', 髒資料, 她的分類).category, '飲食');
+});
+
+test('新的記錄排前面就贏——同一家店改記到別的分類，之後照新的', () => {
+    const 改過 = [{ note: '全家', category: '日用' }, { note: '全家', category: '飲食' }];
+    assert.equal(AutoCat.guess('全家', 改過, 她的分類).category, '日用');
 });

@@ -599,6 +599,42 @@ const Money = {
         $('#t-kind').onchange = syncKind;
         syncKind();
 
+        // ── 自動分類 ──
+        //
+        // 她的原話是「不知道怎麼分」。問題不是分類不夠，是每記一筆
+        // 都要停下來想「這算飲食還是日用」。
+        //
+        // **猜完要看得見。** 猜出來的分類直接填進下拉、旁邊寫一句
+        // 「照『全家』猜的」——她一眼看得出這是猜的不是她選的。
+        // 完全不猜的話每一筆都要自己選，那才是真正的成本。
+        //
+        // **她自己動過分類就不再猜。** 猜的東西把人選好的蓋掉，
+        // 比不猜還糟。
+        const hint = $('#t-cat-hint');
+        let pickedByHand = !isNew;      // 改舊的那筆本來就有分類，不要動它
+
+        $('#t-category').addEventListener('change', () => {
+            pickedByHand = true;
+            hint.hidden = true;
+        });
+
+        const autoCategory = () => {
+            if (pickedByHand || kindNow() === 'transfer') return;
+            const guess = AutoCat.guess(
+                $('#t-note').value,
+                // 新的排前面：同一家店改記到別的分類之後，照新的那個
+                [...this.data.transactions].reverse(),
+                (kindNow() === 'income' ? this.data.categories.income
+                                        : this.data.categories.expense).map(c => c.name));
+            if (!guess) { hint.hidden = true; return; }
+            $('#t-category').value = guess.category;
+            hint.textContent = `自動選了「${guess.category}」・${guess.reason}`;
+            hint.hidden = false;
+        };
+
+        $('#t-note').oninput = autoCategory;
+        hint.hidden = true;
+
         // 帳戶下拉的最後一項是「＋ 新增帳戶」。
         //
         // 為什麼要有這個：她說「紀錄支出的時候沒辦法選擇帳戶」——

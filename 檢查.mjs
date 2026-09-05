@@ -186,6 +186,29 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
       ok('預算卡看得到數字', q('#budgets').textContent.includes('3,000'));
     }
 
+    // CSS 有沒有被切壞。
+    //
+    // 今天真的發生過：拿註解裡也出現的字串當錨點做替換，把註解從中間
+    // 切開，結束符號提前出現，後面整段變成垃圾規則，反而把 [hidden]
+    // 那條吃掉——**畫面壞了但沒有任何錯誤訊息**。
+    {
+      const sheet = [...document.styleSheets].find(s => (s.href || '').includes('style.css'));
+      let rules = [];
+      try { rules = [...sheet.cssRules]; } catch {}
+      ok('樣式表載得進來而且規則數合理', rules.length > 200, rules.length + ' 條');
+      // 被切壞的話會冒出一條選擇器裡帶著中文或標點的垃圾規則
+      // 被切壞的規則會帶中文標點。用 fromCharCode 產生，
+      // 不要寫跳脫序列——那會先被外層的樣板字串求值掉。
+      const badChars = [0x300c, 0x300d, 0xff0c, 0x3002, 0x2014]
+          .map(c => String.fromCharCode(c));
+      const junk = rules.filter(r => r.selectorText
+          && badChars.some(c => r.selectorText.includes(c)));
+      ok('沒有被切壞的垃圾規則', junk.length === 0,
+         junk.map(r => r.selectorText).join(' | '));
+      ok('隱藏那條規則在',
+         rules.some(r => r.selectorText === '[hidden]'));
+    }
+
     // hidden 一定要贏。瀏覽器內建的 [hidden] 權重只有 (0,1,0)，
     // 隨便一條 label.field { display: block } 就蓋得過去——JS 設了
     // .hidden = true 但畫面上那一欄照樣在，而且程式一行都沒錯。
@@ -1069,6 +1092,35 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
 `;
 
 // ── 跑起來 ──────────────────────────────────────────────
+
+// ── 先檢查這支檢查本身 ────────────────────────────────
+//
+// PROBE 是上面那個樣板字串的內容，所以它**不能有反引號，也不能有
+// 樣板插值**：反引號會提前結束字串，跳脫序列會先被外層求值掉。
+// 正則裡的反斜線同理——`\.` 會變成 `.`，未跳脫的斜線把正則提前結束。
+//
+// 這件事今天踩了四次，每次的症狀都一樣：SyntaxError，
+// **整段檢查一行都不跑，而且靜靜地不跑**，只留下「2/2 過」看起來很正常。
+// 所以不要再靠記性，跑之前直接擋。
+{
+    // **要掃原始碼，不是求值後的 PROBE。** 樣板字串會把跳脫序列
+    // 求值掉——寫 \u0060 描述反引號的地方，求值後就真的變成反引號了，
+    // 拿求值後的字串去找會一直誤報。
+    const self = readFileSync(new URL(import.meta.url), 'utf-8');
+    const open = self.indexOf('const PROBE = ');
+    const body = self.slice(self.indexOf('\n', open) + 1);
+    const stop = body.indexOf('\n`;');
+    const raw = stop < 0 ? '' : body.slice(0, stop);
+
+    const problems = [];
+    if (raw.includes(String.fromCharCode(96))) problems.push('PROBE 裡有反引號');
+    if (raw.includes('$' + '{')) problems.push('PROBE 裡有樣板插值');
+    if (problems.length) {
+        console.error('這支檢查自己有問題：' + problems.join('、'));
+        console.error('（症狀會是整段檢查靜靜地不跑，只留下很少的通過數）');
+        process.exit(1);
+    }
+}
 
 const dataDir = mkdtempSync(join(tmpdir(), 'starcal-check-'));
 
