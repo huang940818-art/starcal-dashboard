@@ -1308,11 +1308,28 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 
 /* 課的摘要。比事件淡——它是背景資訊（那天有課），
  * 不是那天要處理的事。 */
-.cal-class {
-    font-size: 10.5px;
-    color: color-mix(in srgb, var(--calendar) 75%, transparent);
-    margin-top: 3px;
-    letter-spacing: .02em;
+/* 有課的日子：日期旁邊點幾個點，一堂一個。
+ *
+ * 為什麼是點不是字：課每週固定，寫成文字會在整張月曆上重複三十次——
+ * 先寫「N 堂課」她說很醜很單調，改寫課名之後每個週一都是同樣兩行，
+ * 只是換一種方式重複。**重複的東西不該用文字表達。**
+ * 這樣格子裡的文字就只剩行程和待辦，也就是那個月真正不一樣的部分。
+ */
+.cal-cls-dots {
+    display: flex;
+    gap: 3px;
+    align-items: center;
+    margin-left: 5px;
+    margin-right: auto;      /* 把 ＋ 推到最右邊去 */
+    cursor: help;
+}
+
+.cls-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--calendar) 80%, transparent);
+    flex: 0 0 auto;
 }
 
 /* 手機上格子只有五十幾像素寬，塞標題只會變成一堆碎字。
@@ -1331,7 +1348,9 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
     .cal-grid { gap: 3px; }
     .cal-cell { min-height: 52px; padding: 4px; }
     .cal-items, .cal-more { display: none; }
-    .cal-class { font-size: 9.5px; margin-top: 2px; }
+    /* 課的點在手機上也留著——那是「這天要不要出門」唯一的線索 */
+    .cal-cls-dots { margin-left: 4px; }
+    .cls-dot { width: 4px; height: 4px; }
     .cal-dots { display: flex; }
     .cal-dots .label-dot { width: 6px; height: 6px; margin: 0; }
 }
@@ -1639,6 +1658,21 @@ footer {
 }
 
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* 「復原」那顆。提示本身不吃點擊，這顆要自己開回來（見 toastAction）。 */
+.toast-btn {
+    margin-left: 12px;
+    background: none;
+    border: 0;
+    color: var(--accent);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 6px;
+}
+
+.toast-btn:hover { background: var(--separator); }
 .toast.bad { border-color: var(--alert); color: var(--alert); }
 
 @media (max-width: 620px) {
@@ -1945,4 +1979,48 @@ body::before {
     border-top: 1px solid var(--separator);
     font-size: 12px;
     color: var(--text-3);
+}
+
+/* 對話框裡就地開一個新帳戶。
+ *
+ * 為什麼不用另一個 dialog：巢狀的 modal 關起來的時候焦點會亂跑，
+ * 而且她要的是「不要離開這一筆」——再疊一層視窗在感覺上還是離開了。
+ */
+.inline-new {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin: -2px 0 12px;
+    padding: 10px;
+    border: 1px dashed var(--separator);
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--raised) 45%, transparent);
+}
+
+.inline-new input { flex: 1 1 160px; }
+.inline-new select { flex: 0 0 auto; }
+
+@media (max-width: 620px) {
+    .inline-new input, .inline-new select { flex: 1 1 100%; }
+}
+
+/* 「過期了」那一區右邊的清掉鈕。
+ * 平常淡淡的，滑過去才明顯——它旁邊那個數字才是要先被看到的東西。 */
+.day-clear {
+    margin-left: auto;
+    background: none;
+    border: 1px solid transparent;
+    color: var(--text-3);
+    font: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+    padding: 3px 9px;
+    border-radius: 999px;
+}
+
+.day-clear:hover {
+    color: var(--text);
+    border-color: var(--separator);
+    background: var(--raised);
 }

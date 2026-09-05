@@ -223,6 +223,20 @@
                 <select id="t-to-account"></select>
             </label>
         </div>
+        <!-- 記帳記到一半才發現沒有那個帳戶的時候，在這裡直接開一個，
+             不用關掉這一筆跑去別的地方建完再回來重打。 -->
+        <div class="inline-new" id="t-new-account" hidden>
+            <input id="t-new-account-name" placeholder="新帳戶的名字（現金、郵局、信用卡…）">
+            <select id="t-new-account-kind">
+                <option value="cash">現金</option>
+                <option value="bank">銀行</option>
+                <option value="credit">信用卡</option>
+                <option value="invest">投資</option>
+                <option value="other">其他</option>
+            </select>
+            <button type="button" class="btn small primary" id="t-new-account-add">建立</button>
+            <button type="button" class="btn small ghost" id="t-new-account-cancel">取消</button>
+        </div>
         <label class="field"><span>備註</span><input id="t-note" placeholder="店名、買了什麼"></label>
         <div class="dialog-actions">
             <button type="button" class="btn danger spacer" id="t-delete" hidden>刪除</button>

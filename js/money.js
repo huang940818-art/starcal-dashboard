@@ -581,6 +581,8 @@ const Money = {
         $('#t-note').value = t.note || '';
         $('#t-delete').hidden = isNew;
 
+        const kindNow = () => $('#t-kind').value;
+
         const syncKind = () => {
             const kind = $('#t-kind').value;
             const transfer = kind === 'transfer';
@@ -593,15 +595,90 @@ const Money = {
         $('#t-kind').onchange = syncKind;
         syncKind();
 
-        const accNames = this.data.accounts.map(a => a.name);
-        fillSelect($('#t-account'), accNames, t.account || accNames[0]);
-        fillSelect($('#t-to-account'), accNames, t.toAccount || accNames[1] || accNames[0]);
+        // 帳戶下拉的最後一項是「＋ 新增帳戶」。
+        //
+        // 為什麼要有這個：她說「紀錄支出的時候沒辦法選擇帳戶」——
+        // 下拉本身是好的，問題是**裡面只有一個選項，而且當下沒辦法加**。
+        // 要加得先取消這一筆、捲到「存款總額」那張卡、按加帳戶、填完、
+        // 再回來從頭記一次。那不叫「可以加」。
+        const NEW = '\u0000new';      // 不可能跟帳戶名撞到的值
+        const fillAccounts = (sel, value) => {
+            const names = this.data.accounts.map(a => a.name);
+            fillSelect(sel, [...names.map(n => ({ value: n, label: n })),
+                             { value: NEW, label: '＋ 新增帳戶…' }],
+                       value !== undefined && names.includes(value) ? value : names[0]);
+            // 一個帳戶都沒有的時候，下拉會停在「＋ 新增帳戶…」上——那正好，
+            // 它自己就在說「這裡要先開一個」。
+            if (!names.length) sel.value = NEW;
+        };
+
+        const newBox = $('#t-new-account');
+        const nameInput = $('#t-new-account-name');
+        let pendingFor = null;          // 建好之後要填回哪一個下拉
+
+        const closeNew = () => { newBox.hidden = true; pendingFor = null; };
+        const openNew = sel => {
+            pendingFor = sel;
+            newBox.hidden = false;
+            nameInput.value = '';
+            $('#t-new-account-kind').value = 'cash';
+            nameInput.focus();
+        };
+
+        const watchNew = sel => {
+            sel.onchange = () => {
+                if (sel.value === NEW) openNew(sel);
+                else if (pendingFor === sel) closeNew();
+            };
+        };
+
+        fillAccounts($('#t-account'), t.account);
+        fillAccounts($('#t-to-account'), t.toAccount || this.data.accounts[1]?.name);
+        watchNew($('#t-account'));
+        watchNew($('#t-to-account'));
+        closeNew();
+
+        $('#t-new-account-cancel').onclick = () => {
+            // 取消就退回原本選的那個；本來就沒有帳戶的話留在「＋ 新增帳戶…」
+            const names = this.data.accounts.map(a => a.name);
+            if (pendingFor && names.length) pendingFor.value = t.account && names.includes(t.account)
+                ? t.account : names[0];
+            closeNew();
+        };
+
+        $('#t-new-account-add').onclick = () => {
+            const name = nameInput.value.trim();
+            if (!name) return toast('帳戶要有名字', true);
+            if (this.data.accounts.some(a => a.name === name))
+                return toast('已經有同名的帳戶了', true);
+
+            this.data.accounts.push({
+                id: uid(), name, kind: $('#t-new-account-kind').value,
+                // 起始餘額先當成 0。在記帳記到一半的時候問「這個戶頭現在有多少」
+                // 是打斷；之後在「存款總額」那張卡按「改」補就好。
+                opening: 0, includeInTotal: true, order: this.data.accounts.length,
+            });
+            this.save();
+
+            const target = pendingFor;
+            fillAccounts($('#t-account'), $('#t-account').value === NEW ? name : $('#t-account').value);
+            fillAccounts($('#t-to-account'), $('#t-to-account').value === NEW ? name : $('#t-to-account').value);
+            if (target) target.value = name;
+            closeNew();
+            this.render();
+            Overview.render();
+            toast(`加好了：${name}`);
+        };
 
         const dlg = openDialog('#dlg-txn');
 
         $('#t-save').onclick = () => {
             const amount = Number($('#t-amount').value);
             if (!amount || amount <= 0) return toast('金額要填', true);
+
+            if ($('#t-account').value === NEW
+                || (kindNow() === 'transfer' && $('#t-to-account').value === NEW))
+                return toast('先把新帳戶建起來，或選一個現有的', true);
 
             Object.assign(t, {
                 kind: $('#t-kind').value,

@@ -49,22 +49,25 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
   if (innerWidth < 700) {
     try {
       const wide = () => document.documentElement.scrollWidth > innerWidth + 1;
-      for (const p of ['overview', 'money', 'agenda', 'memo', 'wall']) {
+      for (const p of ['overview', 'money', 'agenda', 'memo']) {
         await tab(p);
         await sleep(260);
         ok('手機上「' + p + '」不會左右捲', !wide(),
            document.documentElement.scrollWidth + ' > ' + innerWidth);
       }
-      await tab('wall'); await sleep(300);
-      ok('手機上「貼一張」看得到',
-         q('#add-sticky').getBoundingClientRect().right <= innerWidth + 1,
-         Math.round(q('#add-sticky').getBoundingClientRect().right) + 'px / ' + innerWidth);
-      const wb = q('#wall-board').getBoundingClientRect();
-      const out2 = [...document.querySelectorAll('.wall .sticky')]
-          .filter(n => n.getBoundingClientRect().right > wb.right + 1);
-      ok('手機上沒有便利貼掉到牆外面', out2.length === 0, out2.length + ' 張');
-      ok('手機上牆不吃掉整頁的捲動',
-         getComputedStyle(q('#wall-board')).touchAction !== 'none');
+
+      // 想法牆在窄螢幕上整個收起來。便利貼的價值是空間關係，
+      // 一面只有一張半便利貼寬的牆擺不出那個——那不是「做得爛一點」，
+      // 是不該出現在這個尺寸上。
+      ok('手機上收起想法牆分頁',
+         q('#tabs button[data-panel="wall"]').hidden);
+      location.hash = '#wall';
+      showPanel('wall'); await sleep(280);
+      ok('用網址也進不去想法牆', $('#panel-wall').hidden);
+      ok('進不去的時候會回總覽', !$('#panel-overview').hidden);
+      ok('總覽也不留一格點不進去的想法牆',
+         ![...document.querySelectorAll('#hero .stat')]
+            .some(x => x.textContent.includes('想法牆')));
 
       // 課表在手機上要看得到。**節次網格不收**——它只有五欄，
       // 而且那正是課表該有的樣子；只有時間軸那種才收起來換清單。
@@ -196,6 +199,60 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     ok('記一筆記得進去', Money.data.transactions.length === 1);
     ok('金額對', (Money.data.transactions[0] || {}).amount === 120);
 
+    // ── 記到一半才發現沒有那個帳戶 ──
+    //
+    // 她說「紀錄支出的時候沒辦法選擇帳戶」。下拉本身是好的，
+    // 問題是裡面只有一個選項，而且**當下沒有辦法加**——
+    // 要加得先取消這一筆、跑去別的卡片建完、再回來重打。
+    q('#add-txn').click(); await sleep(200);
+    {
+      const sel = q('#t-account'), box = q('#t-new-account');
+      const last = sel.options[sel.options.length - 1];
+      ok('帳戶下拉最後一項是新增', last.textContent.includes('新增帳戶'), last.textContent);
+      ok('新增區一開始收著', box.hidden);
+      ok('預設選的是現有帳戶', sel.value === '現金', sel.value);
+
+      sel.value = last.value;
+      sel.dispatchEvent(new Event('change'));
+      await sleep(200);
+      ok('選了新增就展開', !box.hidden);
+
+      // 空名字不給建
+      q('#t-new-account-name').value = '   ';
+      q('#t-new-account-add').click(); await sleep(200);
+      ok('沒填名字不給建', Money.data.accounts.length === 1);
+
+      // 同名不給建
+      q('#t-new-account-name').value = '現金';
+      q('#t-new-account-add').click(); await sleep(200);
+      ok('同名不給建', Money.data.accounts.length === 1);
+
+      q('#t-new-account-name').value = '郵局';
+      q('#t-new-account-add').click(); await sleep(300);
+      ok('建得起來', Money.data.accounts.length === 2);
+      ok('建完收起來', box.hidden);
+      ok('建完自動選中新的', sel.value === '郵局', sel.value);
+      ok('新帳戶起始餘額是 0',
+         (Money.data.accounts.find(a => a.name === '郵局') || {}).opening === 0);
+
+      // 取消那條路：退回原本的帳戶，不要留在「＋ 新增帳戶…」
+      sel.value = sel.options[sel.options.length - 1].value;
+      sel.dispatchEvent(new Event('change'));
+      await sleep(180);
+      q('#t-new-account-cancel').click(); await sleep(200);
+      ok('取消會收起來', box.hidden);
+      ok('取消後不會停在新增那一項',
+         sel.value !== sel.options[sel.options.length - 1].value, sel.value);
+
+      // 用新帳戶記一筆，走完整條路
+      q('#t-account').value = '郵局';
+      q('#t-amount').value = '55';
+      q('#t-save').click(); await sleep(300);
+      ok('用剛建的帳戶記得成', Money.data.transactions.length === 2);
+      ok('那筆掛在新帳戶下',
+         (Money.data.transactions.find(t => t.amount === 55) || {}).account === '郵局');
+    }
+
     // ── 行程：存進去要看得到 ──
     await tab('agenda');
     q('#add-event').click(); await sleep(160);
@@ -247,6 +304,40 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     q('#e-date').value = farYmd;
     q('#e-save').click(); await sleep(300);
     ok('遠一點的行程看得到', q('#agenda-list').textContent.includes('25天後的行程'));
+
+    // ── 過期的行程要清得掉 ──
+    //
+    // 她說「網頁版那邊過期的事情還沒辦法刪掉，會一直留在版面上」。
+    // 單筆點進去本來就刪得掉，缺的是「一次清掉」。
+    {
+        const past = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+        q('#add-event').click(); await sleep(160);
+        q('#e-title').value = '過期用行程';
+        q('#e-date').value = past;
+        q('#e-save').click(); await sleep(300);
+        ok('過期的行程會排到「過期了」那一區',
+           q('.overdue-group')?.textContent.includes('過期用行程') === true);
+
+        const before = Cal.data.events.length;
+        const openTodos = Todo.open().filter(t => t.due && t.due < todayStr()).length;
+        const clear = q('.day-clear');
+        ok('過期那一區有清掉鈕', !!clear, clear ? clear.textContent : '沒有');
+        clear.click(); await sleep(350);
+        ok('清掉之後行程真的少了', Cal.data.events.length === before - 1);
+        ok('畫面上也不見了', !q('#agenda-list').textContent.includes('過期用行程'));
+        ok('待辦沒有被順手清掉',
+           Todo.open().filter(t => t.due && t.due < todayStr()).length === openTodos);
+
+        const undo = q('.toast-btn');
+        ok('清完給得起復原', !!undo, undo ? undo.textContent : '沒有');
+        undo.click(); await sleep(350);
+        ok('復原之後回來了', Cal.data.events.length === before);
+        ok('畫面上也回來了', q('#agenda-list').textContent.includes('過期用行程'));
+
+        // 收拾乾淨，後面的檢查不要被這一筆影響
+        Cal.data.events = Cal.data.events.filter(e => e.title !== '過期用行程');
+        Cal.save(); Agenda.render(); await sleep(200);
+    }
 
     // ── 便利貼：貼得上去 ──
     await tab('wall');
@@ -729,6 +820,10 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
        stats.some(t => t.includes('今天的課')), stats.join(' | '));
     ok('總覽那句話有提到今天幾堂課',
        q('#hero').textContent.includes('1 堂課'), q('#hero').textContent.slice(0, 90));
+
+    // 想法牆需要空間才有意義，寬螢幕上它必須在
+    ok('寬螢幕看得到想法牆分頁',
+       !q('#tabs button[data-panel="wall"]').hidden);
 
     // ── 想法牆在手機上不能卡住 ──
     // **這條是回歸測試。** 牆上寫 touch-action: none 的話，手指放在

@@ -120,8 +120,36 @@ function inkOn(bg) {
 /* ── 提示 ──────────────────────────────────────────── */
 
 let toastTimer;
+/**
+ * 帶一顆按鈕的提示，給「做了，但可以反悔」用。
+ *
+ * 為什麼不用原生的 confirm()：那個會把整個頁面卡住，而且畫面檢查
+ * （檢查.mjs）點到就死在那裡。更重要的是**先斬後奏比先問一次好**——
+ * 「你確定嗎」問了也不會讓人更確定，倒是每次都要多按一下。
+ * 給得起復原的動作就別問。
+ */
+function toastAction(msg, label, fn, ms = 7000) {
+    const node = $('#toast');
+    clear(node);
+    node.classList.remove('bad');
+    node.append(
+        el('span', { text: msg }),
+        el('button', {
+            type: 'button', class: 'toast-btn', text: label,
+            onclick: () => { node.classList.remove('show'); fn(); },
+        }));
+    node.classList.add('show');
+    node.style.pointerEvents = 'auto';       // 平常的 toast 不吃點擊，這個要
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+        node.classList.remove('show');
+        node.style.pointerEvents = '';
+    }, ms);
+}
+
 function toast(msg, bad = false) {
     const node = $('#toast');
+    node.style.pointerEvents = '';
     node.textContent = msg;
     node.classList.toggle('bad', bad);
     node.classList.add('show');

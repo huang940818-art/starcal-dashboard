@@ -5,7 +5,29 @@ const BUILD = '2026-09-04';
 
 const PANELS = ['overview', 'money', 'agenda', 'memo', 'wall'];
 
+/**
+ * 想法牆需要的最小寬度。
+ *
+ * **窄螢幕上這一頁沒有意義。** 便利貼的價值是空間關係——把相關的擺一起、
+ * 把還不確定的推到角落。一面只有一張半便利貼寬的牆擺不出那個，
+ * 剩下的就只是一個比較難用的備忘錄。
+ *
+ * 所以手機上直接把分頁收起來，不是「做得爛一點」而是「不做」。
+ */
+const WALL_MIN_WIDTH = 700;
+const wallUsable = () => innerWidth >= WALL_MIN_WIDTH;
+
+/** 分頁鈕跟著視窗寬度出現／消失，網址進不去的也擋掉 */
+function syncWallTab() {
+    const btn = $('#tabs button[data-panel="wall"]');
+    if (btn) btn.hidden = !wallUsable();
+    if (!wallUsable() && !$('#panel-wall').hidden) showPanel('overview');
+}
+
 function showPanel(name) {
+    // 從網址（或轉直立之後）進到想法牆，在窄螢幕上一律導回總覽
+    if (name === 'wall' && !wallUsable()) name = 'overview';
+
     for (const p of PANELS) {
         $(`#panel-${p}`).hidden = p !== name;
     }
@@ -112,6 +134,9 @@ async function main() {
             try { inp.showPicker?.(); } catch {}
         });
     }
+
+    syncWallTab();
+    addEventListener('resize', syncWallTab);
 
     const start = location.hash.slice(1);
     showPanel(PANELS.includes(start) ? start : 'overview');

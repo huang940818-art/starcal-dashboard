@@ -121,6 +121,21 @@ def ensure_dirs() -> None:
     os.chmod(BACKUP_DIR, 0o700)
 
 
+def stamp(name: str) -> str:
+    """這份資料現在是哪一版。
+
+    給「有沒有被別人改過」用的，不是雜湊——mtime 加大小就夠了，
+    而且不用把整個檔案讀進來。檔案不存在時是固定值，
+    這樣「還沒有這份」也是一種可以比對的狀態。
+    """
+    path = DATA_DIR / FILES[name]
+    try:
+        st = path.stat()
+        return f"{st.st_mtime_ns:x}-{st.st_size:x}"
+    except OSError:
+        return "0-0"
+
+
 def load(name: str) -> dict:
     path = DATA_DIR / FILES[name]
     if not path.exists():
@@ -171,13 +186,19 @@ class Handler(http.server.SimpleHTTPRequestHandler):
 
     # ── 回應工具 ─────────────────────────────────────────
 
-    def send_json(self, obj, status=200):
+    def send_json(self, obj, status=200, headers=None):
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
+
+    def query(self, key: str) -> str | None:
+        parts = urllib.parse.urlsplit(self.path)
+        return urllib.parse.parse_qs(parts.query).get(key, [None])[0]
 
     def end_headers(self):
         # **每一個回應都不給快取。**
@@ -209,6 +230,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # 前端靠這個判斷「我現在是連著本機資料，還是在展示模式」
             return self.send_json({"ok": True, "dir": str(DATA_DIR)})
 
+        if name == "資料版本":
+            # 頁面開著的時候，資料可能被別的地方改掉（手機同步、或直接動檔案）。
+            # 前端回到這個分頁時打一次，就知道自己手上那份是不是舊的。
+            return self.send_json({n: stamp(n) for n in FILES})
+
         if name == "版本":
             # 加到主畫面的全螢幕模式沒有網址列也沒有重整鍵，
             # 所以前端要自己問「程式換了沒」。見 js/update.js。
@@ -218,7 +244,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             return self.send_json({"error": f"沒有這份資料：{name}"}, 404)
 
         try:
-            return self.send_json(load(name))
+            return self.send_json(load(name), headers={"X-Star-Version": stamp(name)})
         except RuntimeError as e:
             return self.send_json({"error": str(e)}, 500)
 
@@ -237,6 +263,21 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if length > MAX_BODY:
             return self.send_json({"error": "資料太大"}, 413)
 
+        # **這一份是根據哪一版改的。**
+        #
+        # 頁面開著的時候，Mac 上那份可能已經被別的地方改了（手機同步過來、
+        # 或者直接動檔案）。前端手上的是舊的，一存就把新的蓋掉——而且是靜靜地蓋掉，
+        # 事後完全看不出來發生過什麼。2026-09-05 就差一點這樣弄丟九筆帳。
+        #
+        # 帶 base 的請求對不上就擋下來，讓前端講出來。
+        # **用 query 參數不用自訂 header**：關分頁時走的是 sendBeacon，
+        # 那個設不了 header，但網址帶得動。
+        base = self.query("base")
+        if base and base != stamp(name):
+            return self.send_json(
+                {"error": "電腦上的這份資料在別的地方被改過了，先重新載入再存。",
+                 "conflict": True, "version": stamp(name)}, 409)
+
         raw = self.rfile.read(length)
         try:
             payload = json.loads(raw.decode("utf-8"))
@@ -253,7 +294,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         except OSError as e:
             return self.send_json({"error": f"寫不進去：{e}"}, 500)
 
-        return self.send_json({"ok": True})
+        return self.send_json({"ok": True, "version": stamp(name)})
 
     # 關分頁時前端用 navigator.sendBeacon 把還沒寫的資料送出來——
     # 那時候 fetch 會被瀏覽器砍掉，beacon 才送得到。

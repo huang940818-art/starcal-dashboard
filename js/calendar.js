@@ -115,6 +115,30 @@ const MonthView = {
             }, [
                 el('div', { class: 'cal-head-row' }, [
                     el('div', { class: 'cal-n', text: String(c.n) }),
+                    // 有課的日子在日期旁邊點幾個點，一堂一個。
+                    //
+                    // **課是每週固定的，寫成文字會在整張月曆上重複三十次。**
+                    // 先前寫「N 堂課」她說很醜、很單調；改成寫課名之後，
+                    // 每個週一都是同樣兩行字，只是換一種方式重複。
+                    // 月曆真正要回答的是「這天要不要出門」，那用點就夠了；
+                    // 「上什麼課」滑過去看得到，點下去底下那塊有完整的。
+                    c.classes.length
+                        ? el('div', {
+                            class: 'cal-cls-dots',
+                            title: c.classes.map(k => {
+                                const when = Timetable.whenText(k)
+                                    .replace(/^第 /, '').replace(/ 節$/, '');
+                                return [when, k.name, k.place].filter(Boolean).join('　');
+                            }).join('\n'),
+                            'aria-label': `${c.classes.length} 堂課`,
+                          }, c.classes.slice(0, 4).map(k => {
+                            const l = Prefs.label(k.label);
+                            return el('span', {
+                                class: 'cls-dot',
+                                style: l ? `background:${l.color}` : '',
+                            });
+                          }))
+                        : null,
                     // 在這天加一件。滑過格子才出現——三十五個常駐的 ＋
                     // 會比那個月真正有事的那幾天還顯眼。
                     el('button', {
@@ -158,12 +182,6 @@ const MonthView = {
                         text: `＋${items.length - 3} 件`,
                         onclick: e => { e.stopPropagation(); this.picked = c.day; this.render(); },
                     })
-                    : null,
-                // 課用一行摘要，不一堂一堂列。
-                // **每天四五堂課列進格子的話，這個月只剩下上課看得到**——
-                // 而月曆要回答的是「這個月哪幾天有事」。
-                c.classes.length
-                    ? el('div', { class: 'cal-class', text: `${c.classes.length} 堂課` })
                     : null,
                 el('div', { class: 'cal-dots' },
                     items.slice(0, 5).map(x => {

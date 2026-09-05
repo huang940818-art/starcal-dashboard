@@ -20,6 +20,7 @@
 const Update = {
     version: null,
     asked: null,        // 已經提示過的版本，同一版不要一直吵
+    dataAsked: null,    // 同上，但問的是「資料」被別的地方改過
     timer: null,
 
     /** 一直開著的話多久問一次 */
@@ -28,13 +29,59 @@ const Update = {
     async init() {
         if (Store.mode !== 'local') return;
 
+        // 版本端點拿不到不代表要整支早退——**資料**那條檢查跟程式版本無關，
+        // 而且那條更要緊：程式舊了頂多少一個功能，資料舊了會蓋掉別人剛寫的。
         this.version = await this.fetch();
-        if (!this.version) return;      // 這個 server 還沒有版本端點，就別做了
 
         addEventListener('visibilitychange', () => {
-            if (document.visibilityState === 'visible') this.check();
+            if (document.visibilityState !== 'visible') return;
+            this.check();
+            this.checkData();
         });
-        this.timer = setInterval(() => this.check(), this.EVERY);
+        this.timer = setInterval(() => { this.check(); this.checkData(); }, this.EVERY);
+    },
+
+    // MARK: 資料被別的地方改過
+    //
+    // 手機那支星歷同步過來、或者我直接動了 ~/星歷資料/ 底下的檔案，
+    // 開著的頁面完全不知道——**它手上那份是舊的，一存就把新的蓋掉**。
+    // server 現在會用 409 擋住（見 store.js 的 _baseQuery），
+    // 但等到她按下存才發現太晚了，畫面上那些改動已經沒地方去。所以先講。
+
+    async checkData() {
+        const stale = await Store.checkFresh();
+        if (!stale.length) return;
+
+        // 她沒有正在做的事，也沒有還沒寫出去的東西——直接換成最新的就好，
+        // **不要 flushAll**：手上這份是舊的，送出去正是要避免的那件事。
+        if (!this.busy() && !Store.hasPending()) {
+            location.reload();
+            return;
+        }
+        const key = stale.join(',');
+        if (this.dataAsked === key) return;
+        this.dataAsked = key;
+        this.offerData(stale);
+    },
+
+    offerData(stale) {
+        const old = $('#update-bar');
+        if (old) old.remove();
+
+        const bar = el('div', { class: 'update-bar', id: 'update-bar', role: 'status' }, [
+            el('span', { text: `電腦上的「${stale.join('、')}」被改過了` }),
+            el('button', {
+                type: 'button', class: 'btn small primary', text: '重新載入',
+                // 這裡刻意不先 flush：手上這份是舊的，送出去會蓋掉新的。
+                onclick: () => location.reload(),
+            }),
+            el('button', {
+                type: 'button', class: 'btn small ghost', text: '等一下',
+                'aria-label': '關掉這個提示',
+                onclick: () => bar.remove(),
+            }),
+        ]);
+        document.body.append(bar);
     },
 
     async fetch() {

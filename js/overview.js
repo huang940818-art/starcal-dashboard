@@ -138,11 +138,13 @@ const Overview = {
                 hue: 'var(--memo)', ico: 'memo', name: '備忘',
                 value: String(Memo.data.items.length), unit: '則',
             },
-            {
+            // 想法牆在窄螢幕上整個分頁是收起來的（見 app.js 的 WALL_MIN_WIDTH），
+            // 這一格也跟著收——留一個點不進去的數字只會讓人找不到入口。
+            wallUsable() ? {
                 hue: 'var(--sleep)', ico: 'wall', name: '想法牆',
                 value: String(Wall.data.notes.length), unit: '張',
-            },
-        ];
+            } : null,
+        ].filter(Boolean);
 
         return el('div', { class: 'stats' }, stats.map(x => el('div', {
             class: 'stat', style: `--hue:${x.hue}`,

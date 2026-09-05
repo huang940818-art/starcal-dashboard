@@ -265,6 +265,38 @@ const Agenda = {
         else Timetable.render();
     },
 
+    /**
+     * 把已經過去的行程清掉。
+     *
+     * 不問「你確定嗎」，改成清完給一顆「復原」——問了也不會讓人更確定，
+     * 倒是每次都要多按一次。給得起復原的動作就別問（見 util.js 的 toastAction）。
+     *
+     * **只清畫面上那幾件。** 過期清單會被上面的分類篩選影響，
+     * 按「只看學校」的時候看到 2 件，清掉的就該是那 2 件，
+     * 不是連沒顯示的那 3 件一起。看到什麼就清掉什麼。
+     */
+    clearPastEvents() {
+        const gone = this.overdue().events;
+        if (!gone.length) return;
+
+        const ids = new Set(gone.map(e => e.id));
+        Cal.data.events = Cal.data.events.filter(e => !ids.has(e.id));
+        Cal.save();
+        this.render();
+        Overview.render();
+
+        toastAction(`清掉 ${gone.length} 件過去的行程`, '復原', () => {
+            // 放回去之前先擋掉重複：她可能在這幾秒內又加了同名的東西，
+            // 或者按了兩次復原。
+            const have = new Set(Cal.data.events.map(e => e.id));
+            for (const e of gone) if (!have.has(e.id)) Cal.data.events.push(e);
+            Cal.save();
+            this.render();
+            Overview.render();
+            toast('放回去了');
+        });
+    },
+
     renderTimeline() {
         const box = $('#agenda-list');
         clear(box);
@@ -294,6 +326,19 @@ const Agenda = {
                 el('div', { class: 'day-head' }, [
                     el('span', { class: 'day-name alert', text: '過期了' }),
                     el('span', { class: 'day-count', text: `${late.todos.length + late.events.length} 件` }),
+                    // 已經發生過的行程會一直卡在最上面。
+                    //
+                    // **只清行程，不動待辦。** 過期的行程是「已經過去的事」，
+                    // 留著只是擋路；過期的待辦是「還沒做的事」，
+                    // 幫她清掉等於幫她假裝沒發生——那個要她自己勾掉。
+                    late.events.length
+                        ? el('button', {
+                            type: 'button', class: 'day-clear',
+                            text: `清掉過去的行程（${late.events.length}）`,
+                            title: '待辦不會被清掉，那些要自己勾完成',
+                            onclick: () => this.clearPastEvents(),
+                          })
+                        : null,
                 ]),
                 ...late.events.map(e => this.eventRow(e, true)),
                 ...late.todos.map(t => Todo.row(t)),
