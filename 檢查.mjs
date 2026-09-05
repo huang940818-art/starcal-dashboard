@@ -411,15 +411,29 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
       if (done) {
         const before = Cal.data.events.length;
         done.click(); await sleep(320);
-        ok('按了就收掉那一件', Cal.data.events.length === before - 1);
-        ok('收掉之後版面上就沒有了',
-           !q('#agenda-list').textContent.includes('過期的行程'));
-        // 長得像勾選框的東西會刪資料，一定要有退路
+        // **收起來，不是刪掉。** 會讓東西永遠消失的按鈕太兇了。
+        ok('收掉不會把資料刪掉', Cal.data.events.length === before);
+        ok('收掉的那件標成收起來了',
+           Cal.data.events.find(e => e.title === '過期的行程')?.done === true);
+        ok('收掉之後不在「過期了」那一區',
+           !q('#agenda-list .overdue-group')
+           || !q('#agenda-list .overdue-group').textContent.includes('過期的行程'));
+        // 她問「那些被收掉的待辦事項去哪裡可以看」——這裡就是答案
+        const archived = [...document.querySelectorAll('#agenda-list .day-group')]
+            .find(g => g.querySelector('.day-name')?.textContent === '收起來的');
+        ok('收起來的東西有地方可以看', !!archived
+           && archived.textContent.includes('過期的行程'),
+           archived ? archived.textContent.slice(0, 40) : '找不到那一區');
+        ok('收起來的那一列有「放回去」',
+           !!archived && [...archived.querySelectorAll('button')]
+             .some(b => b.textContent === '放回去'));
+
         const undo = q('#toast button');
-        ok('收掉之後給得回來', !!undo);
+        ok('剛收掉的時候也給得回來', !!undo);
         if (undo) {
           undo.click(); await sleep(320);
-          ok('復原真的放回去了', Cal.data.events.length === before);
+          ok('放回去之後回到過期那一區',
+             q('#agenda-list .overdue-group').textContent.includes('過期的行程'));
         }
       }
       // 清乾淨，不要影響後面的檢查
@@ -468,15 +482,22 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
         const clear = q('.day-clear');
         ok('過期那一區有清掉鈕', !!clear, clear ? clear.textContent : '沒有');
         clear.click(); await sleep(350);
-        ok('清掉之後行程真的少了', Cal.data.events.length === before - 1);
-        ok('畫面上也不見了', !q('#agenda-list').textContent.includes('過期用行程'));
+        // 「清掉」也是收起來，不是刪掉——「清掉」這兩個字聽起來像永久
+        // 消失，但它們會待在「收起來的」那一區，隨時放得回去。
+        ok('清掉不會把資料刪掉', Cal.data.events.length === before);
+        ok('清掉的那件標成收起來了',
+           Cal.data.events.find(e => e.title === '過期用行程')?.done === true);
+        ok('不在「過期了」那一區了',
+           !q('.overdue-group')
+           || !q('.overdue-group').textContent.includes('過期用行程'));
         ok('待辦沒有被順手清掉',
            Todo.open().filter(t => t.due && t.due < todayStr()).length === openTodos);
 
         const undo = q('.toast-btn');
         ok('清完給得起復原', !!undo, undo ? undo.textContent : '沒有');
         undo.click(); await sleep(350);
-        ok('復原之後回來了', Cal.data.events.length === before);
+        ok('放回去之後回到過期那一區',
+           q('.overdue-group')?.textContent.includes('過期用行程') === true);
         ok('畫面上也回來了', q('#agenda-list').textContent.includes('過期用行程'));
 
         // 收拾乾淨，後面的檢查不要被這一筆影響
@@ -560,9 +581,54 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     ok('頂欄有讓開瀏海的規則', !!headerRule,
        headerRule ? headerRule.style.getPropertyValue('padding-top') : '沒有');
 
-    // ── 月份切換 ──
-    ok('這個月時「下個月」是停用的',
-       q('#month-nav button[aria-label="下個月"]').disabled);
+    // ── 期間 ──
+    // 她要「可以看月或週或是年，可以自訂」。
+    ok('現在這一段時「下一段」是停用的——未來還沒發生',
+       q('#month-nav button[aria-label=\"下一段\"]').disabled);
+    ok('四種粒度都在',
+       document.querySelectorAll('#month-nav .range-kinds .view-btn').length === 4);
+
+    {
+      const kinds = [...document.querySelectorAll('#month-nav .range-kinds .view-btn')];
+      const byName = n => kinds.find(b => b.textContent === n);
+
+      byName('週').click(); await sleep(250);
+      ok('切到週', Money.range.kind === 'week');
+      ok('週的標題不是「這個月」',
+         !q('#month-nav .month-label').textContent.includes('月份'),
+         q('#month-nav .month-label').textContent);
+      ok('週的第一天是星期日',
+         parseYmd(Money.range.start).getDay() === 0, Money.range.start);
+
+      byName('年').click(); await sleep(250);
+      ok('切到年', Money.range.kind === 'year');
+      ok('年是從一月一號開始', Money.range.start.endsWith('-01-01'), Money.range.start);
+
+      // 預算是按月的，看年的時候要講清楚看的是哪個月，不能拿一年的花費比月預算
+      ok('非月粒度時預算有講清楚是哪個月',
+         q('#budgets').textContent.includes('預算是按月算的')
+         || q('#budgets').textContent.includes('還沒設預算'),
+         q('#budgets').textContent.slice(0, 40));
+
+      byName('自訂').click(); await sleep(250);
+      ok('切到自訂', Money.range.kind === 'custom');
+      ok('自訂有兩個日期欄',
+         document.querySelectorAll('#month-nav .custom-range input').length === 2);
+      ok('自訂的時候不給翻頁——翻到哪都不會是她要的',
+         !q('#month-nav button[aria-label=\"下一段\"]'));
+
+      // 開始比結束晚要自己調回來，不要留一段不存在的期間
+      const inputs = [...document.querySelectorAll('#month-nav .custom-range input')];
+      inputs[0].value = '2027-01-01';
+      inputs[0].dispatchEvent(new Event('change'));
+      await sleep(250);
+      ok('開始比結束晚會自己調回來', Money.range.end >= Money.range.start,
+         Money.range.start + ' → ' + Money.range.end);
+
+      byName('月').click(); await sleep(250);
+      Money.setRange('month', todayStr()); await sleep(200);
+      ok('回得到這個月', Money.range.kind === 'month' && Range.hasToday(Money.range));
+    }
 
     // ── 主題色 ──
     const root = document.documentElement;

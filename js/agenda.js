@@ -25,7 +25,7 @@ const Cal = {
     /** 某一天的行程，有時間的排前面 */
     on(day) {
         return this.data.events
-            .filter(e => e.date === day)
+            .filter(e => e.date === day && !e.done)
             .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
     },
 
@@ -222,7 +222,7 @@ const Agenda = {
     later() {
         const h = this.horizon();
         const events = Cal.data.events
-            .filter(e => e.date > h && this.match(e))
+            .filter(e => e.date > h && !e.done && this.match(e))
             .map(e => ({ kind: 'event', day: e.date, item: e }));
         const todos = Todo.data.items
             .filter(t => !t.done && t.due && t.due > h && this.match(t))
@@ -244,7 +244,7 @@ const Agenda = {
         const today = todayStr();
         const ok = x => all || this.match(x);
         return {
-            events: Cal.data.events.filter(e => e.date < today && ok(e))
+            events: Cal.data.events.filter(e => e.date < today && !e.done && ok(e))
                 .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10),
             todos: Todo.data.items.filter(t => !t.done && t.due && t.due < today && ok(t))
                 .sort((a, b) => a.due.localeCompare(b.due)),
@@ -286,35 +286,47 @@ const Agenda = {
      * 所以給一顆勾，行為是刪掉，但復原留著——按錯了一秒內按得回來。
      */
     doneWithEvent(e) {
-        Cal.data.events = Cal.data.events.filter(x => x.id !== e.id);
+        // **收起來，不是刪掉。**
+        //
+        // 第一版做成刪除，只有幾秒的復原視窗——她問「那些被收掉的待辦
+        // 事項去哪裡可以看」，那就是答案：**沒有地方可以看**。
+        // 一個按鈕如果會讓東西永遠消失，那顆按鈕就太兇了。
+        //
+        // 現在標成 done 移到「收起來的」那一區，隨時看得到、放得回去。
+        e.done = true;
+        e.doneAt = Date.now();
         Cal.save();
         this.render();
         Overview.render();
 
-        toastAction(`收掉「${e.title}」`, '復原', () => {
-            if (!Cal.data.events.some(x => x.id === e.id)) Cal.data.events.push(e);
-            Cal.save();
-            this.render();
-            Overview.render();
+        toastAction(`收掉「${e.title}」`, '放回去', () => {
+            this.undoneEvent(e);
             toast('放回去了');
         });
+    },
+
+    undoneEvent(e) {
+        delete e.done;
+        delete e.doneAt;
+        Cal.save();
+        this.render();
+        Overview.render();
     },
 
     clearPastEvents() {
         const gone = this.overdue().events;
         if (!gone.length) return;
 
-        const ids = new Set(gone.map(e => e.id));
-        Cal.data.events = Cal.data.events.filter(e => !ids.has(e.id));
+        // 一樣是收起來不是刪掉。「清掉」聽起來像永久消失，
+        // 但它們會待在「收起來的」那一區，隨時放得回去。
+        const now = Date.now();
+        for (const e of gone) { e.done = true; e.doneAt = now; }
         Cal.save();
         this.render();
         Overview.render();
 
-        toastAction(`清掉 ${gone.length} 件過去的行程`, '復原', () => {
-            // 放回去之前先擋掉重複：她可能在這幾秒內又加了同名的東西，
-            // 或者按了兩次復原。
-            const have = new Set(Cal.data.events.map(e => e.id));
-            for (const e of gone) if (!have.has(e.id)) Cal.data.events.push(e);
+        toastAction(`收起 ${gone.length} 件過去的行程`, '放回去', () => {
+            for (const e of gone) { delete e.done; delete e.doneAt; }
             Cal.save();
             this.render();
             Overview.render();
@@ -415,15 +427,43 @@ const Agenda = {
             ]));
         }
 
-        if (done.length) {
+        // 完成的待辦 ＋ 收起來的行程放同一區。
+        //
+        // **她問「那些被收掉的待辦事項去哪裡可以看」，這裡就是答案。**
+        // 收掉的東西一定要有地方去——會讓東西永遠消失的按鈕太兇了。
+        const archivedEvents = Cal.data.events
+            .filter(e => e.done && this.match(e))
+            .sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
+
+        if (done.length || archivedEvents.length) {
+            const total = done.length + archivedEvents.length;
             box.append(el('div', { class: 'day-group muted' }, [
                 el('div', { class: 'day-head' }, [
-                    el('span', { class: 'day-name', text: '完成的' }),
-                    el('span', { class: 'day-count', text: `${done.length} 件` }),
+                    el('span', { class: 'day-name', text: '收起來的' }),
+                    el('span', { class: 'day-count', text: `${total} 件` }),
                 ]),
+                ...archivedEvents.slice(0, 15).map(e => this.archivedRow(e)),
                 ...done.slice(0, 15).map(t => Todo.row(t)),
             ]));
         }
+    },
+
+    /** 收起來的行程。點一下放回去——不然收掉就等於不見了。 */
+    archivedRow(e) {
+        return el('div', { class: 'event-row archived' }, [
+            el('div', { class: 'event-time', text: this.dayLabel(e.date).split('　')[0] }),
+            el('div', { class: 'grow', style: 'cursor:pointer', onclick: () => Cal.edit(e) }, [
+                el('div', { class: 'title ellipsis' }, [
+                    Prefs.dot(e.label), el('span', { text: e.title }),
+                ]),
+                el('div', { class: 'meta ellipsis', text: e.note || null }),
+            ]),
+            el('button', {
+                type: 'button', class: 'btn small ghost',
+                text: '放回去',
+                onclick: ev => { ev.stopPropagation(); this.undoneEvent(e); toast('放回去了'); },
+            }),
+        ]);
     },
 
     /** 日期那一行右邊的小字：幾月幾號星期幾 */

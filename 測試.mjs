@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat'];
+    const names = ['Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
     return new Function(`
         const document = { querySelector: () => null, querySelectorAll: () => [] };
@@ -26,7 +26,7 @@ function load(...files) {
     `)();
 }
 
-const { Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO, AutoCat } =
+const { Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO, AutoCat, Range } =
     load('./js/util.js', './js/demo.js', './js/money.js', './js/autocat.js');
 
 /** 給一份乾淨的資料，避免測試互相影響 */
@@ -429,4 +429,88 @@ test('沒有存錢罐的時候不要多講兩個數字', () => {
     Money.data = 有存錢罐的帳();
     Money.data.accounts = Money.data.accounts.filter(a => !a.isSavings);
     assert.equal(Money.hasSavings(), false);
+});
+
+/* ── 期間 ─────────────────────────────────────────────
+ *
+ * 跨月、跨年、閏年那幾天最容易錯，而且錯了只會安靜地少算幾筆帳。
+ */
+
+test('這個月是從一號到月底', () => {
+    const r = Range.make('month', '2026-09-15');
+    assert.equal(r.start, '2026-09-01');
+    assert.equal(r.end, '2026-09-30');
+});
+
+test('二月的月底認得出來，閏年也是', () => {
+    assert.equal(Range.make('month', '2026-02-10').end, '2026-02-28');
+    assert.equal(Range.make('month', '2028-02-10').end, '2028-02-29');
+});
+
+test('週從星期日開始——跟月曆同一套，不然兩邊圈的七天對不上', () => {
+    // 2026-09-05 是星期六
+    const r = Range.make('week', '2026-09-05');
+    assert.equal(r.start, '2026-08-30');   // 星期日
+    assert.equal(r.end, '2026-09-05');     // 星期六
+});
+
+test('星期日那天自己就是那一週的開頭', () => {
+    const r = Range.make('week', '2026-08-30');
+    assert.equal(r.start, '2026-08-30');
+    assert.equal(r.end, '2026-09-05');
+});
+
+test('一年是從一月一號到十二月三十一號', () => {
+    const r = Range.make('year', '2026-06-15');
+    assert.equal(r.start, '2026-01-01');
+    assert.equal(r.end, '2026-12-31');
+});
+
+test('往前翻一個月不會卡在月底', () => {
+    // 3/31 往前一個月，天真的實作會給 3/3
+    const r = Range.shift(Range.make('month', '2026-03-31'), -1);
+    assert.equal(r.start, '2026-02-01');
+    assert.equal(r.end, '2026-02-28');
+});
+
+test('往前翻一週就是往前七天', () => {
+    const r = Range.shift(Range.make('week', '2026-09-05'), -1);
+    assert.equal(r.start, '2026-08-23');
+    assert.equal(r.end, '2026-08-29');
+});
+
+test('跨年翻得過去', () => {
+    const r = Range.shift(Range.make('month', '2026-01-10'), -1);
+    assert.equal(r.start, '2025-12-01');
+    assert.equal(Range.label(r), '2025 年 12 月');
+});
+
+test('自訂區間不給翻——翻到哪都不會是她要的', () => {
+    const r = { kind: 'custom', start: '2026-01-01', end: '2026-03-15' };
+    assert.deepEqual(Range.shift(r, 1), r);
+});
+
+test('標題看得出是哪一段', () => {
+    assert.equal(Range.label(Range.make('month', '2026-09-05')), '2026 年 9 月');
+    assert.equal(Range.label(Range.make('year', '2026-09-05')), '2026 年');
+    assert.equal(Range.label(Range.make('week', '2026-09-05')), '8/30–9/5');
+});
+
+test('跨年的自訂區間標題要帶年份，不然看不出來', () => {
+    const r = { kind: 'custom', start: '2025-12-20', end: '2026-01-10' };
+    assert.equal(Range.label(r), '2025/12/20–2026/1/10');
+});
+
+test('包不包含今天判斷得出來——不給看未來要靠它', () => {
+    assert.equal(Range.hasToday(Range.make('month')), true);
+    assert.equal(Range.hasToday({ kind: 'custom', start: '2020-01-01', end: '2020-12-31' }), false);
+});
+
+test('日期在不在區間裡，邊界那兩天算在裡面', () => {
+    const r = { kind: 'custom', start: '2026-09-01', end: '2026-09-30' };
+    assert.equal(Range.contains(r, '2026-09-01'), true);
+    assert.equal(Range.contains(r, '2026-09-30'), true);
+    assert.equal(Range.contains(r, '2026-08-31'), false);
+    assert.equal(Range.contains(r, '2026-10-01'), false);
+    assert.equal(Range.contains(r, null), false);
 });

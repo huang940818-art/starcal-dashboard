@@ -35,14 +35,82 @@ const DEFAULT_CATEGORIES = {
     ],
 };
 
+/* ── 期間 ──────────────────────────────────────────────
+ *
+ * 她要「可以看月或週或是年，可以自訂」。
+ *
+ * **週從星期日開始**，跟月曆那邊同一套。兩邊不一樣的話
+ * 「這週花了多少」和月曆上圈起來的那七天會對不上。
+ *
+ * 算式全部用 "yyyy-MM-dd" 字串比大小，不用 Date 物件比——
+ * 時區和日光節約會讓 Date 的比較在跨月那幾天出錯，字串不會。
+ */
+
+const Range = {
+    /** 這個粒度、包含某一天的那一段 */
+    make(kind, day = todayStr()) {
+        const d = parseYmd(day);
+        if (kind === 'week') {
+            const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay());
+            const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+            return { kind, start: ymd(start), end: ymd(end) };
+        }
+        if (kind === 'year') {
+            return { kind, start: `${d.getFullYear()}-01-01`, end: `${d.getFullYear()}-12-31` };
+        }
+        if (kind === 'custom') {
+            return { kind, start: day, end: day };
+        }
+        // 月
+        const start = new Date(d.getFullYear(), d.getMonth(), 1);
+        const end = new Date(d.getFullYear(), d.getMonth() + 1, 0);
+        return { kind: 'month', start: ymd(start), end: ymd(end) };
+    },
+
+    /** 往前／往後一段。自訂區間不給翻——翻到哪裡都不會是她要的。 */
+    shift(range, delta) {
+        if (range.kind === 'custom') return range;
+        const d = parseYmd(range.start);
+        if (range.kind === 'week') {
+            return this.make('week', ymd(new Date(d.getFullYear(), d.getMonth(),
+                                                  d.getDate() + delta * 7)));
+        }
+        if (range.kind === 'year') {
+            return this.make('year', `${d.getFullYear() + delta}-06-15`);
+        }
+        return this.make('month', ymd(new Date(d.getFullYear(), d.getMonth() + delta, 1)));
+    },
+
+    /** 標題。**要看得出是哪一段**——「這個月」在翻過去之後就是謊話。 */
+    label(range) {
+        const a = parseYmd(range.start), b = parseYmd(range.end);
+        if (range.kind === 'year') return `${a.getFullYear()} 年`;
+        if (range.kind === 'month') return `${a.getFullYear()} 年 ${a.getMonth() + 1} 月`;
+        const same = a.getFullYear() === b.getFullYear();
+        const fmt = (d, withYear) =>
+            (withYear ? `${d.getFullYear()}/` : '') + `${d.getMonth() + 1}/${d.getDate()}`;
+        return `${fmt(a, !same)}–${fmt(b, !same)}`;
+    },
+
+    /** 這一段是不是包含今天。包含的話「下一段」要停住，不給看未來。 */
+    hasToday(range) {
+        const t = todayStr();
+        return range.start <= t && t <= range.end;
+    },
+
+    contains(range, day) {
+        return !!day && range.start <= day && day <= range.end;
+    },
+};
+
 const Money = {
     data: null,
     /** 現在在看哪個月，"2026-09"。切月份影響上半部那幾張卡。 */
-    viewMonth: null,
+
 
     async init() {
         this.data = await Store.load('記帳');
-        this.viewMonth = thisMonth();
+        this.range = Range.make('month');
         this.migrate();
         this.bind();
     },
@@ -198,6 +266,31 @@ const Money = {
         return { income, expense, net: income - expense };
     },
 
+    /** 一段期間的收入與支出。轉帳一樣兩者都不算。 */
+    summaryIn(range) {
+        let income = 0, expense = 0;
+        for (const t of this.data.transactions) {
+            if (!Range.contains(range, t.date)) continue;
+            const amt = Number(t.amount) || 0;
+            if (t.kind === 'income') income += amt;
+            else if (t.kind === 'expense') expense += amt;
+        }
+        return { income, expense, net: income - expense };
+    },
+
+    /** 一段期間各分類花了多少，多的在前 */
+    byCategoryIn(range) {
+        const map = new Map();
+        for (const t of this.data.transactions) {
+            if (t.kind !== 'expense' || !Range.contains(range, t.date)) continue;
+            const key = t.category || '未分類';
+            map.set(key, (map.get(key) || 0) + (Number(t.amount) || 0));
+        }
+        return [...map.entries()]
+            .map(([category, amount]) => ({ category, amount }))
+            .sort((a, b) => b.amount - a.amount);
+    },
+
     /** 某個月各分類花了多少，多的在前 */
     byCategory(ym) {
         const map = new Map();
@@ -217,64 +310,138 @@ const Money = {
 
     /* ── 畫面 ──────────────────────────────────────── */
 
-    isThisMonth() { return this.viewMonth === thisMonth(); },
+    /** 現在在看哪一段。預設是這個月。 */
+    range: null,
 
-    /** 有帳目的最早月份，用來擋住「一直往回翻到空的」 */
-    earliestMonth() {
+    isNow() { return Range.hasToday(this.range); },
+
+    /** 講到這一段的時候用哪個詞。看「這一週」卻寫「這個月」會很怪。 */
+    rangeWord() {
+        const now = this.isNow();
+        switch (this.range.kind) {
+            case 'week': return now ? '這一週' : '那一週';
+            case 'year': return now ? '今年' : '那一年';
+            case 'custom': return '這段期間';
+            default: return now ? '這個月' : '那個月';
+        }
+    },
+
+    /** 有帳目的最早日期，用來擋住「一直往回翻到空的」 */
+    earliestDate() {
         let min = null;
         for (const t of this.data.transactions) {
-            const m = monthOf(t.date);
-            if (!min || m < min) min = m;
+            if (!min || t.date < min) min = t.date;
         }
         return min;
     },
 
-    shiftMonth(delta) {
-        const [y, m] = this.viewMonth.split('-').map(Number);
-        const d = new Date(y, m - 1 + delta, 1);
-        this.viewMonth = `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+    setRange(kind, day) {
+        this.range = Range.make(kind, day);
         this.render();
     },
 
-    renderMonthNav() {
+    shiftRange(delta) {
+        this.range = Range.shift(this.range, delta);
+        this.render();
+    },
+
+    /**
+     * 期間列。
+     *
+     * 她要「可以看月或週或是年，可以自訂」。粒度做成分段控制而不是下拉，
+     * 因為要一眼看得出還有別的粒度可以選——下拉會把它們藏起來。
+     */
+    renderRangeNav() {
         const box = $('#month-nav');
         clear(box);
 
-        const [y, m] = this.viewMonth.split('-');
-        const label = this.isThisMonth() ? '這個月' : `${y} 年 ${Number(m)} 月`;
-        const earliest = this.earliestMonth();
+        const kinds = [
+            { k: 'week', name: '週' },
+            { k: 'month', name: '月' },
+            { k: 'year', name: '年' },
+            { k: 'custom', name: '自訂' },
+        ];
 
-        box.append(el('div', { class: 'month-nav' }, [
-            el('button', {
-                class: 'btn icon', text: '‹', 'aria-label': '上個月',
+        box.append(el('div', { class: 'view-switch range-kinds', role: 'tablist' },
+            kinds.map(x => el('button', {
+                type: 'button', role: 'tab',
+                class: 'view-btn' + (this.range.kind === x.k ? ' on' : ''),
+                'aria-selected': String(this.range.kind === x.k),
+                text: x.name,
+                onclick: () => {
+                    if (x.k === 'custom') {
+                        // 自訂就從現在這一段開始，不要跳回今天——
+                        // 她通常是「看著這個月，想微調成 8/15 到 9/15」
+                        this.range = { kind: 'custom', start: this.range.start,
+                                       end: this.range.end };
+                        this.render();
+                    } else {
+                        this.setRange(x.k, Range.hasToday(this.range) ? todayStr()
+                                                                      : this.range.start);
+                    }
+                },
+            }))));
+
+        const custom = this.range.kind === 'custom';
+        const earliest = this.earliestDate();
+
+        const nav = el('div', { class: 'month-nav' }, [
+            custom ? null : el('button', {
+                class: 'btn icon', text: '‹', 'aria-label': '上一段',
                 // 沒有更早的帳目就不給再往回翻——翻進一片空白沒有意義
-                disabled: earliest ? this.viewMonth <= earliest : true,
-                onclick: () => this.shiftMonth(-1),
+                disabled: earliest ? this.range.start <= earliest : true,
+                onclick: () => this.shiftRange(-1),
             }),
             el('div', { class: 'month-label' }, [
-                el('span', { text: `${y} 年 ${Number(m)} 月` }),
-                this.isThisMonth() ? el('span', { class: 'tag', text: '這個月' }) : null,
+                el('span', { text: Range.label(this.range) }),
+                this.isNow() && !custom
+                    ? el('span', { class: 'tag', text: '現在' }) : null,
             ]),
-            el('button', {
-                class: 'btn icon', text: '›', 'aria-label': '下個月',
-                disabled: this.isThisMonth(),      // 未來還沒發生，沒得看
-                onclick: () => this.shiftMonth(1),
+            custom ? null : el('button', {
+                class: 'btn icon', text: '›', 'aria-label': '下一段',
+                disabled: this.isNow(),      // 未來還沒發生，沒得看
+                onclick: () => this.shiftRange(1),
             }),
-            !this.isThisMonth()
+            !this.isNow() && !custom
                 ? el('button', {
-                    class: 'btn small ghost', text: '回到這個月',
-                    onclick: () => { this.viewMonth = thisMonth(); this.render(); },
+                    class: 'btn small ghost', text: '回到現在',
+                    onclick: () => this.setRange(this.range.kind, todayStr()),
                 })
                 : null,
-        ]));
-        // 這幾張卡的標題要跟著月份走，不然翻到七月還寫「這個月」
-        const title = this.isThisMonth() ? '這個月' : `${Number(m)} 月`;
+        ]);
+
+        if (custom) {
+            const from = el('input', {
+                type: 'date', value: this.range.start, 'aria-label': '從',
+                onchange: e => {
+                    this.range.start = e.target.value;
+                    // 開始比結束晚的話把結束推過去，不要留一段不存在的期間
+                    if (this.range.start > this.range.end) this.range.end = this.range.start;
+                    this.render();
+                },
+            });
+            const to = el('input', {
+                type: 'date', value: this.range.end, 'aria-label': '到',
+                onchange: e => {
+                    this.range.end = e.target.value;
+                    if (this.range.end < this.range.start) this.range.start = this.range.end;
+                    this.render();
+                },
+            });
+            nav.append(el('div', { class: 'custom-range' }, [from, el('span', { text: '–' }), to]));
+        }
+
+        box.append(nav);
+
+        // 這幾張卡的標題要跟著期間走，不然翻到七月還寫「這個月」
+        const title = this.isNow() && this.range.kind === 'month'
+            ? '這個月' : Range.label(this.range);
         $('#month-card-title').textContent = title;
         $('#by-category-title').textContent = `${title}花在哪`;
     },
 
     render() {
-        this.renderMonthNav();
+        this.renderRangeNav();
         this.renderAccounts();
         this.renderMonth();
         this.renderFixedFlexible();
@@ -353,10 +520,10 @@ const Money = {
     renderMonth() {
         const box = $('#month-summary');
         clear(box);
-        const s = this.monthSummary(this.viewMonth);
+        const s = this.summaryIn(this.range);
         box.append(
             el('div', { class: 'big money-num' + (s.net < 0 ? ' negative' : ''), text: money(s.net, true) }),
-            el('div', { class: 'sub', text: this.isThisMonth() ? '這個月收支相抵' : '這個月份收支相抵' }),
+            el('div', { class: 'sub', text: this.rangeWord() + '收支相抵' }),
             el('div', { style: 'display:flex;gap:22px;margin-top:16px' }, [
                 el('div', {}, [
                     el('div', { class: 'sub', text: '收入' }),
@@ -376,7 +543,7 @@ const Money = {
 
         let fixed = 0, flexible = 0;
         for (const t of this.data.transactions) {
-            if (t.kind !== 'expense' || monthOf(t.date) !== this.viewMonth) continue;
+            if (t.kind !== 'expense' || !Range.contains(this.range, t.date)) continue;
             const amt = Number(t.amount) || 0;
             if (this.natureOf(t.category) === 'fixed') fixed += amt;
             else flexible += amt;
@@ -385,7 +552,7 @@ const Money = {
         const sum = fixed + flexible;
         if (!sum) {
             box.append(el('div', { class: 'empty' }, [
-                icon('scale', 26), this.isThisMonth() ? '這個月還沒有支出' : '這個月份沒有支出',
+                icon('scale', 26), this.rangeWord() + '沒有支出',
             ]));
             return;
         }
@@ -424,7 +591,18 @@ const Money = {
             return;
         }
 
-        const spent = new Map(this.byCategory(this.viewMonth).map(c => [c.category, c.amount]));
+        // **預算是「每個月」的上限，不能照選的期間算。**
+        // 看「這一週」的時候拿一週的花費去比月預算，會顯示「還有很多」——
+        // 那是錯的，而且錯得讓人放心。所以一律用期間所在的那個月，
+        // 並且在非月粒度的時候講清楚看的是哪個月。
+        const budgetMonth = monthOf(this.range.start);
+        const spent = new Map(this.byCategory(budgetMonth).map(c => [c.category, c.amount]));
+
+        if (this.range.kind !== 'month') {
+            const [y, m] = budgetMonth.split('-');
+            box.append(el('p', { class: 'sub budget-note',
+                text: `預算是按月算的，這裡看的是 ${y} 年 ${Number(m)} 月。` }));
+        }
 
         for (const b of budgets) {
             const used = spent.get(b.category) || 0;
@@ -509,10 +687,10 @@ const Money = {
         const box = $('#by-category');
         clear(box);
 
-        const rows = this.byCategory(this.viewMonth);
+        const rows = this.byCategoryIn(this.range);
         if (!rows.length) {
             box.append(el('div', { class: 'empty' }, [
-                icon('list', 26), this.isThisMonth() ? '這個月還沒有支出' : '這個月份沒有支出',
+                icon('list', 26), this.rangeWord() + '沒有支出',
             ]));
             return;
         }

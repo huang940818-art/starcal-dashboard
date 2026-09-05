@@ -314,6 +314,13 @@ main {
 /* 想法牆那面是絕對定位的，不要被 flex 影響 */
 .wall .empty { flex: none; }
 
+/* **整排寬的卡片不需要撐高。**
+ *
+ * `.empty { flex: 1 }` 是為了讓同一排的幾張卡等高（參差比空白難看）。
+ * 但 .card.wide 自己佔一整排，沒有誰要對齊——撐高只會讓一句
+ * 「還沒設預算」佔掉兩百點，把下面真正有內容的卡片擠出畫面。 */
+.card.wide > .empty { flex: none; padding: 22px 4px; }
+
 .empty svg { color: color-mix(in srgb, var(--hue, var(--text-3)) 55%, transparent); }
 .empty .hint { font-size: 12.5px; color: color-mix(in srgb, var(--text-3) 75%, transparent); }
 
@@ -493,6 +500,20 @@ input:focus, select, textarea:focus {
 }
 
 textarea { resize: vertical; min-height: 76px; line-height: 1.6; }
+
+/* 期間切換 */
+.range-kinds { margin-bottom: 10px; }
+
+.custom-range {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 4px;
+}
+
+.custom-range input { width: auto; }
+
+.budget-note { margin: -4px 0 12px; }
 
 /* 可以花的 vs 存起來的 */
 .split-row {
@@ -911,6 +932,10 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 .day-group .todo-row { padding-left: 63px; }
 .day-group .todo-row .check { margin-left: 0; }
 .event-row.late .event-time { color: var(--alert); }
+
+/* 收起來的行程。淡一點但看得到——「收掉了」不等於「不見了」。 */
+.archived .title { color: var(--text-3); text-decoration: line-through; }
+.archived .event-time { color: var(--text-3); }
 .event-row .title { font-size: 15px; }
 .event-row .meta { font-size: 12px; color: var(--text-3); margin-top: 2px; }
 
@@ -1750,6 +1775,18 @@ footer {
     .topbar { padding: 10px 14px; }
     nav { padding: 0 14px 8px; }
     .big { font-size: 25px; }
+
+    /* 手機上一屏只放得下三四張卡，留白就要省一點——
+     * 桌機的內距搬過來會變成一直捲都看不到重點。 */
+    .card { padding: 14px; }
+    .card h2 { margin-bottom: 10px; }
+    .grid { gap: 12px; }
+    .card.wide > .empty { padding: 18px 4px; }
+    .month-nav { gap: 6px; margin-bottom: 12px; }
+    .month-nav .month-label { min-width: 0; font-size: 15px; }
+    .range-kinds { margin-bottom: 8px; }
+    .custom-range { margin-left: 0; width: 100%; }
+    .custom-range input { flex: 1; min-width: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
