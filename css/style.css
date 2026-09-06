@@ -504,6 +504,17 @@ input, select, textarea {
 input[type="date"], input[type="time"] {
     cursor: pointer;
     font-variant-numeric: tabular-nums;
+
+    /* **iOS Safari 上這兩種欄位會不理 `width` 自己撐開。**
+     * 她手機的截圖上，日期／開始／結束三格比同一個對話框裡的其他欄位
+     * 寬出一截，右邊突出去壓到對話框的內距——電腦版量不出來
+     * （Chrome 上六格都是 394px），那是 iOS 的原生外觀在決定寬度。
+     * 關掉原生外觀它才會照著盒模型走。整格本來就能點（見 js/app.js
+     * 的 showPicker），所以少一顆原生小圖示不影響操作。 */
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    max-width: 100%;
 }
 
 input[type="date"]:hover, input[type="time"]:hover {
@@ -526,12 +537,21 @@ input[type="time"]:hover::-webkit-calendar-picker-indicator {
     background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-input:focus, select, textarea:focus {
+/* **`select` 少了 `:focus`。**
+ *
+ * 原本寫成 `input:focus, select, textarea:focus`——中間那個沒有 `:focus`，
+ * 所以每一個下拉選單都永遠畫成「被聚焦」的樣子。手機上「分類」那格
+ * 掛著一圈強調色的框，旁邊的欄位都沒有，看起來像那一格出了什麼事。
+ * 焦點框要能指出「你現在在這裡」，永遠亮著就等於什麼都沒指。 */
+input:focus, select:focus, textarea:focus {
     outline: none;
     border-color: color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 textarea { resize: vertical; min-height: 76px; line-height: 1.6; }
+
+/* 擠在一排裡的備註那種，兩行就夠，不要把對話框撐成兩倍高 */
+textarea.compact { min-height: 44px; }
 
 /* 管理分類的每一列：名稱吃剩下的寬度，兩個小的靠右。
  *
@@ -671,6 +691,18 @@ dialog {
     border-radius: 16px;
     padding: 22px;
     width: min(440px, calc(100vw - 32px));
+}
+
+/* **對話框太高的時候要自己捲，不能把「存」推出畫面。**
+ *
+ * 手機上欄位是一欄一欄直排的（見下面 620px 那段的理由），加行程有六欄，
+ * 在 iPhone 上已經幾乎滿版；備註改成多行之後只會更高。
+ * 高過畫面的時候看不到「存」，那就等於這張表單不能用。
+ * 閱讀那張自己有 max-height 和內層捲軸，所以排除掉。 */
+dialog:not(.reader) {
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 dialog::backdrop { background: rgba(0, 0, 0, .55); }
@@ -2487,12 +2519,14 @@ body::before {
 dialog.reader {
     width: min(680px, calc(100vw - 24px));
     max-height: min(86vh, 900px);
-    display: flex;
-    flex-direction: column;
     padding: 18px 20px 20px;
 }
 
-dialog.reader[open] { display: flex; }
+/* **`display` 只能寫在 `[open]` 上。**
+ * 寫在 `dialog.reader` 本身會蓋掉瀏覽器給「沒開啟的對話框」的
+ * `display: none`——那張閱讀卡就會一直攤在頁面最底下，
+ * 明明沒人打開它。 */
+dialog.reader[open] { display: flex; flex-direction: column; }
 
 .reader-head {
     display: flex;
@@ -2607,3 +2641,58 @@ dialog.reader[open] { display: flex; }
 
 /* 過期的時間戳要看得出來是註記，不是資料本身 */
 .weather-stale { color: var(--text-3); }
+
+/* ── 備忘的編輯畫面 ────────────────────────────────────
+ *
+ * 她的話：「希望備忘錄可以編輯的時候大一點加入 markdown」。
+ *
+ * 原本編輯框固定 190px 高、對話框 440px 寬——那是為「改一行字」設計的
+ * 尺寸。但備忘裡放的是整理好的長文，在那個框裡寫東西看不到自己寫了什麼。
+ * 讀的那張已經是 680px 了，寫的這張沒有理由比它窄。
+ */
+dialog.editor { width: min(680px, calc(100vw - 24px)); }
+
+#m-text { min-height: min(46vh, 380px); }
+
+/* 語法提示。**要小、要淡、要一行放得下**——它是提示不是說明書，
+ * 佔兩行就會開始跟內容搶注意力。 */
+.md-hint {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 7px;
+    margin: -6px 0 12px;
+    font-size: 11.5px;
+    color: var(--text-3);
+}
+
+.md-hint code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--bg);
+    border: 1px solid var(--separator);
+    border-radius: 5px;
+    padding: 1px 5px;
+    white-space: nowrap;
+}
+
+/* 預覽。跟編輯框一樣高，切換的時候對話框不會忽然跳一下。 */
+.md-preview {
+    background: var(--bg);
+    border: 1px solid var(--separator);
+    border-radius: 9px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    min-height: min(46vh, 380px);
+    max-height: min(46vh, 380px);
+    overflow-y: auto;
+}
+
+.md-preview .empty-preview { color: var(--text-3); }
+
+/* 預覽裡補回來的第一行標題 */
+.md-preview .preview-title {
+    font-size: 15px;
+    font-weight: 650;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--separator);
+}

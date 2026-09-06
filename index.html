@@ -403,7 +403,7 @@
         <div class="row">
             <label class="field"><span>分類</span><select id="e-label"></select></label>
             <label class="field"><span>備註</span>
-                <input id="e-note" placeholder="地點、要帶什麼、跟誰"></label>
+                <textarea id="e-note" class="compact" rows="2" placeholder="地點、要帶什麼、跟誰"></textarea></label>
         </div>
         <div class="dialog-actions">
             <button type="button" class="btn danger spacer" id="e-delete" hidden>刪除</button>
@@ -447,18 +447,23 @@
     <div class="reader-body" id="mr-body" tabindex="0"></div>
 </dialog>
 
-<dialog id="dlg-memo">
+<dialog id="dlg-memo" class="editor">
     <form method="dialog">
         <h3 id="dlg-memo-title">備忘</h3>
-        <label class="field"><span>內容（第一行會當標題）</span>
-            <textarea id="m-text" style="min-height:190px" aria-required="true"></textarea>
-        </label>
+        <div id="m-edit-wrap">
+            <label class="field"><span>內容（第一行會當標題）</span>
+                <textarea id="m-text" aria-required="true"></textarea>
+            </label>
+            <p class="md-hint"><code>## 標題</code><code>- 清單</code><code>1. 編號</code><code>&gt; 引言</code><code>**粗體**</code><code>---</code></p>
+        </div>
+        <div id="m-preview" class="md-preview" hidden></div>
         <label class="field" style="display:flex;align-items:center;gap:9px">
             <input id="m-pinned" type="checkbox" style="width:auto">
             <span style="margin:0">釘在最上面</span>
         </label>
         <div class="dialog-actions">
             <button type="button" class="btn danger spacer" id="m-delete" hidden>刪除</button>
+            <button type="button" class="btn" id="m-preview-btn">預覽</button>
             <button class="btn" value="cancel" formnovalidate>取消</button>
             <button type="button" class="btn primary" id="m-save">存</button>
         </div>

@@ -98,6 +98,32 @@ const Memo = {
         $('#mr-edit').onclick = () => { dlg.close(); this.edit(m); };
     },
 
+    /* 編輯框和預覽二選一。
+     *
+     * **不做左右並排的即時預覽。** 這張對話框在手機上只有一欄寬，
+     * 拆成兩半等於兩邊都不能用；而且備忘多半是「打完就存」，
+     * 不是需要邊寫邊校版的東西。要看的時候按一下就好。
+     */
+    showPreview(on) {
+        const box = $('#m-preview');
+        $('#m-edit-wrap').hidden = on;
+        box.hidden = !on;
+        $('#m-preview-btn').textContent = on ? '回到編輯' : '預覽';
+
+        if (!on) return;
+        clear(box);
+        const text = $('#m-text').value.trim();
+        if (!text) {
+            box.append(el('div', { class: 'empty-preview', text: '還沒有內容' }));
+            return;
+        }
+        // 第一行是標題。閱讀畫面把它畫在對話框的標題列上，這裡沒有那一列，
+        // **所以要自己補一行**——不補的話預覽會少掉第一行，看起來像吃字。
+        const lines = text.split('\n');
+        box.append(el('div', { class: 'preview-title', text: this.titleOf(text) }));
+        box.append(MD.render(lines.slice(1).join('\n')));
+    },
+
     edit(m) {
         const isNew = !m;
         m = m || { id: uid(), text: '', pinned: false, createdAt: Date.now(), updatedAt: Date.now() };
@@ -107,7 +133,22 @@ const Memo = {
         $('#m-pinned').checked = !!m.pinned;
         $('#m-delete').hidden = isNew;
 
+        // **每次打開都回到編輯狀態。** 上次關掉的時候停在預覽，
+        // 下次點「編輯」卻看到一個不能打字的畫面，會以為壞掉了。
+        this.showPreview(false);
+
         const dlg = openDialog('#dlg-memo');
+
+        // **游標放開頭，畫面捲到最上面。** openDialog 會 focus 這個 textarea，
+        // 而瀏覽器把游標擺在結尾——打開一則長備忘，第一眼看到的是最後一行。
+        // 那不是「開始編輯」該有的位置。
+        setTimeout(() => {
+            const ta = $('#m-text');
+            try { ta.setSelectionRange(0, 0); } catch (e) { /* 舊瀏覽器 */ }
+            ta.scrollTop = 0;
+        }, 50);
+
+        $('#m-preview-btn').onclick = () => this.showPreview($('#m-preview').hidden);
 
         $('#m-save').onclick = () => {
             const text = $('#m-text').value.trim();
