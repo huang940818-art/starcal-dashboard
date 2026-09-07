@@ -123,6 +123,8 @@ async function main() {
         b.onclick = () => showPanel(b.dataset.panel);
     }
 
+    $('#arrange-cards').onclick = () => Overview.toggleArrange();
+
     // 日期和時間欄位：點哪裡都開選擇器。
     //
     // 原生的 date/time 只有右邊那顆小圖示會開選擇器，點在數字上

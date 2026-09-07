@@ -38,6 +38,12 @@
     <!-- ── 總覽 ─────────────────────────────────────── -->
     <section class="panel" id="panel-overview">
         <div id="hero"></div>
+        <!-- 「排順序」平常只是一顆很淡的小按鈕。七張卡各掛兩顆箭頭的話，
+             等於每天都在看一組一輩子用不到五次的東西。 -->
+        <div class="overview-tools">
+            <button class="btn small ghost" id="arrange-cards" type="button"
+                    aria-pressed="false">排順序</button>
+        </div>
         <div class="grid" id="overview-grid"></div>
     </section>
 
@@ -48,6 +54,8 @@
             <div class="card" data-hue="money">
                 <h2 data-icon="wallet"><span class="label">存款總額</span>
                     <span>
+                        <!-- 沒有帳戶的時候由 renderAccounts 收起來 -->
+                        <button class="btn small ghost" id="pick-savings" type="button">存錢罐</button>
                         <!-- 眼睛裡的 SVG 由 Money.syncHideButton() 補上，
                              因為它會跟著「現在是遮著還是看得到」換一個圖 -->
                         <button class="btn small ghost eye-btn" id="toggle-balance"
@@ -334,15 +342,18 @@
             <input id="a-include" type="checkbox" checked style="width:auto">
             <span style="margin:0">算進存款總額</span>
         </label>
+        <!-- 存錢罐有兩個入口，寫的是同一個欄位。
+             這裡是「我現在就知道這個戶頭是存錢罐」；
+             「存款總額」卡上那顆是「從既有的戶頭裡挑」——
+             要比較哪個不能動的時候，得看得到全部才回答得出來。 -->
         <label class="field" style="display:flex;align-items:center;gap:9px">
             <input id="a-savings" type="checkbox" style="width:auto">
             <span style="margin:0">這是存錢罐（存進去就不動的戶頭）</span>
         </label>
         <p class="sub" style="margin:-4px 0 12px">
-            定存、儲蓄險、或你自己規定不能動的那一個。錢還是你的，所以
-            照樣算進存款總額；但「可以花的」那個數字不會把它算進去——
-            那才是現在真的動得了的錢。錢存進去記成「轉帳」，不算花掉。
-            <br><b>只有一個戶頭的話用不到這個，不用勾。</b>
+            定存、儲蓄險、或你自己規定不能動的那一個。錢還是算進存款總額，
+            但「可以花的」不會算它。也可以之後在「存款總額」那張卡上
+            按「存錢罐」一次挑。
         </p>
         <div class="dialog-actions">
             <button type="button" class="btn danger spacer" id="a-delete" hidden>刪除</button>
@@ -413,6 +424,22 @@
             <button type="button" class="btn danger spacer" id="s-delete" hidden>刪除</button>
             <button class="btn" value="cancel" formnovalidate>取消</button>
             <button type="button" class="btn primary" id="s-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<dialog id="dlg-savings">
+    <form method="dialog">
+        <h3>哪幾個是存錢罐？</h3>
+        <p class="sub" style="margin:-8px 0 14px">
+            存進去就不動的戶頭：定存、儲蓄險、或你自己規定不能動的那一個。
+            錢還是你的，所以照樣算進存款總額；但「可以花的」不會算它——
+            那才是現在真的動得了的錢。錢存進去記成「轉帳」，不算花掉。
+        </p>
+        <div id="savings-list"></div>
+        <div class="dialog-actions">
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="sv-save">存</button>
         </div>
     </form>
 </dialog>

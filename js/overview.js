@@ -11,28 +11,162 @@
  */
 
 const Overview = {
+    /* ── 卡片的順序 ────────────────────────────────────
+     *
+     * **預設的順序是有理由的，但那是我的理由。**
+     *
+     * 「要注意的」擺第一，因為它是整排寬的——整排寬的卡片會把上一排
+     * 切斷，夾在中間的話，前一排旁邊就空著兩格（她回報過「有地方空空的」）。
+     * 排第一還剛好是「整排寬的一排 ＋ 兩排各三張」，三欄二欄都填得滿。
+     *
+     * 但「先看到什麼」是很個人的事。她問「我可以自主調整他們的順序嗎」，
+     * 所以順序存在設定裡（不是 localStorage：電腦和手機該一樣），
+     * 畫面上按「排順序」就能改。
+     *
+     * **名字寫死，順序才存得住。** 存的是這幾個 id，不是位置——
+     * 位置會因為「今天沒有要注意的事」而整個位移。
+     */
+    CARDS: [
+        { id: 'attention', name: '要注意的', wide: true },
+        { id: 'weather',   name: '今天的天氣' },
+        { id: 'money',     name: '這個月' },
+        { id: 'today',     name: '今天的收支' },
+        { id: 'upcoming',  name: '接下來' },
+        { id: 'memo',      name: '備忘' },
+        // 小克那塊預設放最後：它不是待辦事項，不該排在
+        // 「現在需要注意什麼」前面。展示模式時它自己不會出現。
+        { id: 'ke',        name: '小克' },
+    ],
+
+    /** 現在排順序中 */
+    arranging: false,
+    /** 這一次有畫出來的卡片 id。render() 每次重算。 */
+    shown: new Set(),
+
+    /**
+     * 存起來的順序套到預設清單上。
+     *
+     * **兩邊都要容錯**：存的裡面有已經不存在的 id（改版拿掉的卡）要忽略，
+     * 預設裡有存的時候還沒有的（新加的卡）要接在後面——不然加一張新卡，
+     * 用過排序的人就永遠看不到它。
+     */
+    orderedIds(saved) {
+        const all = this.CARDS.map(c => c.id);
+        const kept = (saved || []).filter(id => all.includes(id));
+        return [...kept, ...all.filter(id => !kept.includes(id))];
+    },
+
+    savedOrder() { return this.orderedIds(Prefs.data?.overviewOrder); },
+
     render() {
         this.renderHero();
 
         const grid = $('#overview-grid');
         clear(grid);
-        /* **「要注意的」擺第一，因為它是整排寬的。**
-         *
-         * 它本來夾在天氣後面，而整排寬的卡片會把那一排切斷——
-         * 電腦和平板上（三欄）天氣旁邊就空著兩格，最底下那張也一樣。
-         * 那就是她說的「有地方空空的」。
-         *
-         * 排在第一還有一個好處：它叫「要注意的」，本來就不該排在天氣下面。
-         * 這樣排完剛好是「整排寬的一排 ＋ 兩排各三張」，三欄二欄都填得滿。 */
-        this.renderAttention(grid);
-        this.renderWeather(grid);
-        this.renderMoney(grid);
-        this.renderToday(grid);
-        this.renderUpcoming(grid);
-        this.renderMemo(grid);
-        // 小克那塊放最後：它不是待辦事項，不該排在「現在需要注意什麼」前面。
-        // 展示模式時 Ke.render 自己會早退，這裡不用判斷。
-        Ke.render(grid);
+
+        // 先把每一張畫進自己的小盒子，再照順序放上去。
+        // 有些卡片沒東西就整張不畫（天氣抓不到、沒有要注意的事），
+        // 那種情況它自己不會 append，這裡就跳過。
+        const drawn = new Map();
+        for (const c of this.CARDS) {
+            const box = el('div');
+            this.renderCard(c.id, box);
+            if (box.firstChild) drawn.set(c.id, box.firstChild);
+        }
+
+        // 這次真的有畫出來的是哪幾張。排順序時的上下鄰居要照這個算，
+        // 不是照完整清單。
+        this.shown = new Set(drawn.keys());
+
+        for (const id of this.savedOrder()) {
+            const node = drawn.get(id);
+            if (!node) continue;
+            grid.append(this.arranging ? this.wrapForArrange(id, node) : node);
+        }
+    },
+
+    renderCard(id, box) {
+        if (id === 'attention') return this.renderAttention(box);
+        if (id === 'weather') return this.renderWeather(box);
+        if (id === 'money') return this.renderMoney(box);
+        if (id === 'today') return this.renderToday(box);
+        if (id === 'upcoming') return this.renderUpcoming(box);
+        if (id === 'memo') return this.renderMemo(box);
+        if (id === 'ke') return Ke.render(box);
+    },
+
+    /* ── 排順序 ────────────────────────────────────────
+     *
+     * **平常不要有箭頭。** 七張卡各掛兩顆按鈕，等於每天都在看一組
+     * 只有偶爾才用得到的東西。所以做成一個模式：按「排順序」才出現，
+     * 排完按「好了」收起來。
+     *
+     * 用上下箭頭不用拖曳：拖曳在手機上要長按、要捲動，
+     * 而這件事一輩子做不到五次。
+     */
+    toggleArrange() {
+        this.arranging = !this.arranging;
+        this.render();
+        this.syncArrangeButton();
+    },
+
+    syncArrangeButton() {
+        const b = $('#arrange-cards');
+        if (!b) return;
+        b.textContent = this.arranging ? '好了' : '排順序';
+        b.classList.toggle('primary', this.arranging);
+        b.setAttribute('aria-pressed', String(this.arranging));
+    },
+
+    /** 把一張卡包起來，上面加一條「上／下」的工具列 */
+    wrapForArrange(id, node) {
+        const card = this.CARDS.find(c => c.id === id);
+        const order = this.savedOrder().filter(x => this.shown.has(x));
+        const at = order.indexOf(id);
+
+        const wrap = el('div', { class: 'arrange' + (card?.wide ? ' wide' : '') }, [
+            el('div', { class: 'arrange-bar' }, [
+                el('span', { class: 'arrange-name', text: card?.name || id }),
+                el('button', {
+                    class: 'btn small ghost', type: 'button', text: '↑',
+                    'aria-label': `${card?.name} 往前`,
+                    disabled: at <= 0,
+                    onclick: () => this.move(id, -1),
+                }),
+                el('button', {
+                    class: 'btn small ghost', type: 'button', text: '↓',
+                    'aria-label': `${card?.name} 往後`,
+                    disabled: at < 0 || at >= order.length - 1,
+                    onclick: () => this.move(id, 1),
+                }),
+            ]),
+            node,
+        ]);
+        return wrap;
+    },
+
+    /**
+     * 往前或往後一格。
+     *
+     * **只在「這次有出現的卡片」之間換位置。** 照完整清單換的話，
+     * 按一下箭頭可能跟一張今天沒出現的卡對調——畫面上什麼事都沒發生，
+     * 看起來就像按鈕壞了。
+     */
+    move(id, delta) {
+        const full = this.savedOrder();
+        const visible = full.filter(x => this.shown.has(x));
+        const at = visible.indexOf(id);
+        const to = at + delta;
+        if (at < 0 || to < 0 || to >= visible.length) return;
+
+        // 在「看得見的那幾張」裡跟鄰居對調，再把結果寫回完整清單裡
+        // 它們各自原本的位置上。
+        const other = visible[to];
+        const swapped = full.map(x => x === id ? other : x === other ? id : x);
+
+        Prefs.data.overviewOrder = swapped;
+        Prefs.save();
+        this.render();
     },
 
     /* ── 今天 ──────────────────────────────────────── */

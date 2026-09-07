@@ -665,6 +665,8 @@ const Money = {
 
         // 一個帳戶都沒有的時候不要報「0」——那看起來像「你的存款是零」，
         // 但實際上是「還沒告訴我有哪些帳戶」。這兩件事差很多。
+        $('#pick-savings').hidden = !this.data.accounts.length;
+
         if (!this.data.accounts.length) {
             list.append(el('div', { class: 'empty' }, [
                 icon('wallet', 26), '還沒有帳戶',
@@ -1690,6 +1692,9 @@ const Money = {
                 name, kind: $('#a-kind').value,
                 opening: Number($('#a-opening').value) || 0,
                 includeInTotal: $('#a-include').checked,
+                // **開這個對話框的時候一定要把現在的值讀進來**（上面那行）。
+                // 少了那一行，只是進來改個名字就會把存錢罐的設定洗掉，
+                // 而且畫面上要等到下一次看「可以花的」才發現。
                 isSavings: $('#a-savings').checked,
             });
 
@@ -1717,6 +1722,71 @@ const Money = {
             dlg.close();
             this.render();
             Overview.render();
+        };
+    },
+
+    /**
+     * 挑哪幾個戶頭是存錢罐。
+     *
+     * **這是「從既有的戶頭裡挑」。** 她的原話：「應該算是從原有的帳戶
+     * 裡面挑一個出來」。原本只有「加帳戶」表單裡的一個勾選框，要改一個
+     * 已經建好的戶頭，得先想到去按那一列的「改」——看得到卻不能當場動它。
+     *
+     * 所以另外做一張清單，一次看得到所有戶頭和它們的餘額——
+     * 「哪個是我不能動的」本來就是拿全部來比才回答得出來的問題。
+     *
+     * **兩個入口都留著**（她說的），寫的是同一個欄位：
+     * 建戶頭當下就知道的話在那邊勾，之後要重新分配的話在這邊挑。
+     */
+    editSavings() {
+        const box = $('#savings-list');
+        clear(box);
+
+        if (!this.data.accounts.length) return;
+
+        const picked = new Set(this.data.accounts.filter(a => a.isSavings).map(a => a.id));
+
+        const draw = () => {
+            clear(box);
+            for (const a of [...this.data.accounts].sort((x, y) => (x.order ?? 0) - (y.order ?? 0))) {
+                const on = picked.has(a.id);
+                box.append(el('label', { class: 'pick-row' + (on ? ' on' : '') }, [
+                    el('input', {
+                        type: 'checkbox', checked: on,
+                        onchange: e => {
+                            e.target.checked ? picked.add(a.id) : picked.delete(a.id);
+                            draw();
+                        },
+                    }),
+                    el('div', { class: 'grow' }, [
+                        el('div', { class: 'ellipsis', text: a.name }),
+                        el('div', { class: 'sub', text: on ? '存起來的' : '可以花的' }),
+                    ]),
+                    el('div', { class: 'money-num', text: this.secret(this.balance(a.name)) }),
+                ]));
+            }
+
+            // 全部都挑成存錢罐 = 可以花的是 0。那多半不是她的意思。
+            if (picked.size && picked.size === this.data.accounts.length) {
+                box.append(el('p', { class: 'sub cat-hint', style: 'margin-top:10px',
+                    text: '全部都標成存錢罐的話，「可以花的」會是 0。' }));
+            } else if (this.data.accounts.length === 1) {
+                box.append(el('p', { class: 'sub', style: 'margin-top:10px',
+                    text: '只有一個戶頭的話用不到這個——錢都在同一個地方，'
+                        + '沒有「哪些不能動」的問題。' }));
+            }
+        };
+
+        draw();
+        const dlg = openDialog('#dlg-savings');
+
+        $('#sv-save').onclick = () => {
+            for (const a of this.data.accounts) a.isSavings = picked.has(a.id);
+            this.save();
+            dlg.close();
+            this.render();
+            Overview.render();
+            toast(picked.size ? `標了 ${picked.size} 個存錢罐` : '沒有存錢罐了');
         };
     },
 
@@ -1963,6 +2033,7 @@ const Money = {
         $('#add-txn').onclick = () => this.editTxn(null);
         $('#add-account').onclick = () => this.editAccount(null);
         $('#toggle-balance').onclick = () => this.toggleHideBalance();
+        $('#pick-savings').onclick = () => this.editSavings();
         $('#add-sub').onclick = () => this.editSub(null);
         $('#edit-budgets').onclick = () => this.editBudgets();
         $('#manage-categories').onclick = () => this.editCategories();

@@ -612,6 +612,139 @@ const guard = (p, what, ms = 5000) => Promise.race([
       }
     }
 
+    // ── 存錢罐是「從既有的戶頭裡挑」──
+    //
+    // 本來它是「加帳戶」表單裡的一個勾選框。要改一個已經建好的戶頭，
+    // 得先想到去按那一列的「改」——看得到卻不能當場動它。
+    {
+      await tab('money');
+      const keepAcc = JSON.stringify(Money.data.accounts);
+      Money.data.accounts = [
+        { id: 'sv1', name: '甲行', kind: 'bank', opening: 1000, includeInTotal: true, order: 0 },
+        { id: 'sv2', name: '定存', kind: 'invest', opening: 60000, includeInTotal: true, order: 1 },
+      ];
+      Money.save(); Money.render(); await sleep(200);
+
+      ok('存款總額那張卡有「存錢罐」的入口', !!q('#pick-savings') && !q('#pick-savings').hidden);
+      ok('帳戶表單裡那個勾選也還在', !!q('#a-savings'), '兩個入口都要留');
+
+      q('#pick-savings').click(); await sleep(200);
+      ok('挑存錢罐的視窗開得起來', q('#dlg-savings').open);
+      const rows = document.querySelectorAll('#savings-list .pick-row');
+      ok('列得出每一個戶頭', rows.length === 2, rows.length + ' 列');
+      ok('看得到每個戶頭有多少錢',
+         q('#savings-list').textContent.includes('60,000'),
+         q('#savings-list').textContent.slice(0, 40));
+
+      if (rows.length === 2) {
+        const box = rows[1].querySelector('input');
+        box.checked = true;
+        box.dispatchEvent(new Event('change'));
+        await sleep(150);
+        q('#sv-save').click(); await sleep(280);
+
+        ok('挑好的存進去了',
+           Money.data.accounts.find(a => a.id === 'sv2').isSavings === true
+           && !Money.data.accounts.find(a => a.id === 'sv1').isSavings,
+           JSON.stringify(Money.data.accounts.map(a => [a.name, !!a.isSavings])));
+        ok('卡片上拆成「可以花的／存起來的」',
+           q('#accounts-total').textContent.includes('可以花的')
+           && q('#accounts-total').textContent.includes('存起來的'),
+           q('#accounts-total').textContent.slice(0, 50));
+        ok('可以花的沒有把存錢罐算進去',
+           Money.spendable() === 1000 && Money.saved() === 60000,
+           Money.spendable() + ' / ' + Money.saved());
+        ok('存錢罐照樣算進存款總額', Money.total() === 61000, String(Money.total()));
+
+        // 進去改個名字不該把她挑好的存錢罐洗掉
+        Money.editAccount(Money.data.accounts.find(a => a.id === 'sv2'));
+        await sleep(180);
+        q('#a-name').value = '定存改名';
+        q('#a-save').click(); await sleep(280);
+        // 兩個入口寫同一個欄位，所以在清單挑好的，回到帳戶表單要看得到；
+        // 而且只是進來改個名字不該把它洗掉。
+        ok('改帳戶的名字不會把存錢罐洗掉',
+           Money.data.accounts.find(a => a.id === 'sv2').isSavings === true,
+           JSON.stringify(Money.data.accounts.map(a => [a.name, !!a.isSavings])));
+
+        Money.editAccount(Money.data.accounts.find(a => a.id === 'sv2'));
+        await sleep(180);
+        ok('在清單挑好的，帳戶表單裡看得到是打勾的', q('#a-savings').checked === true);
+        // 反過來：在表單裡取消，清單那邊也要跟著沒有
+        q('#a-savings').checked = false;
+        q('#a-save').click(); await sleep(280);
+        ok('在表單裡取消，兩邊都跟著沒有',
+           !Money.data.accounts.find(a => a.id === 'sv2').isSavings
+           && !q('#accounts-total').textContent.includes('存起來的'),
+           q('#accounts-total').textContent.slice(0, 40));
+      }
+
+      if (q('#dlg-savings').open) q('#dlg-savings').close();
+      Money.data.accounts = JSON.parse(keepAcc);
+      Money.save(); Money.render(); await sleep(180);
+      ok('沒有帳戶的時候「存錢罐」收起來',
+         !Money.data.accounts.length ? q('#pick-savings').hidden : true);
+    }
+
+    // ── 總覽的卡片可以自己排順序 ──
+    //
+    // 排錯了不會報錯，只會讓她排好的順序自己跑掉。
+    {
+      await tab('overview');
+      await sleep(200);
+      const ids = () => [...document.querySelectorAll('#overview-grid > *')]
+        .map(n => (n.classList.contains('arrange') ? n.querySelector('.arrange-name') : n)
+                  ? (n.classList.contains('arrange')
+                     ? n.querySelector('.arrange-name').textContent
+                     : (n.querySelector('h2 .label') || {}).textContent || '?')
+                  : '?');
+
+      const before = ids();
+      ok('總覽上有「排順序」', !!q('#arrange-cards'));
+      ok('平常沒有上下箭頭', !q('.arrange-bar'), before.join('｜'));
+
+      q('#arrange-cards').click(); await sleep(250);
+      ok('按了才長出箭頭', !!q('.arrange-bar'));
+      ok('按鈕自己會變成「好了」', q('#arrange-cards').textContent === '好了',
+         q('#arrange-cards').textContent);
+      ok('每一張都標了名字', document.querySelectorAll('.arrange-name').length === before.length,
+         document.querySelectorAll('.arrange-name').length + ' vs ' + before.length);
+      ok('第一張的「往前」按不動',
+         document.querySelector('.arrange-bar .btn').disabled === true);
+
+      // 把第二張往前搬，前兩張應該對調
+      const bars = [...document.querySelectorAll('.arrange')];
+      if (bars.length >= 2) {
+        const second = bars[1].querySelector('.arrange-name').textContent;
+        const first = bars[0].querySelector('.arrange-name').textContent;
+        bars[1].querySelectorAll('.arrange-bar .btn')[0].click();
+        await sleep(280);
+        const now = ids();
+        ok('往前搬真的換了位置', now[0] === second && now[1] === first,
+           before.join('｜') + ' → ' + now.join('｜'));
+        ok('順序存進設定裡了',
+           Array.isArray(Prefs.data.overviewOrder) && Prefs.data.overviewOrder.length > 0,
+           JSON.stringify(Prefs.data.overviewOrder));
+
+        // 重畫一次不會跳回去
+        Overview.render(); await sleep(220);
+        ok('重畫之後順序還在', ids()[0] === second, ids().join('｜'));
+
+        // 搬回去
+        const back = [...document.querySelectorAll('.arrange')];
+        back[1].querySelectorAll('.arrange-bar .btn')[0].click();
+        await sleep(280);
+      }
+
+      q('#arrange-cards').click(); await sleep(250);
+      ok('按「好了」箭頭就收起來', !q('.arrange-bar'));
+      ok('收起來之後卡片還是原本那幾張', ids().length === before.length,
+         ids().join('｜'));
+      // 排順序不該把卡片變成不能點的裝飾品
+      ok('排完之後卡片上的按鈕還在',
+         !!q('#overview-grid .btn'), '一顆按鈕都沒有');
+    }
+
     // ── 存款可以遮起來 ──
     {
       await tab('money');

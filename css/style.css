@@ -306,6 +306,64 @@ main {
 
 .card.wide { grid-column: 1 / -1; }
 
+/* ── 排順序 ─────────────────────────────────────────
+ *
+ * 平常只有一顆很淡的按鈕靠右站著。按下去之後每張卡上面長出一條
+ * 「名字 ↑ ↓」，卡片本身照樣是活的（點得到、按鈕還能按）——
+ * 排順序的時候把整頁凍住，會讓人以為是進了另一個畫面。
+ */
+.overview-tools {
+    display: flex;
+    justify-content: flex-end;
+    margin: 0 0 10px;
+}
+
+/* 排順序時，每張卡外面包一層。**格線的成員變成這一層了**，
+ * 所以整排寬的那張要把 grid-column 掛在外層，不是裡面那張卡。 */
+.arrange {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.arrange.wide { grid-column: 1 / -1; }
+.arrange > .card { flex: 1; }
+
+.arrange-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 2px 6px;
+}
+
+.arrange-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 12.5px;
+    color: var(--text-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 箭頭要夠大按（手機上尤其），而且到頂／到底的那顆要看得出按不動 */
+.arrange-bar .btn {
+    min-width: 38px;
+    padding: 4px 10px;
+    line-height: 1.2;
+}
+
+.arrange-bar .btn[disabled] {
+    opacity: .35;
+    cursor: default;
+}
+
+/* 排序模式下，卡片自己描一條虛線——讓人看得出現在動的是「整張卡」 */
+.arrange > .card {
+    border-style: dashed;
+    border-color: color-mix(in srgb, var(--accent) 45%, var(--separator));
+}
+
 .big {
     font-size: 34px;
     font-weight: 650;
@@ -642,6 +700,25 @@ textarea { resize: vertical; min-height: 76px; line-height: 1.6; }
 
 .split-row .money-num { font-size: 18px; font-weight: 600; margin-top: 2px; }
 .split-row .saved { color: var(--good); }
+
+/* 挑存錢罐的那張清單。整列都可以點——只有小方框可以點的話，
+ * 手機上那個命中率低到會讓人以為壞了。 */
+.pick-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 10px;
+    margin: 0 -10px;
+    border-radius: 10px;
+    cursor: pointer;
+    border-bottom: 1px solid color-mix(in srgb, var(--separator) 60%, transparent);
+}
+
+.pick-row:last-of-type { border-bottom: 0; }
+.pick-row:hover { background: var(--raised); }
+.pick-row.on { background: color-mix(in srgb, var(--good) 12%, transparent); }
+.pick-row input { width: auto; flex: 0 0 auto; }
+.pick-row .sub { margin-top: 2px; }
 
 /* 對帳的結果 */
 .rc-ok { color: var(--good); margin: 0 0 12px; }

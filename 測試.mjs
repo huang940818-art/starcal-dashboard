@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather'];
+    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
     // **沒定義的名字要給 undefined，不能直接丟出去。** names 是所有 load()
     // 共用的一份清單，只載其中一支檔案的時候，其他名字本來就不存在——
@@ -34,6 +34,10 @@ function load(...files) {
 const { Charts, Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO, AutoCat, Range, Csv } =
     load('./js/util.js', './js/demo.js', './js/money.js', './js/autocat.js', './js/csv.js',
          './js/charts.js');
+
+// overview.js 只是宣告一個物件，載進來不會跑任何畫面的東西。
+// 這裡要的是卡片順序那段純算的邏輯。
+const { Overview } = load('./js/overview.js');
 
 /** 給一份乾淨的資料，避免測試互相影響 */
 function setup(overrides = {}) {
@@ -1138,4 +1142,46 @@ test('天氣的查詢跟著座標的時區走，不寫死台北', () => {
     const u = Weather.url({ lat: 51.5, lon: -0.1, name: 'London' });
     assert.ok(u.includes('timezone=auto'), u);
     assert.ok(!u.includes('Taipei'), u);
+});
+
+
+/* ── 總覽卡片的順序 ────────────────────────────────────
+ *
+ * 排錯了不會報錯，只會讓她排好的順序某天自己跑掉，
+ * 或是新加的一張卡永遠不出現。
+ */
+
+test('沒設過就照預設的順序', () => {
+    assert.deepEqual(Overview.orderedIds([]), Overview.CARDS.map(c => c.id));
+    assert.deepEqual(Overview.orderedIds(null), Overview.CARDS.map(c => c.id));
+});
+
+test('設過就照她排的', () => {
+    const mine = ['memo', 'today', 'attention', 'weather', 'money', 'upcoming', 'ke'];
+    assert.deepEqual(Overview.orderedIds(mine), mine);
+});
+
+test('新加的卡片接在後面，不會消失', () => {
+    // 她排順序的時候還沒有「今天的收支」這張——存起來的清單裡沒有它。
+    // 接不上去的話，加了新卡片，用過排序的人就永遠看不到。
+    const old = ['attention', 'weather', 'money', 'upcoming', 'memo', 'ke'];
+    const out = Overview.orderedIds(old);
+    assert.ok(out.includes('today'), '新的卡片不見了');
+    assert.deepEqual(out.slice(0, old.length), old, '她排的順序要原封不動');
+    assert.equal(out[out.length - 1], 'today', '新的接在後面');
+});
+
+test('已經拿掉的卡片不會留在順序裡', () => {
+    const out = Overview.orderedIds(['memo', '早就砍掉的卡', 'weather']);
+    assert.ok(!out.includes('早就砍掉的卡'));
+    assert.deepEqual(out.slice(0, 2), ['memo', 'weather']);
+});
+
+test('每張卡都有 id 和名字，而且 id 不重複', () => {
+    // 名字是排順序時唯一看得到的東西——沒有名字就只剩兩顆箭頭
+    const ids = Overview.CARDS.map(c => c.id);
+    assert.equal(new Set(ids).size, ids.length, 'id 撞名的話順序會存錯');
+    for (const c of Overview.CARDS) {
+        assert.ok(c.id && c.name, JSON.stringify(c));
+    }
 });

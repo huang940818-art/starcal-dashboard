@@ -45,6 +45,9 @@ const Prefs = {
         this.data.accent ??= null;
         this.data.glass ??= false;
         this.data.labels ??= [];
+        // 總覽卡片的順序。**存在設定裡不是 localStorage**——這是
+        // 「我想先看到什麼」，不是這台裝置的處境，電腦和手機該一樣。
+        this.data.overviewOrder ??= [];
 
         // 「從來沒有過」和「自己刪光了」是兩件事，要分得出來。
         //
