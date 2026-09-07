@@ -1054,25 +1054,88 @@ test('降雨機率 0% 是資料不是缺值', () => {
 });
 
 test('快取鍵綁地點，換了地方就不是同一份', () => {
-    const a = Weather.keyOf({ lat: 22.645, lon: 120.605 });
-    const b = Weather.keyOf({ lat: 25.033, lon: 121.565 });
+    const a = Weather.keyOf({ lat: 25.053, lon: 121.526 });
+    const b = Weather.keyOf({ lat: 51.509, lon: -0.126 });
     assert.notEqual(a, b);
     // 小數點後第四位以後不算——那個精度的差別對天氣沒有意義，
     // 只會讓快取每次都失效
-    assert.equal(Weather.keyOf({ lat: 22.6451, lon: 120.6052 }), a);
+    assert.equal(Weather.keyOf({ lat: 25.0531, lon: 121.5262 }), a);
 });
 
 test('網址帶得齊要用的欄位', () => {
-    const u = Weather.url({ lat: 22.645, lon: 120.605 });
+    const u = Weather.url({ lat: 25.053, lon: 121.526 });
     assert.ok(u.startsWith('https://api.open-meteo.com/'), u);
-    for (const k of ['latitude=22.645', 'longitude=120.605', 'temperature_2m',
+    for (const k of ['latitude=25.053', 'longitude=121.526', 'temperature_2m',
                      'weather_code', 'precipitation_probability_max', 'forecast_days=1']) {
         assert.ok(u.includes(k), `網址少了 ${k}`);
     }
 });
 
-test('預設地點寫在程式裡，而且是台灣的經緯度', () => {
-    assert.ok(Weather.DEFAULT.lat > 21 && Weather.DEFAULT.lat < 26, '緯度不在台灣');
-    assert.ok(Weather.DEFAULT.lon > 119 && Weather.DEFAULT.lon < 122, '經度不在台灣');
-    assert.ok(Weather.DEFAULT.name.length > 0, '一定要有地名，不然看的人會以為是自己的天氣');
+/* ── 從時區猜地點 ──────────────────────────────────
+ *
+ * 程式裡不再寫死一個地點（那會讓打開的人看到別人所在地的天氣，
+ * 而且那個座標會跟著程式一起公開）。改成照瀏覽器的時區猜。
+ *
+ * 猜錯不會報錯，只會給一個地名寫對、天氣是別人的卡片。
+ */
+
+test('程式裡沒有寫死任何座標', () => {
+    assert.equal(Weather.DEFAULT, undefined,
+        '寫死的預設地點＝公開的位置，也＝別人打開時看到的是你的天氣');
+});
+
+test('時區的最後一段就是城市名', () => {
+    assert.equal(Weather.cityOfZone('Asia/Taipei'), 'Taipei');
+    assert.equal(Weather.cityOfZone('Europe/London'), 'London');
+    assert.equal(Weather.cityOfZone('America/New_York'), 'New York', '底線要換成空白');
+    assert.equal(Weather.cityOfZone('America/Argentina/Buenos_Aires'), 'Buenos Aires',
+        '三段的時區要取最後一段');
+});
+
+test('沒有城市名的時區就不猜', () => {
+    // 猜不到會整張卡片不畫。**寧可沒有，也不要給一個別人的天氣。**
+    assert.equal(Weather.cityOfZone('UTC'), '');
+    assert.equal(Weather.cityOfZone('Etc/GMT+8'), '');
+    assert.equal(Weather.cityOfZone(''), '');
+    assert.equal(Weather.cityOfZone(undefined), '');
+});
+
+test('查回來的要拿時區對過才算數', () => {
+    // 真的發生過：查「New York」，第一筆是內布拉斯加州的 York
+    // （人口 7,864、America/Chicago）。直接用第一筆的話，紐約的人
+    // 會看到一個差了一千五百公里的天氣。
+    const results = [
+        { name: 'York', timezone: 'America/Chicago', latitude: 40.868, longitude: -97.592 },
+        { name: 'New York', timezone: 'Europe/London', latitude: 53.079, longitude: -0.14 },
+        { name: 'New York', timezone: 'America/New_York', latitude: 40.7143, longitude: -74.006 },
+    ];
+    const p = Weather.pickByZone(results, 'America/New_York');
+    assert.equal(p.name, 'New York');
+    assert.equal(p.lat, 40.714, '座標要留三位小數就好');
+    assert.equal(p.lon, -74.006);
+});
+
+test('一筆都對不上時區就回 null，不要硬挑一個', () => {
+    const results = [
+        { name: 'York', timezone: 'America/Chicago', latitude: 40.868, longitude: -97.592 },
+    ];
+    assert.equal(Weather.pickByZone(results, 'America/New_York'), null);
+    assert.equal(Weather.pickByZone([], 'Asia/Taipei'), null);
+    assert.equal(Weather.pickByZone(undefined, 'Asia/Taipei'), null);
+});
+
+test('缺經緯度的那幾筆跳過，不要拿 undefined 去查天氣', () => {
+    const results = [
+        { name: '怪的', timezone: 'Asia/Taipei' },
+        { name: '台北市', timezone: 'Asia/Taipei', latitude: 25.053, longitude: 121.526 },
+    ];
+    assert.equal(Weather.pickByZone(results, 'Asia/Taipei').name, '台北市');
+});
+
+test('天氣的查詢跟著座標的時區走，不寫死台北', () => {
+    // 高低溫和降雨機率是「今天」的統計，而「今天」在倫敦和台北
+    // 是不同的二十四小時。寫死的話別人拿到的是切在半夜的那一天。
+    const u = Weather.url({ lat: 51.5, lon: -0.1, name: 'London' });
+    assert.ok(u.includes('timezone=auto'), u);
+    assert.ok(!u.includes('Taipei'), u);
 });

@@ -7,11 +7,16 @@
  *
  * 三個刻意的決定：
  *
- * **1. 預設地點寫死，不主動要定位權限。**
- * 一打開就跳「要不要給位置」的頁面很討厭，而且這份儀表板也放在
- * GitHub Pages 上給別人看。所以預設用一個固定地點，卡片上把地名寫出來
- * ——**不寫地名的天氣是騙人的**，看的人會以為那是他自己的天氣。
- * 要換成自己的位置，卡片上有一顆按鈕，按了才問權限。
+ * **1. 從瀏覽器的時區猜地點，不主動要定位權限。**
+ * 一打開就跳「要不要給位置」的頁面很討厭，而且這份儀表板放在
+ * GitHub Pages 上給別人看——寫死一個地點的話，打開的人看到的是
+ * 別人所在地的天氣，而那個座標還會跟著程式一起公開。
+ *
+ * IANA 的時區幾乎都是拿城市命名的（Asia/Taipei、Europe/London、
+ * America/Argentina/Buenos_Aires），拿最後一段去查座標就好。
+ * 不用權限、不用第三方追蹤，而且每個人看到的是自己那一區。
+ * 卡片上一定把地名寫出來——**不寫地名的天氣是騙人的**。
+ * 要精確到自己站的地方，卡片上有一顆按鈕，按了才問權限。
  *
  * **2. 位置和快取都放 localStorage，不寫進 ~/星歷資料。**
  * 這是「這台裝置的偏好」，不是她的資料。手機和電腦本來就可能在不同地方，
@@ -24,10 +29,8 @@
  */
 
 const Weather = {
-    // 屏東縣內埔鄉。她的學校在這裡，是最常用得到的那個地點。
-    DEFAULT: { lat: 22.645, lon: 120.605, name: '屏東內埔' },
-
     PLACE_KEY: '星歷.天氣.地點',
+    GUESS_KEY: '星歷.天氣.猜的地點',
     CACHE_KEY: '星歷.天氣.快取',
     /** 快取多久算新鮮。天氣不會分鐘級地變，半小時很夠。 */
     FRESH_MS: 30 * 60 * 1000,
@@ -83,6 +86,94 @@ const Weather = {
         try { localStorage.setItem(this.PLACE_KEY, JSON.stringify(p)); } catch { /* 無痕模式 */ }
     },
 
+    /* ── 從時區猜地點 ──────────────────────────────────
+     *
+     * **查回來的一定要拿時區對過才算數。**
+     * 查「New York」，第一筆回的是內布拉斯加州的 York（人口 7,864），
+     * 時區是 America/Chicago——直接用第一筆的話，紐約的人會看到一個
+     * 地名寫對、但其實差了一千五百公里的天氣。
+     * **顯示一個別人的天氣，比不顯示還糟。**
+     */
+
+    timeZone() {
+        try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; }
+        catch { return ''; }
+    },
+
+    /** 時區的最後一段就是城市名。"America/Argentina/Buenos_Aires" → "Buenos Aires"。
+     *  UTC、Etc/GMT+8 那種沒有城市，回空字串——猜不到就整張卡不畫。 */
+    cityOfZone(tz) {
+        const last = String(tz || '').split('/').pop() || '';
+        if (!last || last === 'UTC' || last.startsWith('GMT')) return '';
+        return last.split('_').join(' ').trim();
+    },
+
+    /** 猜過的存起來。**存的時候要記住是哪個時區猜的**——
+     *  出國之後時區變了，舊的那份就不是同一件事了。 */
+    readGuess(tz) {
+        try {
+            const g = JSON.parse(localStorage.getItem(this.GUESS_KEY) || 'null');
+            if (!g || g.tz !== tz) return null;
+            const p = g.place;
+            if (typeof p?.lat !== 'number' || typeof p?.lon !== 'number') return null;
+            return { lat: p.lat, lon: p.lon, name: String(p.name || this.cityOfZone(tz)) };
+        } catch { return null; }
+    },
+
+    writeGuess(tz, place) {
+        try { localStorage.setItem(this.GUESS_KEY, JSON.stringify({ tz, place })); } catch {}
+    },
+
+    geoUrl(city, language) {
+        const q = new URLSearchParams({
+            name: city, count: '10', language, format: 'json',
+        });
+        return `https://geocoding-api.open-meteo.com/v1/search?${q}`;
+    },
+
+    /** 一堆查詢結果裡，挑時區對得上的那一個。挑不到就回 null。 */
+    pickByZone(results, tz) {
+        const hit = (results || []).find(r =>
+            r && r.timezone === tz
+            && typeof r.latitude === 'number' && typeof r.longitude === 'number');
+        if (!hit) return null;
+        return {
+            lat: Number(hit.latitude.toFixed(3)),
+            lon: Number(hit.longitude.toFixed(3)),
+            name: String(hit.name || ''),
+        };
+    },
+
+    async lookupCity(city, tz, language) {
+        const res = await fetch(this.geoUrl(city, language));
+        if (!res.ok) return null;
+        const json = await res.json();
+        const p = this.pickByZone(json?.results, tz);
+        return p && p.name ? p : null;
+    },
+
+    async guessPlace() {
+        const tz = this.timeZone();
+        const city = this.cityOfZone(tz);
+        if (!city) return null;
+
+        const cached = this.readGuess(tz);
+        if (cached) return cached;
+
+        try {
+            // **中文和英文查的是兩個不一樣的索引。** 用中文查 New York
+            // 根本找不到紐約（前十筆裡一個 America/New_York 都沒有），
+            // 用英文查第一筆就是。所以中文沒中就用英文再問一次：
+            // 中文的地名好看，但查得到比較重要。
+            const place = await this.lookupCity(city, tz, 'zh')
+                       || await this.lookupCity(city, tz, 'en');
+            if (place) this.writeGuess(tz, place);
+            return place;
+        } catch {
+            return null;    // 沒網路。天氣是附加的，整張不畫就好
+        }
+    },
+
     /* ── 快取 ──────────────────────────────────────── */
 
     readCache() {
@@ -111,7 +202,10 @@ const Weather = {
             longitude: String(p.lon),
             current: 'temperature_2m,apparent_temperature,weather_code',
             daily: 'temperature_2m_max,temperature_2m_min,precipitation_probability_max',
-            timezone: 'Asia/Taipei',
+            // **跟著座標走，不要寫死時區。** 高低溫和降雨機率是「今天」
+            // 的統計，而「今天」在倫敦和台北是不同的二十四小時——
+            // 寫死 Asia/Taipei 的話，別人拿到的是切在半夜的那一天。
+            timezone: 'auto',
             forecast_days: '1',
         });
         return `https://api.open-meteo.com/v1/forecast?${q}`;
@@ -135,7 +229,10 @@ const Weather = {
     },
 
     async init() {
-        this.place = this.savedPlace() || this.DEFAULT;
+        this.place = this.savedPlace() || await this.guessPlace();
+        // 猜不到（沒網路、時區裡沒有城市名、查回來的時區對不上）就
+        // 整張卡片不畫。**寧可沒有，也不要給一個別人的天氣。**
+        if (!this.place) return;
 
         // 先把快取畫出來，不要讓卡片等網路。
         const cached = this.readCache();

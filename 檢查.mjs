@@ -128,6 +128,17 @@ async function phoneTitle(url, width = 390, height = 844) {
  */
 const PROBE = `
 <script>
+/* **檢查不上網。**
+ *
+ * 天氣那塊開機會打兩支 API（時區猜地點的地理編碼、Open-Meteo 的預報）。
+ * 在 --virtual-time-budget 底下，還沒回來的網路請求會把虛擬時間停住，
+ * 整輪檢查就跟著卡在那裡；而且沒有網路的時候這支也該跑得完。
+ * 天氣本來就沒有任何一條檢查，直接把開機那一下停掉。
+ *
+ * 這一段的位置是關鍵：app.js 的 main() 一開始就 await Store.init()，
+ * 讓出去之後解析器才會跑到這裡，所以來得及蓋掉。 */
+if (typeof Weather !== 'undefined') Weather.init = async () => {};
+
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const out = [];
 // **每push一條就把 title 更新一次。** 結果是靠 title 帶回去的，
