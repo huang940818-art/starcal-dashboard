@@ -1273,18 +1273,22 @@ test('沒設過就照預設的順序', () => {
 });
 
 test('設過就照她排的', () => {
-    const mine = ['memo', 'today', 'attention', 'weather', 'money', 'upcoming', 'ke'];
+    // **不要把卡片清單寫死在測試裡。** 寫死的話每加一張新卡就要
+    // 回來改一次測試，而那正是這支測試該幫忙的事。
+    const mine = [...Overview.CARDS.map(c => c.id)].reverse();
     assert.deepEqual(Overview.orderedIds(mine), mine);
 });
 
 test('新加的卡片接在後面，不會消失', () => {
-    // 她排順序的時候還沒有「今天的收支」這張——存起來的清單裡沒有它。
+    // 她排順序的時候還沒有那張卡——存起來的清單裡沒有它。
     // 接不上去的話，加了新卡片，用過排序的人就永遠看不到。
-    const old = ['attention', 'weather', 'money', 'upcoming', 'memo', 'ke'];
+    const all = Overview.CARDS.map(c => c.id);
+    const missing = all[all.length - 1];
+    const old = all.slice(0, -1);
     const out = Overview.orderedIds(old);
-    assert.ok(out.includes('today'), '新的卡片不見了');
+    assert.ok(out.includes(missing), '新的卡片不見了');
     assert.deepEqual(out.slice(0, old.length), old, '她排的順序要原封不動');
-    assert.equal(out[out.length - 1], 'today', '新的接在後面');
+    assert.equal(out[out.length - 1], missing, '新的接在後面');
 });
 
 test('已經拿掉的卡片不會留在順序裡', () => {

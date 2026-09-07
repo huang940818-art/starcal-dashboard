@@ -640,6 +640,73 @@ const guard = (p, what, ms = 5000) => Promise.race([
       }
     }
 
+    // ── 總覽上的「今天的預算」──
+    //
+    // 記帳那頁的預算卡回答「這個月」，站在超商前面要的是「今天還能花多少」。
+    {
+      await tab('money');
+      const keep = JSON.stringify(Money.data);
+      const cat = Money.data.categories.expense[0].name;
+      const today = new Date().toISOString().slice(0, 10);
+
+      Money.data.accounts = [{ id: 'tb1', name: '甲', kind: 'cash', opening: 9999,
+                               includeInTotal: true, order: 0 }];
+      Money.data.transactions = [];
+      Money.data.totalBudgets = [];
+      Money.data.budgets = [];
+      Money.save(); Overview.render(); await tab('overview'); await sleep(220);
+
+      const card = () => [...document.querySelectorAll('#overview-grid .card')]
+        .find(c => c.textContent.includes('今天的預算'));
+      ok('總覽上有「今天的預算」', !!card());
+      ok('沒設預算的時候是空狀態，而且給得出入口',
+         !!card() && card().textContent.includes('還沒設預算')
+         && !!card().querySelector('button'),
+         card() ? card().textContent.slice(0, 40) : '');
+
+      // 設一個總預算，今天花掉一點
+      Money.data.totalBudgets = [{ limit: 30000 }];
+      Money.data.transactions = [
+        { id: 'tb-t1', date: today, kind: 'expense', amount: 200, category: cat, account: '甲' },
+      ];
+      Money.save(); Overview.render(); await sleep(250);
+
+      const p = Money.budgetPace(Money.range.start.slice(0, 7));
+      ok('主角是「今天還可以花」那個數字',
+         !!card() && card().textContent.includes(Math.round(p.todayLeft).toLocaleString('zh-TW')),
+         card() ? card().textContent.slice(0, 60) : '');
+      ok('額度和今天花掉的都寫出來',
+         !!card() && card().textContent.includes('額度')
+         && card().textContent.includes('200'),
+         card() ? card().textContent.slice(0, 70) : '');
+
+      // 分類的今天額度
+      Money.data.budgets = [{ category: cat, limit: 30000 }];
+      Money.save(); Overview.render(); await sleep(250);
+      ok('分類的今天額度也在總覽上',
+         !!card() && card().textContent.includes(cat),
+         card() ? card().textContent.slice(0, 90) : '');
+      ok('分類有色點，每天位置和顏色都不會跳',
+         !!card() && !!card().querySelector('.quota-row .dot'));
+
+      // 分類今天花超過：要看得見，而且是紅的
+      Money.data.budgets = [{ category: cat, limit: 300 }];
+      Money.save(); Overview.render(); await sleep(250);
+      ok('分類今天超出的話講「超出」不是印 0',
+         !!card() && card().textContent.includes('超出'),
+         card() ? card().textContent.slice(0, 90) : '');
+
+      // 同一個數字不要在同一頁講兩次
+      const todayCard = [...document.querySelectorAll('#overview-grid .card')]
+        .find(c => c.textContent.includes('今天的收支'));
+      ok('「今天的收支」不再重複講額度',
+         !!todayCard && !todayCard.textContent.includes('額度'),
+         todayCard ? todayCard.textContent.slice(0, 60) : '');
+
+      Money.data = JSON.parse(keep);
+      Money.save(); Money.render(); Overview.render(); await sleep(200);
+    }
+
     // ── 天氣的地點可以自己改 ──
     //
     // 「用我的位置」在 http 的網址上（手機看本機那份就是）根本不會動，

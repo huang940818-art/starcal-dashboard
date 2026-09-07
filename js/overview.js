@@ -31,6 +31,7 @@ const Overview = {
         { id: 'weather',   name: '今天的天氣' },
         { id: 'money',     name: '這個月' },
         { id: 'today',     name: '今天的收支' },
+        { id: 'todaybudget', name: '今天的預算' },
         { id: 'upcoming',  name: '接下來' },
         { id: 'memo',      name: '備忘' },
         // 小克那塊預設放最後：它不是待辦事項，不該排在
@@ -90,6 +91,7 @@ const Overview = {
         if (id === 'weather') return this.renderWeather(box);
         if (id === 'money') return this.renderMoney(box);
         if (id === 'today') return this.renderToday(box);
+        if (id === 'todaybudget') return this.renderTodayBudget(box);
         if (id === 'upcoming') return this.renderUpcoming(box);
         if (id === 'memo') return this.renderMemo(box);
         if (id === 'ke') return Ke.render(box);
@@ -490,21 +492,9 @@ const Overview = {
     renderToday(grid) {
         const rows = Money.onDay();
         const flow = Money.dayFlow();
-        const pace = Money.budgetPace(thisMonth());
         const SHOWN = 6;
-
-        // 「今天起每天可以用多少」在預算那張卡上也有，這裡再講一次是
-        // 刻意的：她要決定「現在這一餐能不能吃」的時候人在總覽，
-        // 不會為了這個數字切到記帳去。
-        const paceLine = !pace ? null
-            : pace.over
-                ? `這個月的預算已經超出 ${money(pace.used - pace.limit)}`
-                : pace.perDayLeft === null ? null
-                : pace.todayLeft < 0
-                    ? `今天的額度 ${money(pace.perDayLeft)}，超出 ${money(-pace.todayLeft)}`
-                    : pace.spentToday
-                        ? `今天還可以用 ${money(pace.todayLeft)}（額度 ${money(pace.perDayLeft)}）`
-                        : `今天可以用 ${money(pace.perDayLeft)}`;
+        // 額度不寫在這裡——旁邊「今天的預算」那張卡整張都在講它。
+        // 同一個數字在同一頁講兩次，兩次都會被當成背景。
 
         const body = [];
         if (rows.length) {
@@ -548,13 +538,8 @@ const Overview = {
         } else {
             body.push(el('div', { class: 'empty' }, [
                 icon('money', 26), '今天還沒有記帳',
-                el('div', { class: 'hint', text: paceLine || '按右上角的「記一筆」' }),
+                el('div', { class: 'hint', text: '按右上角的「記一筆」' }),
             ]));
-        }
-
-        // 有帳目的時候才把額度掛在下面。空的時候它已經在提示裡了。
-        if (rows.length && paceLine) {
-            body.push(el('div', { class: 'sub pace-foot', text: paceLine }));
         }
 
         grid.append(el('div', { class: 'card', 'data-hue': 'money' }, [
@@ -563,6 +548,94 @@ const Overview = {
                                onclick: () => Money.editTxn(null) })),
             ...body,
         ]));
+    },
+
+    /* ── 今天的預算 ────────────────────────────────────
+     *
+     * 她說「今天預算可以放總覽」。
+     *
+     * 記帳那頁的預算卡回答的是「這個月」——月初看它很寬裕，月底才發現
+     * 早就爆了。**站在超商前面要的是「今天還能花多少」**，而那個數字
+     * 本來要切到記帳頁才看得到。
+     *
+     * 分類**照分類清單的固定順序**排，不照「今天超支的排前面」——
+     * 順序每天跳動的話，每天都要重新找一次「吃的在哪一行」。
+     * 要注意的那幾個用紅色抓眼睛，位置不動。
+     */
+    renderTodayBudget(grid) {
+        const ym = thisMonth();
+        const pace = Money.budgetPace(ym);
+        const cats = Money.budgetsFor(ym)
+            .filter(b => Number(b.limit) > 0)
+            .map(b => ({ name: b.category, p: Money.categoryPace(ym, b.category, b.limit) }))
+            .filter(c => c.p && c.p.isNow && c.p.perDayLeft !== null);
+
+        const head = this.head('budget', '今天的預算',
+            el('button', {
+                class: 'btn small ghost', text: '設定',
+                onclick: () => { showPanel('money'); Money.editBudgets(); },
+            }));
+
+        if (!pace && !cats.length) {
+            grid.append(el('div', { class: 'card', 'data-hue': 'budget' }, [
+                head,
+                el('div', { class: 'empty' }, [
+                    icon('budget', 26), '還沒設預算',
+                    el('div', { class: 'hint',
+                                text: '設一個總額，這裡就會寫「今天可以用多少」' }),
+                ]),
+            ]));
+            return;
+        }
+
+        const body = [];
+
+        if (pace) {
+            if (pace.over) {
+                // 這個月的總額已經沒了。**不要印一個「今天可以用 0」**，
+                // 那看起來像算壞了，而且它要講的是一句話不是一個數字。
+                body.push(
+                    el('div', { class: 'pace-word', text: '這個月的額度用完了' }),
+                    el('div', { class: 'sub', style: 'margin-top:4px',
+                        text: `超出 ${money(pace.used - pace.limit)}`
+                            + (pace.daysLeft > 0 ? `，還有 ${pace.daysLeft} 天` : '') }));
+            } else {
+                const ratio = pace.perDayLeft ? pace.spentToday / pace.perDayLeft : 0;
+                body.push(
+                    el('div', { class: 'big money-num' + (pace.todayLeft < 0 ? ' negative' : ''),
+                                text: money(pace.todayLeft) }),
+                    el('div', { class: 'sub', text: pace.todayLeft < 0
+                        ? `今天超出了（額度 ${money(pace.perDayLeft)}，花了 ${money(pace.spentToday)}）`
+                        : `今天還可以花　額度 ${money(pace.perDayLeft)}，花了 ${money(pace.spentToday)}` }),
+                    el('div', { class: 'track', style: 'margin-top:12px' }, [
+                        el('div', {
+                            class: 'fill' + (ratio > 1 ? ' over' : ratio > 0.8 ? ' warn' : ''),
+                            style: `width:${Math.min(ratio, 1) * 100}%`,
+                        }),
+                    ]));
+            }
+        }
+
+        if (cats.length) {
+            const shown = cats.slice(0, 6);
+            body.push(el('div', { class: 'quota' + (pace ? ' has-total' : '') },
+                shown.map(c => el('div', { class: 'quota-row' }, [
+                    el('span', { class: 'dot', style: `background:${Money.colorOf(c.name)}` }),
+                    el('span', { class: 'grow ellipsis', text: c.name }),
+                    el('span', {
+                        class: 'money-num' + (c.p.todayLeft < 0 ? ' negative' : ' sub'),
+                        text: c.p.todayLeft < 0
+                            ? `超出 ${money(-c.p.todayLeft)}`
+                            : money(c.p.todayLeft),
+                    }),
+                ]))));
+            if (cats.length > shown.length) {
+                body.push(el('div', { class: 'sub', style: 'margin-top:8px',
+                    text: `還有 ${cats.length - shown.length} 類` }));
+            }
+        }
+
+        grid.append(el('div', { class: 'card', 'data-hue': 'budget' }, [head, ...body]));
     },
 
     /** 總覽上的「接下來」：今天和明天，行程和待辦混在一起。 */

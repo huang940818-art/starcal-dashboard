@@ -919,6 +919,32 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
     margin: -6px 0 16px;
 }
 
+/* 總覽「今天的預算」裡的分類清單 */
+.quota { margin-top: 14px; }
+
+/* 上面有總額的話拉一條線分開：那是兩件事（總共還能花 vs 每一類還能花） */
+.quota.has-total {
+    padding-top: 12px;
+    border-top: 1px solid color-mix(in srgb, var(--separator) 60%, transparent);
+}
+
+.quota-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 6px 0;
+    font-size: 14px;
+}
+
+/* 分類的色點。**顏色照分類在清單裡的位置給**（見 money.js 的 colorOf），
+ * 所以每天打開，吃的永遠是同一個顏色。 */
+.quota-row .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+}
+
 /* 總覽「今天的收支」底下那一行額度 */
 .pace-foot {
     margin-top: 12px;
