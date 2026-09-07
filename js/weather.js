@@ -228,8 +228,36 @@ const Weather = {
         };
     },
 
+    /* ── 三層地點 ──────────────────────────────────────
+     *
+     * 1. 這台裝置自己抓到的（localStorage）——「我現在在哪」
+     * 2. 她指定的預設（設定.json）——「我平常要看哪裡」，跨裝置一樣
+     * 3. 猜的（瀏覽器時區）
+     *
+     * 本來只有 1 和 3，理由是「地點是這台裝置的偏好」。那個理由在
+     * 手機上垮掉了：**手機開的是 http，瀏覽器不給定位**，所以第 1 層
+     * 永遠拿不到，手機上就只能一直看猜出來的城市。
+     * 所以中間加一層她自己指定的，手打的地點跟著設定走。
+     */
+    pickedPlace() {
+        const p = Prefs.data?.weatherPlace;
+        if (typeof p?.lat !== 'number' || typeof p?.lon !== 'number') return null;
+        return { lat: p.lat, lon: p.lon, name: String(p.name || '指定的地點') };
+    },
+
+    /** 手打／查出來的地點存設定（跨裝置）。定位抓的存 localStorage（這台）。 */
+    savePicked(p) {
+        Prefs.data.weatherPlace = p;
+        Prefs.save();
+    },
+
+    /** 瀏覽器肯不肯給定位。**http 上一律不行**（localhost 除外）。 */
+    canLocate() {
+        return !!navigator.geolocation && window.isSecureContext === true;
+    },
+
     async init() {
-        this.place = this.savedPlace() || await this.guessPlace();
+        this.place = this.savedPlace() || this.pickedPlace() || await this.guessPlace();
         // 猜不到（沒網路、時區裡沒有城市名、查回來的時區對不上）就
         // 整張卡片不畫。**寧可沒有，也不要給一個別人的天氣。**
         if (!this.place) return;
@@ -271,27 +299,225 @@ const Weather = {
 
     /* ── 換成自己的位置 ───────────────────────────────── */
 
+    /**
+     * 用瀏覽器的定位。
+     *
+     * **失敗一定要講出來。**
+     *
+     * 本來這裡的錯誤回呼什麼都不做，註解寫著「她已經用行動回答過了」
+     * ——那句話只有在「她按了不允許」的時候成立。實際上失敗有好幾種，
+     * 全部走同一條路被吞掉：她在 http 的網址上按了那顆按鈕，
+     * 瀏覽器根本不給定位，畫面上什麼都沒發生。
+     * **「按了沒反應」是最難查的一種壞掉**，因為它跟「沒按到」長得一樣。
+     */
     useMyLocation() {
-        if (!navigator.geolocation || this.asking) return;
+        if (this.asking) return;
+
+        if (!navigator.geolocation) {
+            toast('這個瀏覽器沒有定位功能', true);
+            return;
+        }
+        // 這一條要提前擋，不然瀏覽器回的錯是「使用者拒絕」——
+        // 她根本沒看到權限視窗，卻被告知是自己拒絕的。
+        if (!window.isSecureContext) {
+            toast('這個網址不是 https，瀏覽器不給定位。用底下的搜尋直接指定地點。', true);
+            return;
+        }
+
         this.asking = true;
         Overview.render();
+        this.renderPicker();
+
         navigator.geolocation.getCurrentPosition(async pos => {
             this.place = {
                 lat: Number(pos.coords.latitude.toFixed(3)),
                 lon: Number(pos.coords.longitude.toFixed(3)),
                 name: '我的位置',
             };
+            /* 兩個都寫。
+             *
+             * localStorage 是「這台裝置現在在哪」，設定是「平常看哪裡」。
+             * 只寫前者的話，**手機永遠拿不到**——手機開的是 http，
+             * 那顆按鈕在手機上根本按不動。她在電腦上按一次，
+             * 手機才跟得到同一個地方。 */
             this.savePlace(this.place);
+            this.savePicked(this.place);
             this.data = null;
             await this.fetchNow();
             this.asking = false;
             Overview.render();
-        }, () => {
-            // 按了不允許，或抓不到。**不要跳警告**——她已經用行動回答過了。
+            this.renderPicker();
+            toast('換成你現在的位置了');
+        }, err => {
             this.asking = false;
             Overview.render();
+            this.renderPicker();
+            // 三種失敗要分開講：能不能重試、該去哪裡開權限，答案不一樣
+            const why = err?.code === 1
+                ? '定位被擋住了。到瀏覽器（或手機的系統設定）把這個網站的位置權限打開。'
+                : err?.code === 3
+                    ? '等太久了，沒抓到位置。再按一次試試。'
+                    : '抓不到位置。可以用底下的搜尋直接指定地點。';
+            toast(why, true);
         }, { timeout: 8000, maximumAge: 10 * 60 * 1000 });
     },
 
-    usingDefault() { return !this.savedPlace(); },
+    /* ── 自己指定地點 ─────────────────────────────────
+     *
+     * 定位在 http 上永遠拿不到，所以一定要有一條用打的路。
+     *
+     * ⚠️ **地名庫對台灣的鄉鎮不完整**（查「屏東」是零筆）。查不到的時候
+     * 要講出來並且建議改查附近的市鎮，不要只給一句「找不到」——
+     * 那會讓人以為是自己打錯字。
+     */
+    /** 「22.645, 120.605」這種直接當座標用。查不到的地方只剩這條路。 */
+    parseCoords(q) {
+        const parts = String(q || '').split(/[\s,，]+/).filter(Boolean);
+        if (parts.length !== 2) return null;
+        const lat = Number(parts[0]), lon = Number(parts[1]);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+        if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+        return { lat: Number(lat.toFixed(3)), lon: Number(lon.toFixed(3)),
+                 name: '自訂位置', where: '直接用你打的座標' };
+    },
+
+    async searchPlaces(q) {
+        const name = String(q || '').trim();
+        if (!name) return [];
+
+        // **地名庫對台灣的鄉鎮不完整**（查「屏東」是零筆，查「內埔」
+        // 五筆裡沒有屏東那個）。查不到的地方，直接打經緯度是唯一的路。
+        const coords = this.parseCoords(name);
+        if (coords) return [coords];
+
+        const out = [];
+        for (const lang of ['zh', 'en']) {
+            try {
+                const res = await fetch(this.geoUrl(name, lang));
+                if (!res.ok) continue;
+                const json = await res.json();
+                for (const r of json?.results || []) {
+                    if (typeof r.latitude !== 'number' || typeof r.longitude !== 'number') continue;
+                    const lat = Number(r.latitude.toFixed(3));
+                    const lon = Number(r.longitude.toFixed(3));
+                    // 中文和英文查的是兩個索引，會有重複
+                    if (out.some(p => p.lat === lat && p.lon === lon)) continue;
+                    out.push({
+                        lat, lon,
+                        name: String(r.name || name),
+                        where: [r.admin1, r.country].filter(Boolean).join('・'),
+                    });
+                }
+            } catch { /* 沒網路就給已經拿到的 */ }
+            if (out.length >= 8) break;
+        }
+        return out.slice(0, 8);
+    },
+
+    /* ── 挑地點的畫面 ────────────────────────────────── */
+
+    openPicker() {
+        this.found = null;
+        this.searching = false;
+        this.renderPicker();
+        openDialog('#dlg-place');
+    },
+
+    renderPicker() {
+        const box = $('#place-body');
+        if (!box || !$('#dlg-place')) return;
+        clear(box);
+
+        box.append(el('p', { class: 'sub', style: 'margin:-6px 0 14px' }, [
+            '現在看的是 ',
+            el('b', { text: this.place ? this.place.name : '（還沒有地點）' }),
+            this.savedPlace() ? '（這台裝置抓到的）'
+                : this.pickedPlace() ? '（你指定的）'
+                : '（照瀏覽器的時區猜的）',
+        ]));
+
+        // ── 用打的 ──
+        const input = el('input', {
+            type: 'search', id: 'place-q',
+            'aria-label': '搜尋地點',
+            // 查不到的鄉鎮還有經緯度這條路，提示裡就要講，
+            // 不然她只會得到一句「找不到」然後以為是自己打錯
+            placeholder: '打城市名，或經緯度 22.645, 120.605',
+            onkeydown: e => { if (e.key === 'Enter') { e.preventDefault(); this.doSearch(); } },
+        });
+        box.append(el('div', { class: 'row', style: 'margin-bottom:12px' }, [
+            input,
+            el('button', {
+                type: 'button', class: 'btn shrink',
+                text: this.searching ? '查…' : '查',
+                disabled: this.searching,
+                onclick: () => this.doSearch(),
+            }),
+        ]));
+
+        if (this.found) {
+            if (!this.found.length) {
+                // 查不到要講清楚原因，不然她會以為是自己打錯字
+                box.append(el('p', { class: 'sub', style: 'margin:0 0 12px' },
+                    '找不到。這個地名資料庫對台灣的鄉鎮不完整（查「屏東」是零筆），'
+                    + '改查附近大一點的市鎮通常就有了。'));
+            } else {
+                for (const p of this.found) {
+                    box.append(el('button', {
+                        type: 'button', class: 'pick-row place-row',
+                        onclick: () => this.choose(p),
+                    }, [
+                        el('div', { class: 'grow' }, [
+                            el('div', { class: 'ellipsis', text: p.name }),
+                            el('div', { class: 'sub ellipsis', text: p.where || '' }),
+                        ]),
+                        el('div', { class: 'sub money-num', text: `${p.lat}, ${p.lon}` }),
+                    ]));
+                }
+            }
+        }
+
+        // ── 用定位 ──
+        box.append(el('div', { class: 'place-locate' }, [
+            el('button', {
+                type: 'button', class: 'btn small',
+                text: this.asking ? '定位中…' : '用我現在的位置',
+                disabled: this.asking || !this.canLocate(),
+                onclick: () => this.useMyLocation(),
+            }),
+            el('div', { class: 'sub', style: 'margin-top:8px', text: this.canLocate()
+                ? '會問一次權限。抓到的位置也會變成其他裝置的預設'
+                  + '——手機上按不動這顆，只能跟著這裡設的走。'
+                : '這個網址不是 https，瀏覽器不給定位。'
+                  + '用上面的搜尋，或直接打經緯度（例如 22.645, 120.605）。' }),
+        ]));
+    },
+
+    async doSearch() {
+        const q = $('#place-q')?.value || '';
+        if (!q.trim()) return;
+        this.searching = true;
+        this.renderPicker();
+        $('#place-q').value = q;          // 重畫之後把打的字放回去
+        this.found = await this.searchPlaces(q);
+        this.searching = false;
+        this.renderPicker();
+        $('#place-q').value = q;
+    },
+
+    async choose(p) {
+        this.place = { lat: p.lat, lon: p.lon, name: p.name };
+        // 手打指定的跟著設定走，換一台裝置也一樣
+        this.savePicked(this.place);
+        try { localStorage.removeItem(this.PLACE_KEY); } catch {}
+        this.data = null;
+        this.renderPicker();
+        await this.fetchNow();
+        Overview.render();
+        this.renderPicker();
+        toast(`天氣換成${p.name}了`);
+    },
+
+    /** 平常顯示「用我的位置」那顆——只有還沒指定過才顯示 */
+    usingDefault() { return !this.savedPlace() && !this.pickedPlace(); },
 };

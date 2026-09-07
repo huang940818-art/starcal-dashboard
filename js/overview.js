@@ -355,15 +355,16 @@ const Overview = {
         if (w.feels !== null && w.feels !== w.now) bits.push(`體感 ${w.feels}°`);
 
         grid.append(el('div', { class: 'card', 'data-hue': 'calendar' }, [
+            // **一顆按鈕，兩條路。** 本來這裡是「用我的位置」，但那個在
+            // http 的網址上（手機看本機那份就是）根本不會動，按了沒反應。
+            // 改成開一個視窗：裡面可以用打的，也可以用定位。
             this.head(d.ico, '今天的天氣',
-                Weather.usingDefault() && navigator.geolocation
-                    ? el('button', {
-                        class: 'btn small',
-                        text: Weather.asking ? '定位中…' : '用我的位置',
-                        disabled: Weather.asking,
-                        onclick: () => Weather.useMyLocation(),
-                    })
-                    : null),
+                el('button', {
+                    class: 'btn small' + (Weather.usingDefault() ? '' : ' ghost'),
+                    text: Weather.asking ? '定位中…' : '改地點',
+                    disabled: Weather.asking,
+                    onclick: () => Weather.openPicker(),
+                })),
             el('div', { class: 'weather-now' }, [
                 el('div', { class: 'weather-temp', text: `${w.now}°` }),
                 el('div', { class: 'weather-word', text: d.text }),

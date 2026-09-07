@@ -720,6 +720,23 @@ textarea { resize: vertical; min-height: 76px; line-height: 1.6; }
 .pick-row input { width: auto; flex: 0 0 auto; }
 .pick-row .sub { margin-top: 2px; }
 
+/* 挑地點那幾列是 <button>，要把瀏覽器給的長相剝掉 */
+.place-row {
+    width: 100%;
+    background: none;
+    border: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--separator) 60%, transparent);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+}
+
+.place-locate {
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid color-mix(in srgb, var(--separator) 60%, transparent);
+}
+
 /* 對帳的結果 */
 .rc-ok { color: var(--good); margin: 0 0 12px; }
 .rc-diff { color: var(--alert); margin: 0 0 6px; }

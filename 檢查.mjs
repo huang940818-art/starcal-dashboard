@@ -640,6 +640,67 @@ const guard = (p, what, ms = 5000) => Promise.race([
       }
     }
 
+    // ── 天氣的地點可以自己改 ──
+    //
+    // 「用我的位置」在 http 的網址上（手機看本機那份就是）根本不會動，
+    // 而本來的錯誤處理什麼都不說——按了沒反應跟沒按到長得一模一樣。
+    {
+      await tab('overview');
+      // 檢查是不上網的（PROBE 開頭把 Weather.init 停掉了），
+      // 所以這裡自己塞一份資料進去，讓天氣卡畫得出來。
+      Weather.place = { lat: 25.053, lon: 121.526, name: '測試地點' };
+      Weather.data = { now: 26, feels: 28, code: 0, high: 30, low: 23, rain: 10 };
+      Weather.at = Date.now();
+      Overview.render(); await sleep(250);
+
+      const wcard = [...document.querySelectorAll('#overview-grid .card')]
+        .find(c => c.textContent.includes('今天的天氣'));
+      ok('天氣卡畫得出來', !!wcard, '沒有那張卡');
+      ok('地名有寫出來', !!wcard && wcard.textContent.includes('測試地點'),
+         '不寫地名的話，看的人會以為那是自己所在地的天氣');
+
+      const btn = wcard && [...wcard.querySelectorAll('button')]
+        .find(b => b.textContent.includes('改地點'));
+      ok('天氣卡上有「改地點」', !!btn);
+
+      if (btn) {
+        btn.click(); await sleep(220);
+        ok('挑地點的視窗開得起來', q('#dlg-place').open);
+        ok('視窗裡講得出現在看的是哪裡',
+           q('#place-body').textContent.includes('測試地點'),
+           q('#place-body').textContent.slice(0, 50));
+        ok('有一個用打的搜尋框', !!q('#place-q'));
+
+        /* 定位那顆。
+         *
+         * ⚠️ **這裡驗不到「http 上不能用」那個情況。** 檢查跑在
+         * 127.0.0.1 上，而規格把 localhost 也算成安全上下文——
+         * 所以這一輪的 isSecureContext 一定是 true。
+         * 真正壞掉的是手機打 100.x 那個位址（不是 https 也不是 localhost）。
+         * 那個分支由 測試.mjs 的 canLocate() 那條釘住。
+         *
+         * 這裡能驗的是：按鈕在、狀態跟 canLocate() 對得起來、
+         * 而且不管哪一種都有寫一句話說明——本來那顆按了完全沒反應。 */
+        const loc = [...document.querySelectorAll('#place-body button')]
+          .find(b => b.textContent.includes('位置'));
+        ok('有「用我現在的位置」那顆', !!loc);
+        ok('那顆的狀態跟 canLocate 對得起來',
+           !!loc && loc.disabled === !Weather.canLocate(),
+           'canLocate=' + Weather.canLocate() + ' disabled=' + (loc && loc.disabled));
+        ok('底下一定有一句話說明現在能不能用',
+           q('#place-body').textContent.includes('權限')
+           || q('#place-body').textContent.includes('https'),
+           q('#place-body').textContent.slice(-60));
+
+        q('#dlg-place button[value="cancel"]').click(); await sleep(180);
+        ok('挑地點的視窗關得掉', !q('#dlg-place').open);
+      }
+
+      // 收乾淨，後面的檢查不要看到一張假的天氣卡
+      Weather.data = null; Weather.place = null;
+      Overview.render(); await sleep(180);
+    }
+
     // ── 存錢罐是「從既有的戶頭裡挑」──
     //
     // 本來它是「加帳戶」表單裡的一個勾選框。要改一個已經建好的戶頭，

@@ -1197,6 +1197,61 @@ test('缺經緯度的那幾筆跳過，不要拿 undefined 去查天氣', () => 
     assert.equal(Weather.pickByZone(results, 'Asia/Taipei').name, '台北市');
 });
 
+test('手打指定的地點贏過猜的，定位抓到的又贏過手打的', () => {
+    // 三層：這台裝置抓到的 > 她指定的 > 猜的。
+    // 中間那層是後來加的——手機開的是 http，瀏覽器不給定位，
+    // 第一層永遠拿不到，沒有中間層的話手機上只能一直看猜出來的城市。
+    const order = ['savedPlace', 'pickedPlace', 'guessPlace'];
+    for (const m of order) {
+        assert.equal(typeof Weather[m], 'function', `少了 ${m}`);
+    }
+});
+
+test('http 上不給定位——要提前擋，不要讓她按了沒反應', () => {
+    // 瀏覽器在非安全上下文回的錯是「使用者拒絕」，但她根本沒看到
+    // 權限視窗，卻被告知是自己拒絕的。
+    // Node 自己的 globalThis.navigator 只有 getter，直接指定會 TypeError，
+    // 所以用 defineProperty 蓋掉，測完還原。
+    const savedWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+    const savedNav = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    const fake = (win, nav) => {
+        Object.defineProperty(globalThis, 'window', { value: win, configurable: true });
+        Object.defineProperty(globalThis, 'navigator', { value: nav, configurable: true });
+    };
+    try {
+        fake({ isSecureContext: false }, { geolocation: {} });
+        assert.equal(Weather.canLocate(), false, 'http 上不能用');
+
+        fake({ isSecureContext: true }, { geolocation: {} });
+        assert.equal(Weather.canLocate(), true);
+
+        fake({ isSecureContext: true }, {});
+        assert.equal(Weather.canLocate(), false, '瀏覽器沒有定位功能也算不能用');
+    } finally {
+        savedWindow ? Object.defineProperty(globalThis, 'window', savedWindow)
+                    : delete globalThis.window;
+        savedNav ? Object.defineProperty(globalThis, 'navigator', savedNav)
+                 : delete globalThis.navigator;
+    }
+});
+
+test('直接打經緯度就當座標用', () => {
+    // 地名庫對台灣的鄉鎮不完整，查不到的地方只剩這條路
+    assert.deepEqual(Weather.parseCoords('22.645, 120.605'),
+        { lat: 22.645, lon: 120.605, name: '自訂位置', where: '直接用你打的座標' });
+    assert.equal(Weather.parseCoords('22.645 120.605').lat, 22.645, '空白隔開也要認');
+    assert.equal(Weather.parseCoords('22.645，120.605').lon, 120.605, '全形逗號也要認');
+    assert.equal(Weather.parseCoords('-33.868, 151.207').lat, -33.868, '南半球是負的');
+});
+
+test('不是座標的就當地名去查', () => {
+    assert.equal(Weather.parseCoords('台北'), null);
+    assert.equal(Weather.parseCoords('New York'), null, '兩個字的地名不是座標');
+    assert.equal(Weather.parseCoords('999, 999'), null, '超出範圍的不是座標');
+    assert.equal(Weather.parseCoords('22.645'), null, '只有一個數字不夠');
+    assert.equal(Weather.parseCoords(''), null);
+});
+
 test('天氣的查詢跟著座標的時區走，不寫死台北', () => {
     // 高低溫和降雨機率是「今天」的統計，而「今天」在倫敦和台北
     // 是不同的二十四小時。寫死的話別人拿到的是切在半夜的那一天。
