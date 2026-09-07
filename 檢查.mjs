@@ -571,7 +571,7 @@ const guard = (p, what, ms = 5000) => Promise.race([
 
         const card = q('#budgets').textContent;
         ok('預算卡看得到總預算', card.includes('30,000'));
-        ok('預算卡講得出今天起每天可以用多少', card.includes('今天起每天可以用'), card.slice(0, 60));
+        ok('預算卡講得出今天可以用多少', card.includes('今天可以用'), card.slice(0, 60));
         // **卡片上那個數字不是 perDay。** 對話框裡寫的是「整個月平分」
         // （設定的時候還不知道會花多少），卡片上寫的是「剩下的錢 ÷
         // 含今天在內的剩餘天數」。兩個混在一起就會給錯的額度。
@@ -581,16 +581,43 @@ const guard = (p, what, ms = 5000) => Promise.race([
            q('.pace-num').textContent + ' 應該是 ' + perDayLeft
            + '（剩 ' + daysLeft + ' 天，不是整個月 ' + days + ' 天）');
 
-        // 花掉一半，那個數字要跟著掉
-        const before = Number(q('.pace-num').textContent.split(',').join(''));
+        // 今天花掉的要從「今天的額度」裡扣，而且扣出來的數字要寫在畫面上。
+        // **額度本身不該跟著掉**——那是今天一開始就定好的，
+        // 跟著掉的話今天花的錢會被攤平到剩下的每一天，等於沒有回饋。
+        const quota = Number(q('.pace-num').textContent.split(',').join(''));
         Money.data.transactions.push({
           id: 'ck-pace', date: new Date().toISOString().slice(0, 10),
-          kind: 'expense', amount: 15000, category: Money.data.categories.expense[0].name,
+          kind: 'expense', amount: 200, category: Money.data.categories.expense[0].name,
           account: Money.data.accounts[0]?.name || '',
         });
         Money.save(); Money.render(); await sleep(200);
-        const after = Number(q('.pace-num').textContent.split(',').join(''));
-        ok('花了錢，每天可以用的就跟著掉下來', after < before, before + ' → ' + after);
+        const quota2 = Number(q('.pace-num').textContent.split(',').join(''));
+        ok('今天的額度不會被今天花的錢攤平', quota2 === quota, quota + ' → ' + quota2);
+        ok('今天花了多少、還剩多少寫在旁邊',
+           q('#budgets').textContent.includes('今天花了 200'),
+           q('#budgets').textContent.slice(0, 90));
+
+        /* 分類也要有今天的額度。
+         *
+         * 兩種狀態分開驗，而且**上限要挑對**：上限 3,000 的話每天只有
+         * 125，今天花 200 走的是「超出」那條，不是「還有」。
+         * （第一次寫這條檢查就是這樣被打臉的——畫面是對的，是我期待錯了。） */
+        const cat = Money.data.categories.expense[0].name;
+
+        Money.data.budgets = [{ category: cat, limit: 30000 }];
+        Money.save(); Money.render(); await sleep(220);
+        const foot = q('.budget-foot');
+        ok('分類條底下有今天的額度', !!foot && foot.textContent.includes('今天'),
+           foot ? foot.textContent : '沒有那一行');
+        ok('分類今天花過了就講還剩多少',
+           q('#budgets').textContent.includes('今天還有'),
+           foot ? foot.textContent : '');
+
+        Money.data.budgets = [{ category: cat, limit: 3000 }];
+        Money.save(); Money.render(); await sleep(220);
+        ok('分類今天花超了就講超出多少，不是印 0',
+           q('#budgets').textContent.includes('今天超出'),
+           q('.budget-foot') ? q('.budget-foot').textContent : '');
 
         // 超支：不要印一個「每天可以用 0」，那看起來像算壞了
         Money.data.transactions.push({
@@ -602,6 +629,7 @@ const guard = (p, what, ms = 5000) => Promise.race([
         ok('超支的時候講一句話不是印 0',
            q('#budgets').textContent.includes('額度用完了')
            && !q('.pace-num'), q('#budgets').textContent.slice(0, 60));
+        Money.data.budgets = [];
         ok('超支會寫在總覽最上面那句',
            q('#hero').textContent.includes('這個月超出預算'),
            q('#hero').textContent.slice(0, 50));

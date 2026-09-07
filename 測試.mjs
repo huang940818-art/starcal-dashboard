@@ -763,29 +763,90 @@ test('一開始的每日額度是總預算除以整個月的天數', () => {
     assert.equal(p.perDay, 15000 / days);
 });
 
-test('今天起每天可以用＝剩下的錢 ÷ 含今天在內的剩餘天數', () => {
+test('今天可以用＝扣掉今天以前花的，再除以含今天的剩餘天數', () => {
     const m = setup({
         totalBudgets: [{ limit: 15000 }],
+        // 這一筆是「今天以前」的（1 號；如果今天就是 1 號，下面那條測試
+        // 會涵蓋到，這裡只驗天數和分母）
         transactions: [{ id: 't1', date: day(1), kind: 'expense', amount: 3000, category: '餐飲', account: '現金' }],
     });
     const p = m.budgetPace(thisMonthStr);
     const today = new Date().getDate();
     assert.equal(p.used, 3000);
     assert.equal(p.left, 12000);
-    // **今天要算進去**：剩下的錢本來就得撐過今天
+    // **今天要算進剩餘天數**：剩下的錢本來就得撐過今天
     assert.equal(p.daysLeft, p.days - today + 1);
-    assert.equal(p.perDayLeft, 12000 / p.daysLeft);
+    assert.equal(p.perDayLeft, (15000 - (3000 - p.spentToday)) / p.daysLeft);
 });
 
-test('今天花掉的會讓「今天起每天可以用」跟著掉下來', () => {
+test('今天的額度不含今天已經花的，花掉的從額度裡扣', () => {
+    // 本來是拿「剩下的錢 ÷ 剩下的天數」，而剩下的錢已經扣掉今天花的了——
+    // 結果今天花 2,000，那個數字只掉一點點（被攤平到剩下的每一天），
+    // 「今天的預算」對今天等於沒有回饋。
     const base = setup({ totalBudgets: [{ limit: 15000 }] }).budgetPace(thisMonthStr);
     const m = setup({
         totalBudgets: [{ limit: 15000 }],
         transactions: [{ id: 't1', date: ymd(), kind: 'expense', amount: 2000, category: '餐飲', account: '現金' }],
     });
     const after = m.budgetPace(thisMonthStr);
-    assert.ok(after.perDayLeft < base.perDayLeft, '花了錢額度卻沒變，那個數字就是死的');
+
+    assert.equal(after.spentToday, 2000);
+    assert.equal(after.perDayLeft, base.perDayLeft, '今天的額度是今天一開始就定好的');
+    assert.equal(after.todayLeft, base.perDayLeft - 2000, '花掉的要從今天的額度裡扣');
     assert.equal(after.daysLeft, base.daysLeft, '同一天，剩餘天數不該變');
+});
+
+test('今天花超過額度，剩下的是負的（要看得見）', () => {
+    const m = setup({
+        totalBudgets: [{ limit: 3000 }],   // 一天一百出頭
+        transactions: [{ id: 't1', date: ymd(), kind: 'expense', amount: 900, category: '餐飲', account: '現金' }],
+    });
+    const p = m.budgetPace(thisMonthStr);
+    assert.ok(p.todayLeft < 0, '今天花超了要看得見，那是這個數字唯一有用的時刻');
+    assert.equal(p.todayLeft, p.perDayLeft - 900);
+});
+
+/* ── 分類也有今天的額度 ────────────────────────────────
+ *
+ * 她的原話：「沒有分類，比如今天的預算，吃的、交通這種」。
+ */
+
+test('分類的今天額度跟總預算同一套算法', () => {
+    const m = setup({
+        budgets: [{ category: '餐飲', limit: 3000 }],
+        transactions: [
+            { id: 't1', date: day(1), kind: 'expense', amount: 300, category: '餐飲', account: '現金' },
+            { id: 't2', date: ymd(), kind: 'expense', amount: 120, category: '餐飲', account: '現金' },
+            // 別的分類不該混進來
+            { id: 't3', date: ymd(), kind: 'expense', amount: 999, category: '房租', account: '郵局' },
+        ],
+    });
+    const p = m.categoryPace(thisMonthStr, '餐飲', 3000);
+    const sameDay = day(1) === ymd();
+    assert.equal(p.used, sameDay ? 420 : 420, '這個月餐飲總共花的');
+    assert.equal(p.spentToday, sameDay ? 420 : 120, '今天餐飲花的（別類不算）');
+    assert.equal(p.todayLeft, p.perDayLeft - p.spentToday);
+});
+
+test('某一天某一類花多少，只算那一天那一類', () => {
+    const m = setup({ transactions: [
+        { id: 't1', date: ymd(), kind: 'expense', amount: 120, category: '餐飲', account: '現金' },
+        { id: 't2', date: ymd(), kind: 'expense', amount: 80, category: '餐飲', account: '現金' },
+        { id: 't3', date: ymd(), kind: 'expense', amount: 999, category: '房租', account: '郵局' },
+        { id: 't4', date: '2025-01-10', kind: 'expense', amount: 500, category: '餐飲', account: '現金' },
+        // 轉帳不是支出
+        { id: 't5', date: ymd(), kind: 'transfer', amount: 5000, account: '郵局', toAccount: '現金' },
+    ] });
+    assert.equal(m.dayCategoryExpense('餐飲'), 200);
+    assert.equal(m.dayCategoryExpense('房租'), 999);
+    assert.equal(m.dayCategoryExpense('沒這一類'), 0);
+});
+
+test('沒有分類的帳目算在「未分類」，不是被丟掉', () => {
+    const m = setup({ transactions: [
+        { id: 't1', date: ymd(), kind: 'expense', amount: 60, category: '', account: '現金' },
+    ] });
+    assert.equal(m.dayCategoryExpense('未分類'), 60);
 });
 
 test('超支的時候每日額度是 0，不會變成負的', () => {

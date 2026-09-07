@@ -833,6 +833,18 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
     font-size: 14px;
 }
 
+/* 分類條底下那一行：左邊這個月的進度，右邊今天的額度。
+ * 排不下就換行——手機上「953 / 5,000」和「今天可以用 169」
+ * 擠成一條的話，右邊那半會被切掉。 */
+.budget-foot {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 4px;
+}
+
 .track {
     height: 7px;
     border-radius: 999px;

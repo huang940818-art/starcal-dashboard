@@ -400,11 +400,17 @@ const Money = {
      * **今天要算進剩餘天數。** 剩下的錢本來就得撐過今天，
      * 而今天已經花掉的也已經從 used 扣掉了。
      */
-    budgetPace(ym) {
-        const limit = this.totalBudgetFor(ym);
-        if (!limit) return null;
-
-        const used = this.monthSummary(ym).expense;
+    /**
+     * 一個上限在某個月的進度，含「今天可以用多少」。
+     *
+     * 總預算和每一個分類都走這一支。**兩邊一定要同一套算法**——
+     * 「今天總共可以用 414」和「今天吃的可以用 169」如果是兩種算法，
+     * 加起來對不上的時候沒有人查得出來是哪邊錯。
+     *
+     * @param used        這個月（到現在為止）花掉的
+     * @param spentToday  其中今天花掉的
+     */
+    pace(ym, limit, used, spentToday) {
         const days = daysInMonth(ym);
         const now = thisMonth();
         const isNow = ym === now;
@@ -413,14 +419,69 @@ const Money = {
         const passed = ym < now ? days : ym > now ? 0 : new Date().getDate();
         const daysLeft = days - passed + (isNow ? 1 : 0);   // 含今天
 
+        /* **今天的額度要用「今天之前」花掉的算，不能含今天。**
+         *
+         * 本來是拿「剩下的錢 ÷ 剩下的天數」，而剩下的錢已經扣掉今天花的了。
+         * 結果是今天花了 155，那個數字只從 414 掉到 407——分母有 24 天，
+         * 今天花的錢被攤平到看不見。**「今天的預算」對今天沒有回饋，
+         * 就不是今天的預算。**
+         *
+         * 改成先扣掉今天以前的，再平均分給含今天在內的剩餘天數：
+         * 那就是「今天可以用多少」。今天花掉的從這個額度裡扣，
+         * 剩多少一眼看得到；今天花超了，明天的額度會自己掉下來。
+         */
+        const beforeToday = used - spentToday;
+        const perDayLeft = daysLeft > 0
+            ? Math.max(limit - beforeToday, 0) / daysLeft
+            : null;
+
         return {
             limit, used, days, daysLeft, isNow,
             left: limit - used,
             over: used > limit,
-            perDay: limit / days,                                     // 一開始的額度
-            perDayLeft: daysLeft > 0 ? Math.max(limit - used, 0) / daysLeft : null,
+            perDay: limit / days,                 // 一開始的額度（整個月平分）
+            perDayLeft,                           // 今天可以用多少
+            spentToday,                           // 今天已經花掉的
+            // 今天還剩多少。**可以是負的**——今天花超了要看得見，
+            // 那正是這個數字唯一有用的時刻。
+            todayLeft: perDayLeft === null ? null : perDayLeft - spentToday,
             spentPerDay: passed > 0 ? used / passed : null,
         };
+    },
+
+    /** 總預算的進度。沒設總預算就是 null。 */
+    budgetPace(ym) {
+        const limit = this.totalBudgetFor(ym);
+        if (!limit) return null;
+        const isNow = ym === thisMonth();
+        return this.pace(ym, limit, this.monthSummary(ym).expense,
+                         isNow ? this.dayFlow().expense : 0);
+    },
+
+    /** 某一天某個分類花了多少 */
+    dayCategoryExpense(category, day = todayStr()) {
+        let sum = 0;
+        for (const t of this.data.transactions) {
+            if (t.kind !== 'expense' || t.date !== day) continue;
+            if ((t.category || '未分類') !== category) continue;
+            sum += Number(t.amount) || 0;
+        }
+        return sum;
+    },
+
+    /**
+     * 一個分類的進度，含「今天這一類可以用多少」。
+     *
+     * 她的原話：「沒有分類，比如今天的預算，吃的、交通這種」。
+     * 月預算回答「這個月飲食還剩多少」，但站在超商前面要的是
+     * **今天這一類還能花多少**——那要自己拿剩下的除以剩下的天數，
+     * 六個分類就要算六次。
+     */
+    categoryPace(ym, category, limit) {
+        const used = this.byCategory(ym).find(c => c.category === category)?.amount || 0;
+        const isNow = ym === thisMonth();
+        return this.pace(ym, Number(limit), used,
+                         isNow ? this.dayCategoryExpense(category) : 0);
     },
 
     /** 今天記了哪幾筆。新的在前面。 */
@@ -842,10 +903,21 @@ const Money = {
                     : null,
             ]));
         } else if (p.perDayLeft !== null) {
+            // 今天花掉的要跟額度擺在一起。**分開放就等於要她自己減一次**，
+            // 而「今天還能不能吃這一餐」正是要那個減出來的數字。
+            const todayLine = !p.isNow ? null
+                : p.todayLeft >= 0
+                    ? `今天花了 ${money(p.spentToday)}，還剩 ${money(p.todayLeft)}`
+                    : `今天花了 ${money(p.spentToday)}，超出 ${money(-p.todayLeft)}`;
+
             block.append(el('div', { class: 'pace-day' }, [
                 el('div', {}, [
-                    el('div', { class: 'sub', text: p.isNow ? '今天起每天可以用' : '平均每天可以用' }),
+                    el('div', { class: 'sub', text: p.isNow ? '今天可以用' : '平均每天可以用' }),
                     el('div', { class: 'pace-num money-num', text: money(p.perDayLeft) }),
+                    todayLine
+                        ? el('div', { class: 'sub' + (p.todayLeft < 0 ? ' negative' : ''),
+                                      style: 'margin-top:4px', text: todayLine })
+                        : null,
                 ]),
                 el('div', { class: 'sub pace-side' }, [
                     p.isNow ? `這個月還有 ${p.daysLeft} 天` : `整個月 ${p.days} 天`,
@@ -940,9 +1012,33 @@ const Money = {
                 el('div', { class: 'track' }, [
                     el('div', { class: `fill ${cls}`, style: `width:${Math.min(ratio, 1) * 100}%` }),
                 ]),
-                el('div', { class: 'sub', style: 'margin-top:4px', text: `${money(used)} / ${money(limit)}` }),
+                /* 底下這一行：左邊是這個月的進度，右邊是**今天這一類還能花多少**。
+                 *
+                 * 她的原話：「沒有分類，比如今天的預算，吃的、交通這種」。
+                 * 「這個月飲食還有 4,047」站在超商前面回答不了問題——
+                 * 那要自己除以剩下的天數，六個分類就要算六次。 */
+                el('div', { class: 'budget-foot' }, [
+                    el('span', { class: 'sub', text: `${money(used)} / ${money(limit)}` }),
+                    this.todayQuotaText(budgetMonth, b.category, limit),
+                ]),
             ]));
         }
+    },
+
+    /** 分類條右邊那一小段「今天可以用⋯」。不是這個月就不寫。 */
+    todayQuotaText(ym, category, limit) {
+        const p = this.categoryPace(ym, category, limit);
+        if (!p || !p.isNow || p.perDayLeft === null) return null;
+
+        // 這一類今天已經花超過額度了：講超出多少，不要印一個 0
+        if (p.todayLeft < 0) {
+            return el('span', { class: 'sub negative',
+                text: `今天超出 ${money(-p.todayLeft)}` });
+        }
+        // 今天還沒花過這一類的話不用寫「已花 0」——那是一句廢話
+        return el('span', { class: 'sub', text: p.spentToday
+            ? `今天還有 ${money(p.todayLeft)}（額度 ${money(p.perDayLeft)}）`
+            : `今天可以用 ${money(p.perDayLeft)}` });
     },
 
     /** 每月收支畫成長條還是折線 */

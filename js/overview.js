@@ -470,11 +470,15 @@ const Overview = {
         // 「今天起每天可以用多少」在預算那張卡上也有，這裡再講一次是
         // 刻意的：她要決定「現在這一餐能不能吃」的時候人在總覽，
         // 不會為了這個數字切到記帳去。
-        const paceLine = pace && !pace.over && pace.perDayLeft !== null
-            ? `今天起每天可以用 ${money(pace.perDayLeft)}`
-            : pace && pace.over
+        const paceLine = !pace ? null
+            : pace.over
                 ? `這個月的預算已經超出 ${money(pace.used - pace.limit)}`
-                : null;
+                : pace.perDayLeft === null ? null
+                : pace.todayLeft < 0
+                    ? `今天的額度 ${money(pace.perDayLeft)}，超出 ${money(-pace.todayLeft)}`
+                    : pace.spentToday
+                        ? `今天還可以用 ${money(pace.todayLeft)}（額度 ${money(pace.perDayLeft)}）`
+                        : `今天可以用 ${money(pace.perDayLeft)}`;
 
         const body = [];
         if (rows.length) {
