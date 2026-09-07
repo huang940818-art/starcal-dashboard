@@ -892,8 +892,58 @@ const guard = (p, what, ms = 5000) => Promise.race([
         await sleep(280);
       }
 
+      /* ── 開關卡片 ──
+       *
+       * 她要的是「快速決定哪些卡片要放總覽」。**關掉之後一定要找得回來**
+       * ——看不到的東西沒辦法被打開，沒有那一排的話關掉就等於永遠關掉。 */
+      {
+        const shelf = [...document.querySelectorAll('#overview-grid .card')]
+          .find(c => c.textContent.includes('還沒放上去的'));
+        ok('排版時最下面有「還沒放上去的」', !!shelf);
+        ok('那一排列得出還沒放上去的卡片',
+           !!shelf && (!!shelf.querySelector('.chip')
+                       || shelf.textContent.includes('全部都放上去了')),
+           shelf ? shelf.textContent.slice(0, 60) : '');
+
+        const nameOf = n => n.querySelector('.arrange-name').textContent;
+        const cards = [...document.querySelectorAll('.arrange')];
+        const victim = cards[cards.length - 1];
+        const gone = nameOf(victim);
+        const before = cards.length;
+
+        // ✕ 是每張卡工具列的最後一顆
+        const xs = victim.querySelectorAll('.arrange-bar .btn');
+        xs[xs.length - 1].click(); await sleep(300);
+
+        const now = [...document.querySelectorAll('.arrange')];
+        ok('按 ✕ 真的把卡片拿掉了', now.length === before - 1,
+           before + ' → ' + now.length);
+        ok('拿掉的存進設定裡了',
+           Array.isArray(Prefs.data.overviewOff) && Prefs.data.overviewOff.length > 0,
+           JSON.stringify(Prefs.data.overviewOff));
+
+        const shelf2 = [...document.querySelectorAll('#overview-grid .card')]
+          .find(c => c.textContent.includes('還沒放上去的'));
+        ok('拿掉的出現在下面那一排，找得回來',
+           !!shelf2 && shelf2.textContent.includes(gone),
+           shelf2 ? shelf2.textContent.slice(0, 80) : '');
+
+        // 加回來
+        const chip = shelf2 && [...shelf2.querySelectorAll('.chip')]
+          .find(b => b.textContent.includes(gone));
+        ok('那一排的按鈕點得到', !!chip);
+        if (chip) {
+          chip.click(); await sleep(300);
+          ok('加得回來', document.querySelectorAll('.arrange').length === before,
+             String(document.querySelectorAll('.arrange').length));
+        }
+      }
+
       q('#arrange-cards').click(); await sleep(250);
       ok('按「好了」箭頭就收起來', !q('.arrange-bar'));
+      ok('「還沒放上去的」那排也一起收起來',
+         ![...document.querySelectorAll('#overview-grid .card')]
+           .some(c => c.textContent.includes('還沒放上去的')));
       ok('收起來之後卡片還是原本那幾張', ids().length === before.length,
          ids().join('｜'));
       // 排順序不該把卡片變成不能點的裝飾品

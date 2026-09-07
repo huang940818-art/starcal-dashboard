@@ -48,6 +48,10 @@ const Prefs = {
         // 總覽卡片的順序。**存在設定裡不是 localStorage**——這是
         // 「我想先看到什麼」，不是這台裝置的處境，電腦和手機該一樣。
         this.data.overviewOrder ??= [];
+        // 總覽上關掉了哪幾張卡。**存關掉的不是存開著的**——存開著的話，
+        // 以後加新卡片，所有動過設定的人都不會看到它。
+        // null＝從來沒動過（用預設那一組），[]＝動過但一張都沒關。
+        this.data.overviewOff ??= null;
         // 天氣要看哪裡。手打指定的存這裡（跨裝置），定位抓到的存
         // localStorage（只算這台）。見 js/weather.js 的三層地點。
         this.data.weatherPlace ??= null;

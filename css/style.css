@@ -919,6 +919,29 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
     margin: -6px 0 16px;
 }
 
+/* 排版時最下面那一排「還沒放上去的」 */
+.off-shelf { border-style: dashed; }
+
+.chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* 加回來的那幾顆。**要夠大按**——手機上這是唯一把卡片找回來的路。 */
+.chips .chip {
+    background: var(--raised);
+    border: 1px solid var(--separator);
+    border-radius: 999px;
+    color: var(--text-2);
+    padding: 7px 13px;
+    font: inherit;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.chips .chip:hover { background: var(--separator); color: var(--text); }
+
 /* 總覽「今天的預算」裡的分類清單 */
 .quota { margin-top: 14px; }
 

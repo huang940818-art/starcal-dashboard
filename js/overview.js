@@ -27,17 +27,33 @@ const Overview = {
      * 位置會因為「今天沒有要注意的事」而整個位移。
      */
     CARDS: [
-        { id: 'attention', name: '要注意的', wide: true },
-        { id: 'weather',   name: '今天的天氣' },
-        { id: 'money',     name: '這個月' },
-        { id: 'today',     name: '今天的收支' },
+        { id: 'attention',   name: '要注意的', wide: true },
+        { id: 'weather',     name: '今天的天氣' },
+        { id: 'classes',     name: '今天的課' },
+        { id: 'money',       name: '這個月' },
+        { id: 'today',       name: '今天的收支' },
         { id: 'todaybudget', name: '今天的預算' },
-        { id: 'upcoming',  name: '接下來' },
-        { id: 'memo',      name: '備忘' },
+        { id: 'balance',     name: '存款總額' },
+        { id: 'spending',    name: '這個月花在哪' },
+        { id: 'subs',        name: '訂閱' },
+        { id: 'upcoming',    name: '接下來' },
+        { id: 'memo',        name: '備忘' },
+        // 想法牆只在寬螢幕有意義（見 app.js 的 WALL_MIN_WIDTH），
+        // 窄螢幕上這張卡跟著整個分頁一起收起來。
+        { id: 'wall',        name: '想法牆', wide: false },
         // 小克那塊預設放最後：它不是待辦事項，不該排在
         // 「現在需要注意什麼」前面。展示模式時它自己不會出現。
-        { id: 'ke',        name: '小克' },
+        { id: 'ke',          name: '小克' },
     ],
+
+    /* 一開始就放上去的那幾張。
+     *
+     * **不是全部都預設放。** 十三張卡全部打開的話，總覽會變成一面牆，
+     * 而這一頁只回答一件事：現在需要我注意什麼。所以預設是一組
+     * 「大部分人每天都會看」的，其他的在排版裡自己開。
+     */
+    DEFAULT_ON: ['attention', 'weather', 'money', 'today', 'todaybudget',
+                 'upcoming', 'memo', 'ke'],
 
     /** 現在排順序中 */
     arranging: false,
@@ -59,6 +75,36 @@ const Overview = {
 
     savedOrder() { return this.orderedIds(Prefs.data?.overviewOrder); },
 
+    /**
+     * 現在放上去的是哪幾張。
+     *
+     * **存的是「關掉了哪幾張」，不是「開著哪幾張」。** 存開著的那些的話，
+     * 之後加一張新卡，所有動過設定的人都不會看到它——除非他們自己想到
+     * 要去排版裡找。存關掉的，新卡就會自己出現（要的人留著，不要的關掉，
+     * 兩種人都只要動一次）。
+     *
+     * `null` 是「從來沒動過」，那時候用預設那一組；空陣列是
+     * 「動過，而且一張都沒關」——這兩件事不一樣。
+     */
+    onSet() {
+        const off = Prefs.data?.overviewOff;
+        if (!Array.isArray(off)) {
+            return new Set(this.DEFAULT_ON);
+        }
+        return new Set(this.CARDS.map(c => c.id).filter(id => !off.includes(id)));
+    },
+
+    isOn(id) { return this.onSet().has(id); },
+
+    /** 開或關一張卡。 */
+    toggleCard(id) {
+        const on = this.onSet();
+        on.has(id) ? on.delete(id) : on.add(id);
+        Prefs.data.overviewOff = this.CARDS.map(c => c.id).filter(x => !on.has(x));
+        Prefs.save();
+        this.render();
+    },
+
     render() {
         this.renderHero();
 
@@ -68,8 +114,10 @@ const Overview = {
         // 先把每一張畫進自己的小盒子，再照順序放上去。
         // 有些卡片沒東西就整張不畫（天氣抓不到、沒有要注意的事），
         // 那種情況它自己不會 append，這裡就跳過。
+        const on = this.onSet();
         const drawn = new Map();
         for (const c of this.CARDS) {
+            if (!on.has(c.id)) continue;      // 關掉的連畫都不用畫
             const box = el('div');
             this.renderCard(c.id, box);
             if (box.firstChild) drawn.set(c.id, box.firstChild);
@@ -84,6 +132,29 @@ const Overview = {
             if (!node) continue;
             grid.append(this.arranging ? this.wrapForArrange(id, node) : node);
         }
+
+        // 排版的時候，關掉的那幾張列在最下面——**看不到的東西沒辦法被打開**，
+        // 沒有這一排的話，關掉一張卡就等於永遠關掉了。
+        if (this.arranging) this.renderOffShelf(grid);
+    },
+
+    /** 排版模式最下面那一排「還沒放上去的」 */
+    renderOffShelf(grid) {
+        const on = this.onSet();
+        const off = this.CARDS.filter(c => !on.has(c.id));
+        // 想法牆在窄螢幕上整個分頁都是收起來的，這裡也不該給
+        const usable = off.filter(c => c.id !== 'wall' || wallUsable());
+
+        grid.append(el('div', { class: 'card wide off-shelf', 'data-hue': 'todo' }, [
+            el('h2', {}, [el('span', { class: 'label' }, [icon('wall'), '還沒放上去的'])]),
+            usable.length
+                ? el('div', { class: 'chips' }, usable.map(c => el('button', {
+                    type: 'button', class: 'chip', text: '＋ ' + c.name,
+                    onclick: () => this.toggleCard(c.id),
+                })))
+                : el('p', { class: 'sub', style: 'margin:0',
+                            text: '全部都放上去了。用每張卡上的 ✕ 可以拿掉。' }),
+        ]));
     },
 
     renderCard(id, box) {
@@ -94,6 +165,11 @@ const Overview = {
         if (id === 'todaybudget') return this.renderTodayBudget(box);
         if (id === 'upcoming') return this.renderUpcoming(box);
         if (id === 'memo') return this.renderMemo(box);
+        if (id === 'classes') return this.renderClasses(box);
+        if (id === 'balance') return this.renderBalance(box);
+        if (id === 'spending') return this.renderSpending(box);
+        if (id === 'subs') return this.renderSubs(box);
+        if (id === 'wall') return this.renderWall(box);
         if (id === 'ke') return Ke.render(box);
     },
 
@@ -115,7 +191,7 @@ const Overview = {
     syncArrangeButton() {
         const b = $('#arrange-cards');
         if (!b) return;
-        b.textContent = this.arranging ? '好了' : '排順序';
+        b.textContent = this.arranging ? '好了' : '排版';
         b.classList.toggle('primary', this.arranging);
         b.setAttribute('aria-pressed', String(this.arranging));
     },
@@ -140,6 +216,12 @@ const Overview = {
                     'aria-label': `${card?.name} 往後`,
                     disabled: at < 0 || at >= order.length - 1,
                     onclick: () => this.move(id, 1),
+                }),
+                el('button', {
+                    class: 'btn small ghost', type: 'button', text: '✕',
+                    'aria-label': `把${card?.name}拿掉`,
+                    title: '從總覽拿掉（之後可以再加回來）',
+                    onclick: () => this.toggleCard(id),
                 }),
             ]),
             node,
@@ -336,6 +418,148 @@ const Overview = {
                 x.unit ? el('span', { class: 'unit', text: x.unit }) : null,
             ]),
         ])));
+    },
+
+    /* ── 可以自己開關的那幾張 ──────────────────────────
+     *
+     * 她說「把所有可能會在意的卡片都做出來，讓用戶決定要不要放」。
+     * 下面這幾張都是**既有資料的另一種看法**，不是新功能——
+     * 每一張都要能回答一個具體的問題，答不出來的就不該做成卡片。
+     */
+
+    /** 今天的課。hero 那句只講「幾堂、幾點到幾點」，這張講「哪幾堂、在哪」。 */
+    renderClasses(grid) {
+        const list = Timetable.activeOn(todayStr());
+
+        grid.append(el('div', { class: 'card', 'data-hue': 'calendar' }, [
+            this.head('clock', '今天的課',
+                el('button', { class: 'btn small ghost', text: '看課表',
+                               onclick: () => this.goAgenda('class') })),
+            list.length
+                ? el('div', {}, list.map(c => el('div', { class: 'event-row compact' }, [
+                    // 節次沒設時間就寫節次。**不要生一個「–」出來假裝有時間**
+                    el('div', { class: 'event-time', text: Timetable.startOf(c)
+                        ? `${Timetable.startOf(c)}` : Timetable.whenText(c) }),
+                    el('div', { class: 'grow' }, [
+                        el('div', { class: 'title ellipsis', text: c.name }),
+                        el('div', { class: 'meta ellipsis',
+                                    text: [c.place, c.teacher].filter(Boolean).join('　') }),
+                    ]),
+                ])))
+                : el('div', { class: 'empty' }, [
+                    icon('clock', 26), '今天沒有課',
+                ]),
+        ]));
+    },
+
+    /** 存款總額。**遮金額那個開關要一起吃**，不然遮了記帳頁卻在總覽上大字寫出來。 */
+    renderBalance(grid) {
+        const accounts = Money.data.accounts;
+
+        grid.append(el('div', { class: 'card', 'data-hue': 'money' }, [
+            this.head('wallet', '存款總額',
+                el('button', { class: 'btn small ghost', text: '看記帳',
+                               onclick: () => showPanel('money') })),
+            accounts.length
+                ? el('div', {}, [
+                    el('div', { class: 'big money-num' + (Money.hideBalance ? ' masked' : ''),
+                                text: Money.secret(Money.total()) }),
+                    el('div', { class: 'sub', text: '算進總額的帳戶合計' }),
+                    Money.hasSavings()
+                        ? el('div', { class: 'split-row' }, [
+                            el('div', {}, [
+                                el('div', { class: 'sub', text: '可以花的' }),
+                                el('div', { class: 'money-num' + (Money.hideBalance ? ' masked' : ''),
+                                            text: Money.secret(Money.spendable()) }),
+                            ]),
+                            el('div', {}, [
+                                el('div', { class: 'sub', text: '存起來的' }),
+                                el('div', { class: 'money-num' + (Money.hideBalance ? ' masked' : ' saved'),
+                                            text: Money.secret(Money.saved()) }),
+                            ]),
+                        ])
+                        : null,
+                ])
+                // 沒有帳戶不等於存款是零，那是兩件事
+                : el('div', { class: 'empty' }, [
+                    icon('wallet', 26), '還沒有帳戶',
+                    el('div', { class: 'hint', text: '在記帳那頁加一個，帳目才有地方去' }),
+                ]),
+        ]));
+    },
+
+    /** 這個月花在哪。前五名加一條比例，回答「錢跑去哪了」。 */
+    renderSpending(grid) {
+        const rows = Money.byCategory(thisMonth());
+        const total = rows.reduce((s, r) => s + r.amount, 0);
+        const shown = rows.slice(0, 5);
+
+        grid.append(el('div', { class: 'card', 'data-hue': 'money' }, [
+            this.head('list', '這個月花在哪',
+                el('button', { class: 'btn small ghost', text: '看報表',
+                               onclick: () => showPanel('money') })),
+            shown.length
+                ? el('div', {}, shown.map(r => el('div', { class: 'quota-row' }, [
+                    el('span', { class: 'dot', style: `background:${Money.colorOf(r.category)}` }),
+                    el('span', { class: 'grow ellipsis', text: r.category }),
+                    el('span', { class: 'sub', text: `${Math.round(r.amount / total * 100)}%` }),
+                    el('span', { class: 'money-num', text: money(r.amount) }),
+                ])))
+                : el('div', { class: 'empty' }, [
+                    icon('money', 26), '這個月還沒有支出',
+                ]),
+            rows.length > shown.length
+                ? el('div', { class: 'sub', style: 'margin-top:8px',
+                              text: `還有 ${rows.length - shown.length} 類` })
+                : null,
+        ]));
+    },
+
+    /** 接下來要扣的訂閱。**只看往後 30 天**——再遠的現在提醒沒有用。 */
+    renderSubs(grid) {
+        const soon = Money.data.subscriptions
+            .filter(s => s.active !== false)
+            .map(s => ({ ...s, next: Money.nextCharge(s) }))
+            .filter(s => (parseYmd(s.next) - parseYmd(todayStr())) / 86400000 <= 30)
+            .sort((a, b) => a.next.localeCompare(b.next));
+
+        grid.append(el('div', { class: 'card', 'data-hue': 'sub' }, [
+            this.head('sub', '訂閱',
+                el('button', { class: 'btn small ghost', text: '管理',
+                               onclick: () => showPanel('money') })),
+            soon.length
+                ? el('div', {}, soon.slice(0, 5).map(s => el('div', { class: 'quota-row' }, [
+                    el('span', { class: 'grow ellipsis', text: s.name }),
+                    el('span', { class: 'sub', text: relativeDay(s.next) }),
+                    el('span', { class: 'money-num', text: money(s.amount) }),
+                ])))
+                : el('div', { class: 'empty' }, [
+                    icon('sub', 26), '接下來 30 天沒有要扣的',
+                ]),
+        ]));
+    },
+
+    /** 想法牆最近幾張。**窄螢幕不給**——跟分頁本身同一條規矩。 */
+    renderWall(grid) {
+        if (!wallUsable()) return;
+        const notes = [...Wall.data.notes].slice(-4).reverse();
+
+        grid.append(el('div', { class: 'card', 'data-hue': 'wall' }, [
+            this.head('wall', '想法牆',
+                el('button', { class: 'btn small ghost', text: '打開',
+                               onclick: () => showPanel('wall') })),
+            notes.length
+                ? el('div', {}, notes.map(n => el('div', {
+                    class: 'memo-row', onclick: () => showPanel('wall'),
+                }, [
+                    el('span', { class: 'dot', style: `background:${n.color || 'var(--sleep)'}` }),
+                    el('div', { class: 'grow ellipsis',
+                                text: (n.text || '').split('\n')[0] || '（空白）' }),
+                ])))
+                : el('div', { class: 'empty' }, [
+                    icon('wall', 26), '牆上還沒有便利貼',
+                ]),
+        ]));
     },
 
     /* ── 今天的天氣 ────────────────────────────────────

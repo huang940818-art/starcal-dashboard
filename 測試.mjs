@@ -1305,3 +1305,48 @@ test('每張卡都有 id 和名字，而且 id 不重複', () => {
         assert.ok(c.id && c.name, JSON.stringify(c));
     }
 });
+
+
+/* ── 哪幾張卡放在總覽上 ────────────────────────────────
+ *
+ * 她說「可以快速決定哪些卡片要放總覽，位置，把所有可能會在意的卡片
+ * 都做出來，讓用戶決定要不要放」。
+ */
+
+/* Overview 讀的是 prefs.js 裡的全域 Prefs，而這裡只載了 overview.js。
+ * 給一個假的就好——要驗的是「開關怎麼算」，不是設定怎麼存檔。 */
+globalThis.Prefs = { data: null, save() {} };
+
+test('從來沒動過就用預設那一組，不是全開', () => {
+    // 十三張全開的話總覽會變成一面牆，而這一頁只回答一件事：
+    // 現在需要我注意什麼。
+    Prefs.data = {};
+    const on = Overview.onSet();
+    assert.deepEqual([...on].sort(), [...Overview.DEFAULT_ON].sort());
+    assert.ok(on.size < Overview.CARDS.length, '預設不該是全開');
+});
+
+test('存的是關掉的那幾張，所以新卡片會自己出現', () => {
+    // 存「開著的」的話，以後加一張新卡，動過設定的人都不會看到它。
+    Prefs.data = { overviewOff: ['memo'] };
+    const on = Overview.onSet();
+    assert.ok(!on.has('memo'), '關掉的要真的關掉');
+    for (const c of Overview.CARDS) {
+        if (c.id === 'memo') continue;
+        assert.ok(on.has(c.id), `${c.id} 應該是開著的`);
+    }
+});
+
+test('空陣列是「動過但一張都沒關」，跟沒動過不一樣', () => {
+    Prefs.data = { overviewOff: [] };
+    assert.equal(Overview.onSet().size, Overview.CARDS.length, '全開');
+});
+
+test('每張卡都畫得出來，沒有漏接的 id', () => {
+    // renderCard 是一串 if，漏一個的話那張卡永遠是空的——
+    // 而且不會報錯，只是排版設定裡多一個點了沒反應的選項。
+    const src = String(Overview.renderCard);
+    for (const c of Overview.CARDS) {
+        assert.ok(src.includes(`'${c.id}'`), `renderCard 沒有接 ${c.id}`);
+    }
+});
