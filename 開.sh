@@ -15,7 +15,9 @@ if lsof -nP -iTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
     exit 0
 fi
 
-python3 server.py --port "$PORT" &
+# --tailscale：本機那個照樣聽，另外再聽這台在 Tailscale 上的位址，
+# 手機和平板才連得到。沒裝或沒登入的話它會講一句然後只聽本機。
+python3 server.py --port "$PORT" --tailscale &
 SERVER=$!
 
 sleep 1

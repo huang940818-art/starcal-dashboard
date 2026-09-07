@@ -31,11 +31,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import http.server
+import ipaddress
 import json
 import os
+import re
 import shutil
 import socketserver
+import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 from pathlib import Path
@@ -309,32 +313,112 @@ class Server(socketserver.ThreadingTCPServer):
     daemon_threads = True
 
 
+# Tailscale 用的是 CGNAT 那一段（100.64.0.0/10），介面是 utun / tailscale。
+# **兩個條件都要對**：光看 100.x 不夠，有些電信的 CGNAT 也長這樣。
+TAILNET = ipaddress.ip_network("100.64.0.0/10")
+
+
+def tailscale_addresses() -> list:
+    """這台在 Tailscale 上的位址。找不到就回空的。
+
+    不依賴 tailscale 這支 CLI 在 PATH 裡（macOS 上它裝在 App 包裡面）。
+    直接讀網路介面：macOS 用 ifconfig，Linux 用 ip。
+    """
+    for cmd in (["ifconfig", "-a"], ["ip", "-o", "addr"]):
+        try:
+            out = subprocess.run(cmd, capture_output=True, text=True,
+                                 timeout=5).stdout
+        except Exception:
+            continue
+        if not out:
+            continue
+        found, iface = [], ""
+        for line in out.splitlines():
+            head = re.match(r"^(\S+?):", line)
+            if head:
+                iface = head.group(1)
+            # ip -o addr 的格式是 "3: utun4    inet 100.x.y.z/32 ..."
+            named = re.match(r"^\d+:\s+(\S+)\s", line)
+            if named:
+                iface = named.group(1)
+            if not iface.startswith(("utun", "tailscale")):
+                continue
+            m = re.search(r"\binet (\d+\.\d+\.\d+\.\d+)", line)
+            if not m:
+                continue
+            try:
+                addr = ipaddress.ip_address(m.group(1))
+            except ValueError:
+                continue
+            if addr in TAILNET and str(addr) not in found:
+                found.append(str(addr))
+        if found:
+            return found
+    return []
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="星歷儀表板的本機資料服務")
     parser.add_argument("--port", type=int, default=8787)
     parser.add_argument(
-        "--host", default="127.0.0.1",
-        help="預設只綁本機。要在手機上看就填私有網路（例如 Tailscale）的位址，"
+        "--host", nargs="+", default=["127.0.0.1"],
+        help="要聽哪幾個位址，預設只有本機。可以給好幾個。"
              "**不要填 0.0.0.0**——那會把資料開放給整個網路。")
+    parser.add_argument(
+        "--tailscale", action="store_true",
+        help="連這台在 Tailscale 上的位址也一起聽，手機和平板才連得到。"
+             "本機那個照樣留著，所以電腦上的捷徑不會壞。")
     args = parser.parse_args()
 
-    if args.host in ("0.0.0.0", "::"):
-        print("拒絕綁 0.0.0.0——那等於把記帳和備忘開放給整個網路。",
-              file=sys.stderr)
-        print("要在別的裝置上看的話，填一個私有網路（例如 Tailscale）的位址。",
-              file=sys.stderr)
-        return 2
+    hosts = list(dict.fromkeys(args.host))       # 去掉重複，順序不動
+
+    for h in hosts:
+        if h in ("0.0.0.0", "::"):
+            print("拒絕綁 0.0.0.0——那等於把記帳和備忘開放給整個網路。",
+                  file=sys.stderr)
+            print("要在別的裝置上看的話，用 --tailscale，或填一個私有網路的位址。",
+                  file=sys.stderr)
+            return 2
+
+    if args.tailscale:
+        found = tailscale_addresses()
+        if found:
+            hosts += [h for h in found if h not in hosts]
+        else:
+            # **講出來，不要默默地只聽本機。**「手機打不開」的時候，
+            # 從畫面上看不出是沒開還是連不到。
+            print("找不到 Tailscale 的位址（沒裝、沒登入、或還沒連上）。"
+                  "這一次只聽本機。", file=sys.stderr)
 
     ensure_dirs()
 
-    with Server((args.host, args.port), Handler) as httpd:
-        print(f"星歷儀表板　http://{args.host}:{args.port}")
+    servers = []
+    try:
+        for h in hosts:
+            try:
+                servers.append(Server((h, args.port), Handler))
+            except OSError as e:
+                # 一個位址綁不起來不該讓整支活不了——本機那個能用就先用著
+                print(f"綁不上 {h}:{args.port}（{e}）", file=sys.stderr)
+        if not servers:
+            print("一個位址都綁不起來。", file=sys.stderr)
+            return 2
+
         print(f"資料放在　　{DATA_DIR}")
+        for srv in servers:
+            print(f"星歷儀表板　http://{srv.server_address[0]}:{args.port}")
         print("停止：Ctrl+C（注音模式下用 Escape）")
+
+        # 每個位址一條執行緒，最後一個留在主執行緒上跑，Ctrl+C 才收得到
+        for srv in servers[:-1]:
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
         try:
-            httpd.serve_forever()
+            servers[-1].serve_forever()
         except KeyboardInterrupt:
             print("\n停了。")
+    finally:
+        for srv in servers:
+            srv.server_close()
     return 0
 
 
