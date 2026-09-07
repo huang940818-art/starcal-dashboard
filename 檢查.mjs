@@ -704,11 +704,25 @@ const guard = (p, what, ms = 5000) => Promise.race([
         // 沒自己定的分類要標「照月預算」，不能跟她定的長得一樣
         Money.data.budgets = [{ category: Money.data.categories.expense[1].name, limit: 3000 }];
         Money.save(); Overview.render(); await sleep(280);
+
+        // 今天沒花的那幾類不該出現在「今天的收支」上（她的原話：
+        // 「今天沒有花的不要放」）——那些行每天都在而且每天都一樣，
+        // 真正變動的那一行反而被淹掉。
         const card2 = [...document.querySelectorAll('#overview-grid .card')]
           .find(c => c.textContent.includes('今天的收支'));
+        ok('今天沒花的分類不列在「今天的收支」上',
+           !!card2 && !card2.textContent.includes('0 / '),
+           card2 ? card2.textContent.slice(0, 120) : '');
+
+        // 全部的額度看「今天的預算」那張，那張整張都在講額度
+        const budgetCard = [...document.querySelectorAll('#overview-grid .card')]
+          .find(c => c.textContent.includes('今天的預算'));
         ok('沒自己定的那幾類標成「照月預算」',
-           !!card2 && card2.textContent.includes('照月預算'),
-           card2 ? card2.textContent.slice(0, 110) : '');
+           !!budgetCard && budgetCard.textContent.includes('照月預算'),
+           budgetCard ? budgetCard.textContent.slice(0, 110) : '');
+        ok('今天還沒花的額度在「今天的預算」上看得到',
+           !!budgetCard && budgetCard.textContent.includes('0 / '),
+           budgetCard ? budgetCard.textContent.slice(0, 110) : '');
 
         // 「0 / 0」是壞掉的長相。那發生在這一類這個月已經超支、
         // 今天推算不出額度的時候——那是一句話不是一個分數。
@@ -722,7 +736,7 @@ const guard = (p, what, ms = 5000) => Promise.race([
             amount: 99999, category: other, account: '甲' });
           Money.save(); Overview.render(); await sleep(280);
           const card2b = [...document.querySelectorAll('#overview-grid .card')]
-            .find(c => c.textContent.includes('今天的收支'));
+            .find(c => c.textContent.includes('今天的預算'));
           ok('月預算爆掉的那一類不會印 0 / 0',
              !!card2b && !card2b.textContent.includes('0 / 0')
              && card2b.textContent.includes('額度用完了'),

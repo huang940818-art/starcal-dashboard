@@ -789,7 +789,15 @@ const Overview = {
          * 「花了 155」自己回答不了「還能不能再吃一餐」，要旁邊那個 300
          * 才行。所以額度就貼在明細下面，不用切到別的地方。
          */
-        const quotas = Money.todayQuotas();
+        /* **只列今天真的花過的那幾類。**
+         *
+         * 她的原話：「今天沒有花的不要放」。六類裡有五類寫著 0/200，
+         * 那五行每天都在，而且每天都一樣——等於是一張表格擠在
+         * 一張明細卡上，真正變動的那一行反而被淹掉。
+         *
+         * 想看全部的額度（包括今天還沒動的）就看隔壁「今天的預算」那張，
+         * 那張卡整張都在講額度。 */
+        const quotas = Money.todayQuotas().filter(q => q.spent > 0);
         const totalQ = Money.todayTotalQuota();
         if (quotas.length || totalQ) {
             body.push(el('div', { class: 'quota has-total' }, [
