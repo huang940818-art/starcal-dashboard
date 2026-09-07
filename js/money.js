@@ -35,6 +35,9 @@ const DEFAULT_CATEGORIES = {
     ],
 };
 
+/** 「存款遮起來」記在瀏覽器自己身上，不進資料。 */
+const HIDE_KEY = '星歷:遮住存款';
+
 /* ── 期間 ──────────────────────────────────────────────
  *
  * 她要「可以看月或週或是年，可以自訂」。
@@ -112,7 +115,32 @@ const Money = {
         this.data = await Store.load('記帳');
         this.range = Range.make('month');
         this.migrate();
+        this.loadHideBalance();
         this.bind();
+    },
+
+    /* ── 遮住存款 ──────────────────────────────────────
+     *
+     * 「旁邊有人」不是這份帳的性質，是這台裝置此刻的處境——
+     * 所以存在瀏覽器裡，不寫進 ~/星歷資料。手機上遮起來，
+     * 不會害電腦上那份也跟著看不到。
+     */
+    hideBalance: false,
+
+    loadHideBalance() {
+        try { this.hideBalance = localStorage.getItem(HIDE_KEY) === '1'; } catch {}
+    },
+
+    toggleHideBalance() {
+        this.hideBalance = !this.hideBalance;
+        try { localStorage.setItem(HIDE_KEY, this.hideBalance ? '1' : '0'); } catch {}
+        this.renderAccounts();
+    },
+
+    /** 遮起來的時候金額換成點點。**連正負也要遮**——
+     *  一串紅色的點點等於還是說出了「你是負的」。 */
+    secret(n, sign = false) {
+        return this.hideBalance ? '••••••' : money(n, sign);
     },
 
     /** 舊資料補上後來才加的欄位。少一個欄位就整頁爆掉是最沒必要的當機。 */
@@ -122,6 +150,10 @@ const Money = {
         d.transactions ??= [];
         d.subscriptions ??= [];
         d.budgets ??= [];
+        // 總預算跟分類預算分開放。塞在 budgets 裡（用一個空的 category）
+        // 的話，每一支照分類跑的迴圈都要記得跳過它——漏一個地方，
+        // 總預算就會變成一個叫「」的分類混在畫面上。
+        d.totalBudgets ??= [];
         d.categories ??= { expense: [], income: [] };
         // 分類原本可能只是字串陣列，補上「固定／彈性」這個性質
         d.categories.expense = (d.categories.expense ?? []).map(
@@ -333,6 +365,83 @@ const Money = {
         return this.data.budgets.some(b => b.month === ym);
     },
 
+    /* ── 總預算與「一天可以用多少」────────────────────
+     *
+     * 分類預算回答「餐飲還能花多少」，但那要五條加起來才知道
+     * 「今天到底還能不能出去吃」。總預算回答的是後面這個。
+     *
+     * **兩個都留著，因為它們回答不同的問題**——分類是「錢花去哪」，
+     * 總額是「還剩多少」。合成一個的話會失去其中一半。
+     */
+
+    /** 這個月的總預算。沒設就是 null（不是 0——那是兩件事）。 */
+    totalBudgetFor(ym) {
+        // `?? []` 是刻意的：migrate 會補上這個欄位，但這支在畫面上到處被呼叫，
+        // 少一個欄位就整頁爆掉是最沒必要的當機。
+        const list = this.data.totalBudgets ?? [];
+        const own = list.find(b => b.month === ym);
+        const base = list.find(b => !b.month);
+        const limit = Number((own ?? base)?.limit) || 0;
+        return limit > 0 ? limit : null;
+    },
+
+    hasOwnTotalBudget(ym) {
+        return (this.data.totalBudgets ?? []).some(b => b.month === ym && Number(b.limit) > 0);
+    },
+
+    /**
+     * 總預算現在的樣子，以及**平均一天可以用多少**。
+     *
+     * `perDayLeft` 是「剩下的錢 ÷ 含今天在內的剩餘天數」，不是
+     * 「總預算 ÷ 整個月」。差別在於它會自己修正：今天多花了，
+     * 明天那個數字就會掉下來；前幾天省了，它會升上去。
+     * 拿一個固定的「每天 500」看，月底才發現早就爆了。
+     *
+     * **今天要算進剩餘天數。** 剩下的錢本來就得撐過今天，
+     * 而今天已經花掉的也已經從 used 扣掉了。
+     */
+    budgetPace(ym) {
+        const limit = this.totalBudgetFor(ym);
+        if (!limit) return null;
+
+        const used = this.monthSummary(ym).expense;
+        const days = daysInMonth(ym);
+        const now = thisMonth();
+        const isNow = ym === now;
+
+        // 過去的月份整個月都過完了，未來的月份一天都還沒開始
+        const passed = ym < now ? days : ym > now ? 0 : new Date().getDate();
+        const daysLeft = days - passed + (isNow ? 1 : 0);   // 含今天
+
+        return {
+            limit, used, days, daysLeft, isNow,
+            left: limit - used,
+            over: used > limit,
+            perDay: limit / days,                                     // 一開始的額度
+            perDayLeft: daysLeft > 0 ? Math.max(limit - used, 0) / daysLeft : null,
+            spentPerDay: passed > 0 ? used / passed : null,
+        };
+    },
+
+    /** 今天記了哪幾筆。新的在前面。 */
+    onDay(day = todayStr()) {
+        return this.data.transactions
+            .filter(t => t.date === day)
+            .sort((a, b) => String(b.id).localeCompare(String(a.id)));
+    },
+
+    /** 某一天的收支合計。轉帳一樣兩邊都不算。 */
+    dayFlow(day = todayStr()) {
+        let income = 0, expense = 0;
+        for (const t of this.data.transactions) {
+            if (t.date !== day) continue;
+            const amt = Number(t.amount) || 0;
+            if (t.kind === 'income') income += amt;
+            else if (t.kind === 'expense') expense += amt;
+        }
+        return { income, expense, net: income - expense };
+    },
+
     /**
      * 分類的顏色。
      *
@@ -536,11 +645,23 @@ const Money = {
         this.renderTxns();
     },
 
+    /** 眼睛那顆的長相跟著狀態走 */
+    syncHideButton() {
+        const b = $('#toggle-balance');
+        if (!b) return;
+        clear(b);
+        b.append(icon(this.hideBalance ? 'eye-off' : 'eye', 16));
+        b.setAttribute('aria-pressed', String(this.hideBalance));
+        b.setAttribute('aria-label', this.hideBalance ? '顯示金額' : '遮住金額');
+        b.title = this.hideBalance ? '顯示金額' : '遮住金額';
+    },
+
     renderAccounts() {
         const total = $('#accounts-total');
         const list = $('#accounts-list');
         clear(total);
         clear(list);
+        this.syncHideButton();
 
         // 一個帳戶都沒有的時候不要報「0」——那看起來像「你的存款是零」，
         // 但實際上是「還沒告訴我有哪些帳戶」。這兩件事差很多。
@@ -553,7 +674,10 @@ const Money = {
         }
 
         total.append(
-            el('div', { class: 'big money-num', text: money(this.total()) }),
+            el('div', {
+                class: 'big money-num' + (this.hideBalance ? ' masked' : ''),
+                text: this.secret(this.total()),
+            }),
             el('div', { class: 'sub', text: '算進總額的帳戶合計' }));
 
         // 有存錢罐才拆開講。沒有的話多兩個數字只是噪音。
@@ -561,11 +685,13 @@ const Money = {
             total.append(el('div', { class: 'split-row' }, [
                 el('div', {}, [
                     el('div', { class: 'sub', text: '可以花的' }),
-                    el('div', { class: 'money-num', text: money(this.spendable()) }),
+                    el('div', { class: 'money-num' + (this.hideBalance ? ' masked' : ''),
+                                text: this.secret(this.spendable()) }),
                 ]),
                 el('div', {}, [
                     el('div', { class: 'sub', text: '存起來的' }),
-                    el('div', { class: 'money-num saved', text: money(this.saved()) }),
+                    el('div', { class: 'money-num' + (this.hideBalance ? ' masked' : ' saved'),
+                                text: this.secret(this.saved()) }),
                 ]),
             ]));
         }
@@ -584,8 +710,11 @@ const Money = {
                             .join('')),
                 ]),
                 el('div', {
-                    class: 'money-num' + (bal < 0 ? ' negative' : ''),
-                    text: money(bal),
+                    // 遮起來的時候連紅色也要拿掉——一串紅色的點點
+                    // 還是說出了「這個戶頭是負的」。
+                    class: 'money-num'
+                        + (this.hideBalance ? ' masked' : bal < 0 ? ' negative' : ''),
+                    text: this.secret(bal),
                 }),
                 el('button', {
                     class: 'btn small ghost', text: '對帳',
@@ -675,16 +804,75 @@ const Money = {
                   + '（房租、訂閱、交通…），才看得出真正能省的有多少。'));
     },
 
+    /**
+     * 總預算那一塊。
+     *
+     * **主角是「每天可以用多少」那個數字，不是「花了多少」。**
+     * 「這個月花了 8,200」要自己拿去減、再除以剩幾天，才知道
+     * 今天還能不能出去吃一頓；「今天起每天可以用 486」不用。
+     */
+    paceBlock(p) {
+        const ratio = p.used / p.limit;
+        const cls = p.over ? 'over' : ratio > 0.8 ? 'warn' : '';
+
+        const block = el('div', { class: 'pace' }, [
+            el('div', { class: 'budget-head' }, [
+                el('span', { text: '這個月總共可以花' }),
+                el('span', {
+                    class: 'money-num ' + (p.over ? 'negative' : 'sub'),
+                    text: p.over ? `超出 ${money(p.used - p.limit)}` : `還有 ${money(p.left)}`,
+                }),
+            ]),
+            el('div', { class: 'track' }, [
+                el('div', { class: `fill ${cls}`, style: `width:${Math.min(ratio, 1) * 100}%` }),
+            ]),
+            el('div', { class: 'sub', style: 'margin-top:4px',
+                        text: `${money(p.used)} / ${money(p.limit)}` }),
+        ]);
+
+        if (p.over) {
+            // 這裡不寫「每天可以用 0」——那個 0 看起來像算壞了，
+            // 而且它要講的其實是一句話不是一個數字。
+            block.append(el('div', { class: 'pace-day' }, [
+                el('div', { class: 'pace-word', text: '這個月的額度用完了' }),
+                p.daysLeft > 0
+                    ? el('div', { class: 'sub', text: `還有 ${p.daysLeft} 天` })
+                    : null,
+            ]));
+        } else if (p.perDayLeft !== null) {
+            block.append(el('div', { class: 'pace-day' }, [
+                el('div', {}, [
+                    el('div', { class: 'sub', text: p.isNow ? '今天起每天可以用' : '平均每天可以用' }),
+                    el('div', { class: 'pace-num money-num', text: money(p.perDayLeft) }),
+                ]),
+                el('div', { class: 'sub pace-side' }, [
+                    p.isNow ? `這個月還有 ${p.daysLeft} 天` : `整個月 ${p.days} 天`,
+                    el('br'),
+                    `一開始是每天 ${money(p.perDay)}`,
+                ]),
+            ]));
+        } else {
+            // 過去的月份：沒有「還能用多少」，只有「後來平均花了多少」
+            block.append(el('div', { class: 'pace-day' }, [
+                el('div', { class: 'sub', text:
+                    `平均每天花了 ${money(p.spentPerDay)}，額度是每天 ${money(p.perDay)}` }),
+            ]));
+        }
+
+        return block;
+    },
+
     renderBudgets() {
         const box = $('#budgets');
         clear(box);
 
         const budgetMonthEarly = monthOf(this.range.start);
         const budgets = this.budgetsFor(budgetMonthEarly).filter(b => Number(b.limit) > 0);
-        if (!budgets.length) {
+        const pace = this.budgetPace(budgetMonthEarly);
+        if (!budgets.length && !pace) {
             box.append(el('div', { class: 'empty' }, [
                 icon('budget', 26), '還沒設預算',
-                el('div', { class: 'hint', text: '設了才看得到「還剩多少」，不然只看得到「花了多少」' }),
+                el('div', { class: 'hint', text: '設一個總額，就看得到「今天起每天可以用多少」' }),
             ]));
             return;
         }
@@ -697,7 +885,7 @@ const Money = {
         const spent = new Map(this.byCategory(budgetMonth).map(c => [c.category, c.amount]));
 
         // 這個月另外設過的話要講出來，不然她會以為改到的是平常那份
-        if (this.hasOwnBudget(budgetMonth)) {
+        if (this.hasOwnBudget(budgetMonth) || this.hasOwnTotalBudget(budgetMonth)) {
             const [y, m] = budgetMonth.split('-');
             box.append(el('p', { class: 'sub budget-note',
                 text: `${y} 年 ${Number(m)} 月有自己的一套預算。` }));
@@ -714,6 +902,21 @@ const Money = {
         if (this.reportAccount) {
             box.append(el('p', { class: 'sub budget-note',
                 text: '預算是全部帳戶一起算的，不受上面的帳戶篩選影響。' }));
+        }
+
+        // 總預算放最上面。分類回答「錢花去哪」，總額回答「今天還能花多少」，
+        // 後面那個是每天真的會想知道的，所以它在上面。
+        if (pace) {
+            box.append(this.paceBlock(pace));
+
+            // 分類加起來比總預算還多的話要講。**兩個數字互相矛盾**，
+            // 不講的話她會照著分類花，然後在月底發現總額早就爆了。
+            const sum = budgets.reduce((s, b) => s + Number(b.limit), 0);
+            if (sum > pace.limit) {
+                box.append(el('p', { class: 'sub budget-note', text:
+                    `底下的分類加起來是 ${money(sum)}，比總預算多 ${money(sum - pace.limit)}`
+                    + '——分類全部花滿的話會超出總額。' }));
+            }
         }
 
         for (const b of budgets) {
@@ -1557,16 +1760,21 @@ const Money = {
     },
 
     editBudgets() {
+        const scopeBox = $('#budget-scope');
+        const totalBox = $('#budget-total');
         const box = $('#budget-fields');
         const ym = monthOf(this.range.start);
         const [yy, mm] = ym.split('-');
+        const days = daysInMonth(ym);
         // 這個月已經有自己的一套就直接編那一套，不然先編平常的
-        let scope = this.hasOwnBudget(ym) ? ym : '';
+        let scope = this.hasOwnBudget(ym) || this.hasOwnTotalBudget(ym) ? ym : '';
 
         const draw = () => {
+            clear(scopeBox);
+            clear(totalBox);
             clear(box);
 
-            box.append(el('div', { class: 'view-switch', style: 'margin-bottom:14px' }, [
+            scopeBox.append(el('div', { class: 'view-switch', style: 'margin-bottom:14px' }, [
                 el('button', {
                     type: 'button', class: 'view-btn' + (scope === '' ? ' on' : ''),
                     text: '平常',
@@ -1579,9 +1787,43 @@ const Money = {
                 }),
             ]));
 
-            box.append(el('p', { class: 'sub', style: 'margin:-6px 0 12px', text: scope
+            scopeBox.append(el('p', { class: 'sub', style: 'margin:-6px 0 12px', text: scope
                 ? `只改 ${yy} 年 ${Number(mm)} 月。這個月沒填的分類還是照平常的走。`
                 : '每個月都套用這一份。某個月不一樣的話，切到右邊那個。' }));
+
+            /* ── 總預算 ──
+             *
+             * 擺在分類上面，因為它是「一個月總共可以花多少」——
+             * 分類是這個數字底下怎麼分配。順序反過來的話，
+             * 得把五個分類填完才知道自己答應了多少錢出去。
+             */
+            const totalBase = this.data.totalBudgets.find(b => !b.month)?.limit;
+            const totalOwn = this.data.totalBudgets.find(b => b.month === ym)?.limit;
+
+            const perDay = el('p', { class: 'pace-hint' });
+            const input = el('input', {
+                type: 'number', min: '0', step: '500', id: 'b-total',
+                value: (scope ? totalOwn : totalBase) ?? '',
+                placeholder: scope && totalBase ? `平常 ${money(totalBase)}` : '不設限',
+            });
+            // 一邊打一邊算給她看。**這正是她問的那個數字**，
+            // 存完再跳回去看等於要她自己心算一次。
+            const showPerDay = () => {
+                const v = Number(input.value) || (scope ? Number(totalBase) || 0 : 0);
+                perDay.textContent = v > 0
+                    ? `${Number(mm)} 月有 ${days} 天，平均一天可以用 ${money(v / days)}`
+                    : '填了才算得出「平均一天可以用多少」。';
+            };
+            input.addEventListener('input', showPerDay);
+            showPerDay();
+
+            totalBox.append(
+                el('label', { class: 'field' }, [
+                    el('span', { text: '這個月總共可以花' }),
+                    input,
+                ]),
+                perDay,
+                el('div', { class: 'section-title', text: '分類' }));
 
             const base = new Map(this.data.budgets.filter(b => !b.month)
                 .map(b => [b.category, b.limit]));
@@ -1612,7 +1854,9 @@ const Money = {
         const dlg = openDialog('#dlg-budget');
 
         $('#b-save').onclick = () => {
-            const rows = $$('#budget-fields input')
+            // **只挑有 data-cat 的。** 總預算那格也在這個對話框裡，
+            // 掃進來的話會變成一個名字是 undefined 的分類。
+            const rows = $$('#budget-fields input[data-cat]')
                 .map(i => ({ category: i.dataset.cat, limit: Number(i.value) || 0 }))
                 .filter(b => b.limit > 0);
 
@@ -1621,9 +1865,18 @@ const Money = {
                 scope ? b.month !== ym : !!b.month);
             this.data.budgets.push(...rows.map(b => scope ? { ...b, month: ym } : b));
 
+            const total = Number($('#b-total').value) || 0;
+            this.data.totalBudgets = this.data.totalBudgets.filter(b =>
+                scope ? b.month !== ym : !!b.month);
+            if (total > 0) {
+                this.data.totalBudgets.push(scope ? { limit: total, month: ym } : { limit: total });
+            }
+
             this.save();
             dlg.close();
             this.render();
+            // 總覽上的「今天的收支」也在講每天可以用多少，一起更新
+            Overview.render();
             toast(scope ? `${Number(mm)} 月的預算存好了` : '預算存好了');
         };
     },
@@ -1709,6 +1962,7 @@ const Money = {
     bind() {
         $('#add-txn').onclick = () => this.editTxn(null);
         $('#add-account').onclick = () => this.editAccount(null);
+        $('#toggle-balance').onclick = () => this.toggleHideBalance();
         $('#add-sub').onclick = () => this.editSub(null);
         $('#edit-budgets').onclick = () => this.editBudgets();
         $('#manage-categories').onclick = () => this.editCategories();

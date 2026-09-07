@@ -68,6 +68,8 @@ EMPTY = {
         "transactions": [],
         "subscriptions": [],
         "budgets": [],
+        # 總預算（一個月總共可以花多少）跟分類預算分開放
+        "totalBudgets": [],
         "categories": {"expense": [], "income": []},
     },
     "待辦": {"items": []},

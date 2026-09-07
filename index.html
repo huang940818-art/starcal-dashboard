@@ -47,7 +47,14 @@
         <div class="grid">
             <div class="card" data-hue="money">
                 <h2 data-icon="wallet"><span class="label">存款總額</span>
-                    <button class="btn small" id="add-account">加帳戶</button>
+                    <span>
+                        <!-- 眼睛裡的 SVG 由 Money.syncHideButton() 補上，
+                             因為它會跟著「現在是遮著還是看得到」換一個圖 -->
+                        <button class="btn small ghost eye-btn" id="toggle-balance"
+                                type="button" aria-pressed="false" aria-label="遮住金額"
+                                title="遮住金額"></button>
+                        <button class="btn small" id="add-account">加帳戶</button>
+                    </span>
                 </h2>
                 <div id="accounts-total"></div>
                 <div id="accounts-list"></div>
@@ -260,6 +267,53 @@
     </form>
 </dialog>
 
+<!-- 某一堂課在某一天的標記：這週不上、要帶什麼、要交什麼。
+     跟「改課表」分開——改課表會動到每個禮拜。 -->
+<!-- 班別＝重複用的樣板。名字自己取，不寫死「打工」——
+     實驗室、家教、社團、值班都是班。 -->
+<dialog id="dlg-shift">
+    <form method="dialog">
+        <h3>新的班別</h3>
+        <label class="field"><span>叫什麼</span>
+            <input id="sf-name" aria-required="true" placeholder="例：打工晚班、實驗室、家教"></label>
+        <div class="row">
+            <label class="field"><span>從</span><input id="sf-time" type="time"></label>
+            <label class="field"><span>到</span><input id="sf-end" type="time"></label>
+        </div>
+        <label class="field"><span>分類</span><select id="sf-label"></select></label>
+        <div class="dialog-actions">
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="sf-save">建立</button>
+        </div>
+        <p class="sub" style="margin:12px 0 0">
+            建好之後在月曆上點日期就排得上去，點第二下取消。
+        </p>
+    </form>
+</dialog>
+
+<dialog id="dlg-class-mark">
+    <form method="dialog">
+        <h3 id="cm-title">這堂課</h3>
+        <p class="sub" id="cm-when" style="margin:-8px 0 12px"></p>
+        <label class="field" style="display:flex;align-items:center;gap:9px">
+            <input id="cm-off" type="checkbox" style="width:auto">
+            <span style="margin:0">這次不用上（停課、放假、調課）</span>
+        </label>
+        <label class="field"><span>這次要注意什麼</span>
+            <textarea id="cm-text" rows="3" placeholder="要交的作業、要帶的東西、考試範圍…"></textarea>
+        </label>
+        <div class="dialog-actions">
+            <button type="button" class="btn danger spacer" id="cm-clear" hidden>清掉標記</button>
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="cm-save">存</button>
+        </div>
+        <p class="sub" style="margin:12px 0 0">
+            這裡只影響這一天。要改每個禮拜的課（時間、教室、老師），
+            到「課表」那一頁點那堂課。
+        </p>
+    </form>
+</dialog>
+
 <dialog id="dlg-account">
     <form method="dialog">
         <h3 id="dlg-account-title">加帳戶</h3>
@@ -367,6 +421,8 @@
         <p class="sub" style="margin:-8px 0 14px">
             留白就是不設限。設了才看得到「還剩多少」，不然只看得到「花了多少」。
         </p>
+        <div id="budget-scope"></div>
+        <div id="budget-total"></div>
         <div id="budget-fields"></div>
         <div class="dialog-actions">
             <button class="btn" value="cancel" formnovalidate>取消</button>
@@ -403,7 +459,7 @@
         <div class="row">
             <label class="field"><span>分類</span><select id="e-label"></select></label>
             <label class="field"><span>備註</span>
-                <input id="e-note" placeholder="地點、要帶什麼、跟誰"></label>
+                <textarea id="e-note" class="compact" rows="2" placeholder="地點、要帶什麼、跟誰"></textarea></label>
         </div>
         <div class="dialog-actions">
             <button type="button" class="btn danger spacer" id="e-delete" hidden>刪除</button>
@@ -436,18 +492,23 @@
     </form>
 </dialog>
 
-<dialog id="dlg-memo">
+<dialog id="dlg-memo" class="editor">
     <form method="dialog">
         <h3 id="dlg-memo-title">備忘</h3>
-        <label class="field"><span>內容（第一行會當標題）</span>
-            <textarea id="m-text" style="min-height:190px" aria-required="true"></textarea>
-        </label>
+        <div id="m-edit-wrap">
+            <label class="field"><span>內容（第一行會當標題）</span>
+                <textarea id="m-text" aria-required="true"></textarea>
+            </label>
+            <p class="md-hint"><code>## 標題</code><code>- 清單</code><code>1. 編號</code><code>&gt; 引言</code><code>**粗體**</code><code>---</code></p>
+        </div>
+        <div id="m-preview" class="md-preview" hidden></div>
         <label class="field" style="display:flex;align-items:center;gap:9px">
             <input id="m-pinned" type="checkbox" style="width:auto">
             <span style="margin:0">釘在最上面</span>
         </label>
         <div class="dialog-actions">
             <button type="button" class="btn danger spacer" id="m-delete" hidden>刪除</button>
+            <button type="button" class="btn" id="m-preview-btn">預覽</button>
             <button class="btn" value="cancel" formnovalidate>取消</button>
             <button type="button" class="btn primary" id="m-save">存</button>
         </div>
@@ -588,8 +649,10 @@
 <script src="js/themes.js"></script>
 <script src="js/prefs.js"></script>
 <script src="js/update.js"></script>
+<script src="js/md.js"></script>
 <script src="js/memo.js"></script>
 <script src="js/wall.js"></script>
+<script src="js/weather.js"></script>
 <script src="js/ke.js"></script>
 <script src="js/overview.js"></script>
 <script src="js/app.js"></script>

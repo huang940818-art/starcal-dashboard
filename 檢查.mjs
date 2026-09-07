@@ -84,15 +84,28 @@ async function phoneTitle(url, width = 390, height = 844) {
         });
         await call('Page.navigate', { url });
 
-        // 頁面自己會把結果寫進 title。等它出現，不要等固定秒數——
-        // 太短會拿到空的，太長是白等。
-        for (let i = 0; i < 90; i++) {
+        // 頁面自己會把結果寫進 title。**等的是最後那個 DONE 印記**，
+        // 不是「有沒有 ✓」——探針現在一邊跑一邊寫 title，看到第一條
+        // 就回去的話，會拿著一條結果當成整輪都跑完了。
+        // 這一輪是**真的在跑**（沒有虛擬時間可以快轉），所以等的秒數
+        // 要照真實時間抓。90 次 × 400ms＝36 秒，實測剛好卡在最後一條，
+        // 每次都少帶回一條——等得不夠的症狀跟「那條檢查壞了」一模一樣。
+        let last = '';
+        for (let i = 0; i < 250; i++) {
             await sleep(400);
             const r = await call('Runtime.evaluate', {
                 expression: 'document.title', returnByValue: true,
             });
             const t = r.result && r.result.value;
-            if (t && (t.includes('✓') || t.includes('✗'))) return t;
+            if (t) last = t;
+            if (t && t.startsWith('DONE ||| ')) return t.slice(9);
+        }
+        // 等不到印記就把半路的帶回去，並且講出來——靜靜地少一輪，
+        // 看起來會像那一輪的檢查全部消失了。
+        if (last.includes('✓') || last.includes('✗')) {
+            console.error('⚠️ 手機那輪沒跑完，只帶回 '
+                + last.split(' ||| ').length + ' 條');
+            return last;
         }
         return '';
     } finally {
@@ -104,14 +117,39 @@ async function phoneTitle(url, width = 390, height = 844) {
     }
 }
 
-/** 塞進頁面裡跑的檢查。每一條回一行文字，開頭是 ✓ 或 ✗。 */
+/** 塞進頁面裡跑的檢查。每一條回一行文字，開頭是 ✓ 或 ✗。
+ *
+ * ⚠️ **這是一個樣板字串，裡面的反斜線會先被 JS 解析掉一次。**
+ * 想在頁面裡寫 `join('\n')` 的話，這裡要打 `join('\\n')`——
+ * 只打一個的話，注入進去的會是一個真的換行，字串沒收尾，
+ * **整段 script 靜靜地不跑**（症狀跟下面 $$ 那條一模一樣：
+ * 通過數突然變成個位數，而 title 停在原本的值）。
+ * 2026-09-06 踩過一次，查了很久，因為 node --check 檢查原始碼是會過的。
+ */
 const PROBE = `
 <script>
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const out = [];
-const ok = (n, c, e = '') => out.push((c ? '✓ ' : '✗ ') + n + (e ? '  (' + e + ')' : ''));
+// **每push一條就把 title 更新一次。** 結果是靠 title 帶回去的，
+// 中途卡住（虛擬時間用完、某個 await 永遠不回來）的話，原本會拿到
+// 一個「檢查啟動了但沒跑完」，完全看不出停在哪。邊跑邊寫的話，
+// 卡住的時候至少看得到最後跑完的是哪一條。
+const ok = (n, c, e = '') => {
+  out.push((c ? '✓ ' : '✗ ') + n + (e ? '  (' + e + ')' : ''));
+  document.title = out.join(' ||| ');
+};
 const q = s => document.querySelector(s);
 const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sleep(220); };
+
+/* 等不到就丟例外的保險絲。
+ *
+ * **虛擬時間只保證計時器會被排到。** 讀檔（FileReader／file.text()）
+ * 那種不是計時器的工作，在 --virtual-time-budget 底下有時候永遠等不到，
+ * 整支檢查就停在那個 await 上——而且是靜靜地停，看起來像
+ * 「桌機那輪只跑到一半」。包一層之後至少會留下一條紅的。 */
+const guard = (p, what, ms = 5000) => Promise.race([
+  p, sleep(ms).then(() => { throw new Error(what + '：等了 ' + ms + 'ms 還沒回來'); }),
+]);
 
 // 不要掛 load 事件——headless 的 virtual time 模式下它不一定會觸發，
 // 結果就是整段檢查靜靜地沒跑，而 title 停在原本的值。直接自己跑。
@@ -288,7 +326,9 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     } catch (e) {
       out.push('✗ 手機那輪爆了: ' + e.message);
     }
-    document.title = out.join(' ||| ');
+    // 手機這一輪自己就結束了，印記要蓋在這裡——蓋在最底下那一份
+    // 是給桌機那輪用的，這裡永遠跑不到。
+    document.title = 'DONE ||| ' + out.join(' ||| ');
     return;
   }
 
@@ -344,6 +384,102 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
       if (d.open) d.close();
     }
 
+    // ── 備忘：點一下是「攤開來看」，不是「進去編輯」 ──
+    //
+    // 她說「要點開來看很麻煩，版面也不好看」。原本點一下開的是編輯框，
+    // 於是只想讀的時候會看到一堆 ** 和 >，而那些備忘有 45–63 行。
+    {
+      // 這支檢查不准出現字面的反引號（PROBE 是樣板字串），所以行內程式碼
+      // 的那兩個字元要用組的。
+      const BT = String.fromCharCode(96);
+      Memo.data.items.push({
+        id: 'md-check', pinned: false,
+        createdAt: Date.now(), updatedAt: Date.now(),
+        text: [
+          '渲染檢查用',
+          '',
+          '## 小標',
+          '這句有 **粗體** 和 ' + BT + '程式碼' + BT + '，還有 [連結](https://example.com)。',
+          '',
+          '- 第一條',
+          '- 第二條',
+          '',
+          '1. 編號一',
+          '',
+          '> 引用的一句',
+          '',
+          '---',
+          '裸網址 https://example.com/x',
+        ].join('\\n'),
+      });
+      Memo.render(); await sleep(220);
+
+      const head = [...document.querySelectorAll('.memo-item .memo-row')]
+        .find(r => r.textContent.includes('渲染檢查用'));
+      ok('備忘列出得來', !!head);
+      ok('一開始是收著的', head.getAttribute('aria-expanded') === 'false');
+      ok('收著的時候看不到內文', !q('.memo-item.open'));
+
+      // **每次 render() 都會重建整個清單**，所以點完之後手上那個節點
+      // 已經不在 DOM 裡了（closest 還查得到舊的父層，但那個父層沒有內文）。
+      // 每一步都要重新問一次現在的畫面。
+      const findItem = () => [...document.querySelectorAll('.memo-item')]
+          .find(x => x.textContent.includes('渲染檢查用'));
+
+      head.click(); await sleep(250);
+      const item = findItem();
+      const body = item && item.querySelector('.memo-body');
+      ok('點一下就攤開', !!body && item.classList.contains('open'));
+      ok('攤開的不是編輯框', !q('#dlg-memo').open, '點開不該跳對話框');
+
+      // 真的渲染成標籤，不是把原始碼印出來
+      ok('粗體變成 strong', !!body.querySelector('strong'));
+      ok('小標變成標題', !!body.querySelector('.md-h'));
+      ok('清單變成 li', body.querySelectorAll('.md-list li').length >= 3);
+      ok('引用變成 blockquote', !!body.querySelector('.md-quote'));
+      ok('分隔線畫出來', !!body.querySelector('.md-hr'));
+      ok('行內程式碼有底', !!body.querySelector('code'));
+      const links = [...body.querySelectorAll('a')];
+      ok('連結點得出去', links.length === 2, links.length + ' 個');
+      ok('連結是外開的', links.every(a => a.target === '_blank'
+                                       && a.rel.includes('noopener')));
+      ok('星號沒有漏在畫面上', !body.textContent.includes('**'));
+      ok('井字號沒有漏在畫面上', !body.textContent.includes('## '));
+      // 第一行是標題列的內容，攤開時不該再出現一次
+      ok('標題沒有重複兩次',
+         (body.textContent.match(/渲染檢查用/g) || []).length === 0,
+         '內文裡不該再有標題');
+
+      // 第一行寫成「# 標題」時，標題列不該印出井字號
+      Memo.data.items.push({
+        id: 'md-hash', pinned: false, createdAt: Date.now(), updatedAt: Date.now(),
+        text: '# 井字標題\\n內文一行',
+      });
+      Memo.render(); await sleep(200);
+      const hashRow = [...document.querySelectorAll('.memo-item .memo-title')]
+        .find(x => x.textContent.includes('井字標題'));
+      ok('標題列不印 Markdown 記號',
+         !!hashRow && !hashRow.textContent.includes('#'),
+         hashRow ? hashRow.textContent : '找不到');
+      Memo.data.items = Memo.data.items.filter(x => x.id !== 'md-hash');
+      Memo.render(); await sleep(150);
+
+      // 展開之後還是改得到
+      findItem().querySelector('.memo-actions .btn').click(); await sleep(220);
+      ok('攤開後按編輯還是進得去', q('#dlg-memo').open);
+      q('#dlg-memo button[value="cancel"]').click(); await sleep(180);
+      if (q('#dlg-memo').open) q('#dlg-memo').close();
+
+      // 收得回去
+      findItem().querySelector('.memo-row').click(); await sleep(220);
+      ok('再點一下收得回去', !findItem().querySelector('.memo-body'));
+
+      // 收拾乾淨
+      Memo.data.items = Memo.data.items.filter(x => x.id !== 'md-check');
+      Memo.open.clear();
+      Memo.save(); Memo.render(); await sleep(150);
+    }
+
     // ── 預算：對話框要有欄位，而且存得進去 ──
     await tab('money');
     q('#edit-budgets').click(); await sleep(180);
@@ -357,7 +493,7 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
 
       // 某個月另外設，不能把平常那份洗掉
       q('#edit-budgets').click(); await sleep(180);
-      const scopeBtns = document.querySelectorAll('#budget-fields .view-btn');
+      const scopeBtns = document.querySelectorAll('#budget-scope .view-btn');
       ok('預算對話框有平常/單月兩個切換', scopeBtns.length === 2, scopeBtns.length + ' 個');
       if (scopeBtns.length === 2) {
         scopeBtns[1].click(); await sleep(120);
@@ -378,6 +514,191 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
            q('#budgets').textContent.includes('自己的一套'));
       }
     }
+
+    // ── 總預算、遮金額、今天的收支 ──
+    //
+    // **這三段會把記帳的資料整個換掉，做完要換回來。**
+    // 後面還有一長串檢查接著前面建好的帳戶和帳目跑，
+    // 忘了還原的話那些會整批倒掉，而且看起來像是它們自己壞了。
+    const keepMoney = JSON.stringify(Money.data);
+
+    // 總預算算錯了不會報錯，只會給一個看起來很合理的數字，
+    // 照著花到月底才發現早就爆了。所以除了「有沒有出現」，
+    // 底下也真的把數字對過一次。
+    {
+      // 前面那一段留了一份「只有這個月」的預算，會蓋掉平常那份，
+      // 收乾淨再測，不然數字對不回來。
+      Money.data.budgets = [];
+      Money.data.totalBudgets = [];
+      Money.data.transactions = [];
+      Money.save(); Money.render(); await sleep(150);
+
+      q('#edit-budgets').click(); await sleep(200);
+      const total = q('#b-total');
+      ok('預算對話框有「總共可以花」那一格', !!total);
+      if (total) {
+        // 總預算那格如果落在 #budget-fields 裡，存檔時會被當成一個
+        // 名字是 undefined 的分類掃進去
+        ok('總預算那格不會被當成分類', !total.dataset.cat && !q('#budget-fields #b-total'));
+
+        total.value = '30000';
+        total.dispatchEvent(new Event('input'));
+        await sleep(120);
+        const days = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate();
+        const perDay = Math.round(30000 / days).toLocaleString('zh-TW');
+        // **一邊打就要看得到每天可以用多少。** 存完再跳回去看
+        // 等於要她自己心算一次。
+        ok('打的時候就算出每天可以用多少',
+           q('.pace-hint').textContent.includes(perDay),
+           q('.pace-hint').textContent);
+
+        q('#b-save').click(); await sleep(300);
+        ok('總預算存得進去', Money.totalBudgetFor(Money.range.start.slice(0, 7)) === 30000,
+           JSON.stringify(Money.data.totalBudgets));
+        ok('總預算沒有混進分類預算裡',
+           Money.data.budgets.every(b => b.category), JSON.stringify(Money.data.budgets));
+
+        const card = q('#budgets').textContent;
+        ok('預算卡看得到總預算', card.includes('30,000'));
+        ok('預算卡講得出今天起每天可以用多少', card.includes('今天起每天可以用'), card.slice(0, 60));
+        // **卡片上那個數字不是 perDay。** 對話框裡寫的是「整個月平分」
+        // （設定的時候還不知道會花多少），卡片上寫的是「剩下的錢 ÷
+        // 含今天在內的剩餘天數」。兩個混在一起就會給錯的額度。
+        const daysLeft = days - new Date().getDate() + 1;
+        const perDayLeft = Math.round(30000 / daysLeft).toLocaleString('zh-TW');
+        ok('每天可以用的數字算對了', q('.pace-num').textContent === perDayLeft,
+           q('.pace-num').textContent + ' 應該是 ' + perDayLeft
+           + '（剩 ' + daysLeft + ' 天，不是整個月 ' + days + ' 天）');
+
+        // 花掉一半，那個數字要跟著掉
+        const before = Number(q('.pace-num').textContent.split(',').join(''));
+        Money.data.transactions.push({
+          id: 'ck-pace', date: new Date().toISOString().slice(0, 10),
+          kind: 'expense', amount: 15000, category: Money.data.categories.expense[0].name,
+          account: Money.data.accounts[0]?.name || '',
+        });
+        Money.save(); Money.render(); await sleep(200);
+        const after = Number(q('.pace-num').textContent.split(',').join(''));
+        ok('花了錢，每天可以用的就跟著掉下來', after < before, before + ' → ' + after);
+
+        // 超支：不要印一個「每天可以用 0」，那看起來像算壞了
+        Money.data.transactions.push({
+          id: 'ck-over', date: new Date().toISOString().slice(0, 10),
+          kind: 'expense', amount: 30000, category: Money.data.categories.expense[0].name,
+          account: Money.data.accounts[0]?.name || '',
+        });
+        Money.save(); Money.render(); Overview.render(); await sleep(220);
+        ok('超支的時候講一句話不是印 0',
+           q('#budgets').textContent.includes('額度用完了')
+           && !q('.pace-num'), q('#budgets').textContent.slice(0, 60));
+        ok('超支會寫在總覽最上面那句',
+           q('#hero').textContent.includes('這個月超出預算'),
+           q('#hero').textContent.slice(0, 50));
+
+        Money.data.transactions = [];
+        Money.data.totalBudgets = [];
+        Money.save(); Money.render(); Overview.render(); await sleep(150);
+      }
+    }
+
+    // ── 存款可以遮起來 ──
+    {
+      await tab('money');
+      Money.data.accounts = [
+        { id: 'ck-h', name: '遮遮看', kind: 'bank', opening: 87654, includeInTotal: true, order: 0 },
+      ];
+      Money.save(); Money.renderAccounts(); await sleep(150);
+
+      const shown = () => q('#accounts-total').textContent + ' ' + q('#accounts-list').textContent;
+      ok('平常看得到金額', shown().includes('87,654'), shown().slice(0, 40));
+
+      q('#toggle-balance').click(); await sleep(180);
+      // **總額和每一列都要遮。** 只遮總額的話，底下那一排
+      // 一個一個加起來還是同一個數字。
+      ok('按了眼睛就看不到金額了', !shown().includes('87,654'), shown().slice(0, 40));
+      ok('遮起來是點點，不是空白', shown().includes('•'), shown().slice(0, 40));
+      ok('眼睛那顆看得出現在是遮著的',
+         q('#toggle-balance').getAttribute('aria-pressed') === 'true');
+      ok('遮起來的時候還是有圖示', !!q('#toggle-balance svg'));
+
+      // 記得住：重畫一次不會自己跳回去
+      Money.render(); await sleep(150);
+      ok('重畫之後還是遮著的', !shown().includes('87,654'));
+
+      q('#toggle-balance').click(); await sleep(180);
+      ok('再按一次就看得到了', shown().includes('87,654'), shown().slice(0, 40));
+      ok('眼睛那顆也跟著換回來',
+         q('#toggle-balance').getAttribute('aria-pressed') === 'false');
+    }
+
+    // ── 總覽：今天的收支明細 ──
+    {
+      const today = new Date().toISOString().slice(0, 10);
+      Money.data.accounts = [
+        { id: 'ck-t', name: '測試戶', kind: 'cash', opening: 5000, includeInTotal: true, order: 0 },
+      ];
+      Money.data.transactions = [
+        { id: 'ck-today1', date: today, kind: 'expense', amount: 155,
+          category: Money.data.categories.expense[0].name, account: '測試戶', note: '加油' },
+        { id: 'ck-today2', date: today, kind: 'income', amount: 500,
+          category: Money.data.categories.income[0].name, account: '測試戶', note: '打工' },
+        { id: 'ck-old', date: '2025-01-10', kind: 'expense', amount: 9999,
+          category: Money.data.categories.expense[0].name, account: '測試戶', note: '很久以前' },
+      ];
+      Money.save(); Overview.render(); await tab('overview'); await sleep(220);
+
+      const cards = [...document.querySelectorAll('#overview-grid .card')];
+      const todayCard = cards.find(c => c.textContent.includes('今天的收支'));
+      ok('總覽上有「今天的收支」', !!todayCard);
+      if (todayCard) {
+        const text = todayCard.textContent;
+        ok('列得出今天那幾筆', text.includes('加油') && text.includes('打工'), text.slice(0, 60));
+        ok('今天的支出合計對', text.includes('155'));
+        ok('今天的收入合計對', text.includes('500'));
+        // **不能把別天的混進來。** 混進來不會報錯，只會給一個
+        // 看起來很合理、但其實是好幾天加總的數字。
+        ok('別天的不會混進來', !text.includes('9,999'), text.slice(0, 80));
+        ok('明細點得進去改',
+           !!todayCard.querySelector('.txn-row'));
+      }
+
+      // 空的時候要是空狀態，不是一排 0
+      Money.data.transactions = [];
+      Money.save(); Overview.render(); await sleep(200);
+      const empty = [...document.querySelectorAll('#overview-grid .card')]
+        .find(c => c.textContent.includes('今天的收支'));
+      ok('今天沒記帳的時候是空狀態',
+         !!empty && empty.textContent.includes('今天還沒有記帳'),
+         empty ? empty.textContent.slice(0, 50) : '找不到那張卡');
+
+      // ── 電腦上不要留空格 ──
+      //
+      // 她的原話是「電腦跟平板打開的時候會有地方空空的」。
+      // 根因是整排寬的卡片夾在中間，把上一排切斷。這裡量的是
+      // **同一排卡片的右邊界有沒有貼齊格線**，不是數卡片張數。
+      const grid = q('#overview-grid');
+      const gridRight = Math.round(grid.getBoundingClientRect().right);
+      const normal = [...grid.children].filter(c => !c.classList.contains('wide'));
+      const rows = new Map();
+      for (const c of normal) {
+        const r = c.getBoundingClientRect();
+        const key = Math.round(r.top);
+        if (!rows.has(key)) rows.set(key, []);
+        rows.get(key).push(Math.round(r.right));
+      }
+      const keys = [...rows.keys()].sort((a, b) => a - b);
+      // 最後一排排不滿是正常的（卡片張數不見得是三的倍數），
+      // 中間幾排排不滿才是版面被切斷。
+      const holes = keys.slice(0, -1)
+        .filter(k => Math.max(...rows.get(k)) < gridRight - 8);
+      ok('電腦上中間幾排沒有空格', holes.length === 0,
+         holes.length + ' 排沒排滿（共 ' + keys.length + ' 排）');
+
+    }
+
+    // 換回前面那份，後面的檢查才接得下去
+    Money.data = JSON.parse(keepMoney);
+    Money.save(); Money.render(); Overview.render(); await sleep(200);
 
     // ── 報表：圓餅、折線、帳戶篩選 ──
     //
@@ -547,11 +868,26 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     // ── 從別的記帳 App 匯進來 ──
     // 匯錯的資料很糟：兩百筆混進來之後要一筆一筆挑出來刪，比重打還累。
     // 所以一定要有預覽，而且解不開的那幾列要講出來。
-    {
+    try {
       ok('「所有帳目」那張卡有匯入的入口', !!q('#import-csv'));
       q('#import-csv').click(); await sleep(220);
       ok('匯入視窗開得起來', q('#dlg-csv').open);
       ok('一開始只給選檔案，還不能按匯入', q('#csv-go').hidden);
+
+      /* 直接餵一份 CSV 進去，不經過檔案選擇器。
+       *
+       * **不能用真的 new File([...])。** handleImportFile 裡是
+       * await file.text()，而 Blob 的讀取不是計時器——在
+       * --virtual-time-budget 底下三次有一次永遠不會回來，
+       * 整個桌機那輪就停在那個 await 上（而且是靜靜地停）。
+       * 這裡餵一個只長得像 File 的東西：被驗的是欄位對應、預覽、
+       * 去重複這些自己寫的邏輯，瀏覽器怎麼把 Blob 讀成字串不是。
+       *
+       * ⚠️ PROBE 是樣板字串，這裡面**一個反引號都不能出現**——
+       * 一出現就把外層字串收掉了，node --check 會指著一個
+       * 看起來完全無關的地方說 SyntaxError。 */
+      const fakeFile = text => ({ name: '別的App.csv', type: 'text/csv',
+                                  async text() { return text; } });
 
       // 直接餵一份 CSV 進去，不經過檔案選擇器
       const csv = [
@@ -560,7 +896,7 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
         '2026-09-02,收入,5000,打工,九月薪水,現金',
         '昨天,支出,50,飲食,讀不懂的那列,現金',
       ].join(String.fromCharCode(10));
-      await Money.handleImportFile(new File([csv], '別的App.csv', { type: 'text/csv' }));
+      await guard(Money.handleImportFile(fakeFile(csv)), '讀 CSV');
       await sleep(300);
 
       ok('欄位對應猜出來了',
@@ -590,11 +926,11 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
       }
 
       // 同一份再匯一次不該重複
-      await Money.handleImportFile(new File([csv], '別的App.csv', { type: 'text/csv' }));
+      await guard(Money.handleImportFile(fakeFile(csv)), '讀 CSV');
       await sleep(300);
       q('#csv-go').click(); await sleep(350);
       const after = Money.data.transactions.length;
-      await Money.handleImportFile(new File([csv], '別的App.csv', { type: 'text/csv' }));
+      await guard(Money.handleImportFile(fakeFile(csv)), '讀 CSV');
       await sleep(300);
       ok('已經匯過的會被認出來，不給重複匯',
          q('#csv-go').hidden || q('#csv-body').textContent.includes('已經有了'),
@@ -602,6 +938,13 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
       q('#dlg-csv button[value=\"cancel\"]').click(); await sleep(200);
 
       // 清乾淨
+      Money.data.transactions = Money.data.transactions.filter(
+          t => !['全家', '九月薪水'].includes(t.note));
+      Money.save(); Money.render(); await sleep(200);
+    } catch (e) {
+      // 只有這一段倒下去，後面幾十條照跑
+      ok('匯入那一段跑得完', false, e.message);
+      if (q('#dlg-csv')?.open) q('#dlg-csv').close();
       Money.data.transactions = Money.data.transactions.filter(
           t => !['全家', '九月薪水'].includes(t.note));
       Money.save(); Money.render(); await sleep(200);
@@ -1298,6 +1641,81 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     MonthView.today(); await sleep(220);
     ok('回得到這個月', MonthView.ym === thisMonth());
 
+    // ── 快速排班 ──
+    //
+    // 打工的班每週都不一樣，塞不進課表；一天一天加行程又要開七次對話框。
+    // 這裡驗的是「選一個班別，點日期就排上去」。
+    {
+        const shiftBtn = () => [...document.querySelectorAll('#calendar .month-nav button')]
+            .find(b => b.textContent === '排班' || b.textContent === '排完了');
+
+        ok('月曆上有排班鈕', !!shiftBtn());
+        shiftBtn().click(); await sleep(240);
+        ok('進得了排班模式', MonthView.shiftMode && !!q('.shift-bar'));
+        ok('還沒有班別時會說先開一個',
+           q('.shift-hint').textContent.includes('先開一個'), q('.shift-hint').textContent);
+
+        // 沒有班別就點日期 → 直接開建立視窗，不是靜靜地沒反應
+        q('#calendar .cal-cell').click(); await sleep(240);
+        ok('沒有班別時點日期會開建立視窗', q('#dlg-shift').open);
+
+        q('#sf-name').value = '打工晚班';
+        q('#sf-time').value = '18:00';
+        q('#sf-end').value = '22:00';
+        q('#sf-save').click(); await sleep(300);
+        ok('班別建得起來', Cal.shifts().length === 1, JSON.stringify(Cal.shifts()[0] || {}));
+        ok('建完自動選中它', MonthView.pickedShift === Cal.shifts()[0].id);
+        ok('班別膠囊上寫得出時間',
+           q('.shift-chip.on').textContent.includes('18:00'), q('.shift-chip.on').textContent);
+
+        // 排三天
+        const cells = [...document.querySelectorAll('#calendar .cal-cell:not(.outside)')];
+        const before = Cal.data.events.length;
+        cells[10].click(); await sleep(200);
+        cells[11].click(); await sleep(200);
+        cells[12].click(); await sleep(200);
+        ok('點三天就排了三天', Cal.data.events.length === before + 3,
+           String(Cal.data.events.length - before));
+
+        const made = Cal.data.events.filter(e => e.shift);
+        ok('排出來的就是行程', made.length === 3);
+        ok('時間跟著班別走',
+           made.every(e => e.time === '18:00' && e.endTime === '22:00'));
+        ok('標題就是班別名字', made.every(e => e.title === '打工晚班'));
+
+        // 排了班的日子要看得出來，不然整個月的格子長得一樣
+        await sleep(150);
+        ok('排到的日子在月曆上標起來',
+           document.querySelectorAll('#calendar .cal-cell.shift-on').length === 3,
+           String(document.querySelectorAll('#calendar .cal-cell.shift-on').length));
+
+        // 同一天再點一次是取消，不是排兩次
+        const day = made[0].date;
+        const cellAgain = [...document.querySelectorAll('#calendar .cal-cell:not(.outside)')][10];
+        cellAgain.click(); await sleep(240);
+        ok('再點一次是取消', !Cal.hasShift(day, MonthView.pickedShift));
+        ok('取消之後剩兩天', Cal.data.events.filter(e => e.shift).length === 2);
+
+        // 排出去的班要出現在時間線上
+        MonthView.shiftMode = false;
+        Agenda.view = 'timeline'; Agenda.render(); await sleep(260);
+        ok('排出去的班出現在時間線上',
+           q('#agenda-list').textContent.includes('打工晚班'));
+
+        // 刪掉班別，已經排出去的班要留著——刪班別是「以後不用這個樣板」，
+        // 不是「我上個月沒去上班」
+        const shiftId = Cal.shifts()[0].id;
+        Cal.removeShift(shiftId);
+        ok('班別拿得掉', Cal.shifts().length === 0);
+        ok('已經排出去的班留著', Cal.data.events.filter(e => e.shift === shiftId).length === 2);
+
+        // 收拾
+        Cal.data.events = Cal.data.events.filter(e => !e.shift);
+        Cal.save();
+        MonthView.pickedShift = null;
+        Agenda.view = 'month'; Agenda.render(); await sleep(220);
+    }
+
     // ── 課表 ──
     Agenda.view = 'class'; Agenda.render(); await sleep(240);
     ok('課表切得過去', !q('#timetable').hidden);
@@ -1483,6 +1901,66 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
     ok('總覽那句話有提到今天幾堂課',
        q('#hero').textContent.includes('1 堂課'), q('#hero').textContent.slice(0, 90));
 
+    // ── 某一堂課在某一天的標記：這次不用上、要交什麼 ──
+    //
+    // 課表是每週固定的，會變的都是單次的事。寫進 slot 的話，
+    // 「這週要交報告」每個禮拜都會冒出來一次。
+    await tab('agenda');
+    Agenda.view = 'timeline'; Agenda.render(); await sleep(260);
+    {
+        const today = todayStr();
+        const slot = Timetable.on(today)[0];
+        ok('今天有課可以標記', !!slot);
+
+        const classRow = () => [...document.querySelectorAll('#agenda-list .class-row')]
+            .find(r => r.textContent.includes(slot.name));
+
+        classRow().click(); await sleep(250);
+        ok('點課開的是標記，不是課表編輯',
+           q('#dlg-class-mark').open && !q('#dlg-slot')?.open);
+        ok('標記視窗寫得出是哪一天',
+           /\\d+\\/\\d+/.test(q('#cm-when').textContent), q('#cm-when').textContent);
+        ok('沒標記過就沒有清掉鈕', q('#cm-clear').hidden);
+
+        // 這次不用上 ＋ 要交的東西
+        q('#cm-off').checked = true;
+        q('#cm-text').value = '改成線上非同步，作業下週交';
+        q('#cm-save').click(); await sleep(320);
+
+        ok('標記存進課表那份資料', Timetable.marks().length === 1);
+        ok('標記綁在這一天', Timetable.markFor(slot.id, today)?.off === true);
+        ok('課列標成「這次不用上」', !!classRow()?.querySelector('.class-off-tag'));
+        ok('備註直接寫在課列上，不用點開',
+           classRow().textContent.includes('作業下週交'));
+
+        // 停掉的課不算進「今天幾堂」——說有 1 堂但停了，那個數字在騙人
+        ok('停掉的不算今天要上的課', Timetable.activeOn(today).length === 0,
+           String(Timetable.activeOn(today).length));
+        ok('但那堂課還在畫面上（不是消失）', !!classRow(),
+           '停課要看得到「本來有課」');
+        await tab('overview'); await sleep(240);
+        ok('總覽的今天課數跟著減',
+           [...document.querySelectorAll('#hero .stat')]
+             .some(t => t.textContent.includes('今天的課') && t.textContent.includes('0')));
+
+        // 只影響那一天：下週同一堂不該被標到
+        const next = ymd(new Date(parseYmd(today).getTime() + 7 * 86400000));
+        ok('下週同一堂不受影響', !Timetable.isOff(slot.id, next));
+
+        // 清掉
+        await tab('agenda'); Agenda.render(); await sleep(250);
+        classRow().click(); await sleep(250);
+        ok('標記過就有清掉鈕', !q('#cm-clear').hidden);
+        q('#cm-clear').click(); await sleep(320);
+        ok('清掉之後標記就沒了', Timetable.marks().length === 0);
+        ok('課列也恢復正常', !classRow()?.querySelector('.class-off-tag'));
+
+        // 空白的標記不要留空殼
+        Timetable.setMark(slot.id, today, { off: false, text: '   ' });
+        ok('沒有內容就不留一筆空的', Timetable.marks().length === 0);
+    }
+    await tab('overview'); await sleep(200);
+
     // 想法牆需要空間才有意義，寬螢幕上它必須在
     ok('寬螢幕看得到想法牆分頁',
        !q('#tabs button[data-panel="wall"]').hidden);
@@ -1649,7 +2127,10 @@ const tab = n => { q('#tabs button[data-panel="' + n + '"]').click(); return sle
   } catch (e) {
     out.push('✗ 中途爆了: ' + e.message);
   }
-  document.title = out.join(' ||| ');
+  // **跑完了要蓋印記。** ok() 一邊跑一邊更新 title，所以「title 裡有 ✓」
+  // 不再代表跑完——沒有這個印記的話，讀的那一端會拿到半路的結果
+  // 卻以為是全部。
+  document.title = 'DONE ||| ' + out.join(' ||| ');
 })();
 </script>
 `;
@@ -1698,12 +2179,31 @@ writeFileSync(join(dataDir, '小克.json'), JSON.stringify({
     fetchedAt: Date.now(),
     problem: null,
 }));
-const probePath = join(HERE, '_檢查.html');
+// 檔名刻意用 ASCII。這個專案在中文路徑上已經踩過一次
+// （server 沒 unquote，/api/記帳 一律 404），而這支是驗證工具——
+// 工具自己出問題的時候，症狀會偽裝成「你剛改的東西壞了」，最難查。
+const probePath = join(HERE, '_check.html');
 
 const html = readFileSync(join(HERE, 'index.html'), 'utf-8');
 // **用函式形式的 replace。** 直接給字串的話，裡面的 `$$` 會被當成跳脫序列
 // （$$ → 一個字面的 $），probe 裡的 `$$$` 就變成 `$$`，跟 util.js 已經宣告的
 // $$ 撞名，整段 script 因為 SyntaxError 一行都不會跑——而且靜靜地不跑。
+// **先確認 PROBE 自己是合法的 JS。**
+//
+// 這個常數是樣板字串，裡面的反斜線會被 JS 先解析掉一次：
+// 想在頁面裡寫 \n 或正則的 \d，這裡就得打兩個反斜線。
+// 少打的話注入進去的是一個真的換行（或一個光禿禿的 d），
+// **整段 script 靜靜地不跑**——通過數會突然剩個位數，而且沒有任何錯誤訊息。
+// 2026-09-06 一個上午踩了兩次，所以在這裡擋掉，一秒就知道。
+try {
+    new Function(PROBE.replace(/<\/?script>/g, ''));
+} catch (e) {
+    console.error('這支檢查自己有問題：PROBE 解析之後不是合法的 JS');
+    console.error('  ' + e.message);
+    console.error('多半是反斜線少打一個（\\n、\\d 在這個樣板字串裡要寫兩個）。');
+    process.exit(1);
+}
+
 writeFileSync(probePath, html.replace('</body>', () => PROBE + '</body>'));
 
 const server = spawn('python3', [join(HERE, 'server.py'), '--port', String(PORT)], {
@@ -1716,20 +2216,50 @@ try {
     await sleep(1400);
 
     const dom = execSync(
-        `"${CHROME}" --headless --disable-gpu --virtual-time-budget=90000 ` +
-        `--window-size=1512,1400 --dump-dom "http://127.0.0.1:${PORT}/_檢查.html" 2>/dev/null`,
+        // 預算要留餘裕：檢查條目每加一批，這裡就多跑幾秒。
+        // 2026-09-07 加了記帳那批（總預算、遮金額、今天的收支）之後，
+        // 180000 變成時好時壞——同一份程式跑三次，有一次桌機那輪
+        // 只印到一半。**時好時壞就是已經在邊緣了**，不要調到剛好夠。
+        // **不夠的時候不會報錯**，chrome 會在時間到的那一刻直接 dump，
+        // title 停在半路——看起來像「測試突然少了一大半」。
+        // 2026-09-06 就這樣被騙過一次（291 條全過，卻只印出手機那輪的 32 條）。
+        `"${CHROME}" --headless --disable-gpu --virtual-time-budget=300000 ` +
+        `--window-size=1512,1400 --dump-dom "http://127.0.0.1:${PORT}/_check.html" 2>/dev/null`,
         { maxBuffer: 32 * 1024 * 1024 }).toString();
 
     // 手機那一輪。同一份 probe，靠視窗寬度自己分岔——
     // 走 CDP 的裝置模擬，才拿得到真正的 390。
-    const phone = await phoneTitle(`http://127.0.0.1:${PORT}/_檢查.html`);
+    const phone = await phoneTitle(`http://127.0.0.1:${PORT}/_check.html`);
 
-    const title = ((dom.match(/<title>([^<]*)<\/title>/) || [])[1] || '')
-        + ' ||| ' + phone;
+    // 兩輪的結果都是塞在 document.title 裡帶回來的。
+    // **抓不到就要講出來**——靜靜地少一輪，看起來就像那一輪的測試全部消失了。
+    let deskRaw = (dom.match(/<title[^>]*>([\s\S]*?)<\/title>/) || [])[1] || '';
+    if (deskRaw.startsWith('DONE ||| ')) {
+        deskRaw = deskRaw.slice(9);
+    } else if (deskRaw.includes('✓') || deskRaw.includes('✗')) {
+        // 半路停住。**這件事一定要講出來**：少掉的那幾條看起來
+        // 就像從來不存在，而不像「沒跑到」。
+        const done = deskRaw.split(' ||| ');
+        console.error('⚠️ 桌機那輪沒跑完，只跑到第 ' + done.length + ' 條就停了');
+        console.error('   最後跑完的是：' + done[done.length - 1]);
+        console.error('   多半是虛擬時間預算不夠，或下一條卡在一個不會回來的 await。');
+        code = 1;
+    } else {
+        console.error('⚠️ 桌機那輪沒有帶回結果（title = ' + JSON.stringify(deskRaw.slice(0, 60)) + '）');
+        console.error('   dom 長度 ' + dom.length + '，多半是 PROBE 一開始就爆了。');
+        console.error('   查法：KEEP_PROBE=1 跑一次，在 _check.html 裡插 window.onerror。');
+        code = 1;
+    }
+
+    const title = deskRaw + ' ||| ' + phone;
     const lines = title.split(' ||| ').filter(Boolean);
 
     if (!lines.length) {
         console.error('沒有拿到任何結果——頁面可能在載入時就爆了。');
+        console.error('通過數突然變成個位數也是同一件事。最常見的原因是 PROBE 這個');
+        console.error('樣板字串裡的跳脫被吃掉了（\\n 要打兩個反斜線、$$ 要用函式形式 replace）。');
+        console.error('查法：KEEP_PROBE=1 跑一次，在 _check.html 裡插一段 window.onerror');
+        console.error('把錯誤寫進 document.title，就會直接指出行號。');
         code = 1;
     } else {
         for (const line of lines) console.log(line);
@@ -1740,7 +2270,7 @@ try {
     }
 } finally {
     server.kill();
-    rmSync(probePath, { force: true });
+    if (!process.env.KEEP_PROBE) rmSync(probePath, { force: true });
     rmSync(dataDir, { recursive: true, force: true });
 }
 

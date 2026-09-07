@@ -37,6 +37,7 @@ const Timetable = {
     async init() {
         this.data = await Store.load('課表');
         this.data.sets ??= [];
+        this.data.marks ??= [];
         this.data.active ??= null;
         if (!this.data.periods?.length) this.data.periods = DEFAULT_PERIODS();
         // active 指到一份不存在的課表（被刪掉了）就掉回第一份，
@@ -50,6 +51,59 @@ const Timetable = {
     },
 
     save() { Store.save('課表'); },
+
+    // MARK: 某一堂課在某一天的標記
+    //
+    // 課表是**每週固定**的，但真正會變的都是單次的事：這週停課、
+    // 這週要交報告、下次要帶球拍。那些不能寫進 slot——寫進去的話
+    // 每個禮拜都會冒出同一句「要交報告」。
+    //
+    // 所以標記是 slot ＋ 日期，一堂課的某一天只會有一筆。
+    // 停課刻意**不把那堂課藏起來**：她需要看到「本來有課，這次不用去」，
+    // 那比課直接消失有用得多——消失了只會讓人以為自己記錯。
+
+    marks() {
+        this.data.marks ??= [];
+        return this.data.marks;
+    },
+
+    /** 這一堂課在這一天有沒有標記 */
+    markFor(slotId, day) {
+        if (!slotId || !day) return null;
+        return this.marks().find(m => m.slot === slotId && m.date === day) || null;
+    },
+
+    /** 這一天有沒有停課 */
+    isOff(slotId, day) {
+        return !!this.markFor(slotId, day)?.off;
+    },
+
+    /**
+     * 寫入標記。**沒有內容就把整筆刪掉**，不要留一堆
+     * `{off:false, text:''}` 的空殼——那種東西會讓「這天有沒有標記」
+     * 的判斷變成到處都要多問一句。
+     */
+    setMark(slotId, day, { off = false, text = '' } = {}) {
+        const clean = (text || '').trim();
+        const list = this.marks();
+        const i = list.findIndex(m => m.slot === slotId && m.date === day);
+
+        if (!off && !clean) {
+            if (i >= 0) list.splice(i, 1);
+        } else if (i >= 0) {
+            list[i].off = off;
+            list[i].text = clean;
+        } else {
+            list.push({ id: uid(), slot: slotId, date: day, off, text: clean });
+        }
+        this.save();
+        return this.markFor(slotId, day);
+    },
+
+    /** 這一天真的要去上的課（停掉的不算）。總覽的「今天幾堂課」用這個。 */
+    activeOn(day) {
+        return this.on(day).filter(c => !this.isOff(c.id, day));
+    },
 
     set(id) { return this.data.sets.find(s => s.id === id) || null; },
     active() { return this.set(this.data.active); },

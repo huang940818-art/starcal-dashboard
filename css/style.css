@@ -504,6 +504,17 @@ input, select, textarea {
 input[type="date"], input[type="time"] {
     cursor: pointer;
     font-variant-numeric: tabular-nums;
+
+    /* **iOS Safari 上這兩種欄位會不理 `width` 自己撐開。**
+     * 她手機的截圖上，日期／開始／結束三格比同一個對話框裡的其他欄位
+     * 寬出一截，右邊突出去壓到對話框的內距——電腦版量不出來
+     * （Chrome 上六格都是 394px），那是 iOS 的原生外觀在決定寬度。
+     * 關掉原生外觀它才會照著盒模型走。整格本來就能點（見 js/app.js
+     * 的 showPicker），所以少一顆原生小圖示不影響操作。 */
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    max-width: 100%;
 }
 
 input[type="date"]:hover, input[type="time"]:hover {
@@ -526,7 +537,13 @@ input[type="time"]:hover::-webkit-calendar-picker-indicator {
     background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
-input:focus, select, textarea:focus {
+/* **`select` 少了 `:focus`。**
+ *
+ * 原本寫成 `input:focus, select, textarea:focus`——中間那個沒有 `:focus`，
+ * 所以每一個下拉選單都永遠畫成「被聚焦」的樣子。手機上「分類」那格
+ * 掛著一圈強調色的框，旁邊的欄位都沒有，看起來像那一格出了什麼事。
+ * 焦點框要能指出「你現在在這裡」，永遠亮著就等於什麼都沒指。 */
+input:focus, select:focus, textarea:focus {
     outline: none;
     border-color: color-mix(in srgb, var(--accent) 55%, transparent);
 }
@@ -755,6 +772,75 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 
 .fill.warn { background: var(--warn); }
 .fill.over { background: var(--alert); }
+
+/* 總預算那一塊。分類條在它底下，中間拉一條線分開——
+ * 兩者回答的是不同的問題（「還剩多少」vs「錢花去哪」）。 */
+.pace {
+    margin-bottom: 18px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid color-mix(in srgb, var(--separator) 60%, transparent);
+}
+
+/* 只設了總預算、沒設分類的話，那條線底下什麼都沒有 */
+.pace:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+
+.pace-day {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+}
+
+/* 「今天起每天可以用」那個數字是這張卡的主角，
+ * 所以它比上面的「花了多少 / 總共多少」大。 */
+.pace-num {
+    font-size: 27px;
+    font-weight: 650;
+    letter-spacing: -.02em;
+    line-height: 1.15;
+    margin-top: 2px;
+}
+
+.pace-side { text-align: right; line-height: 1.65; }
+.pace-word { color: var(--alert); font-size: 15px; }
+
+/* 對話框裡一邊打一邊算出來的那一行 */
+.pace-hint {
+    color: var(--accent);
+    font-size: 12px;
+    margin: -6px 0 16px;
+}
+
+/* 總覽「今天的收支」底下那一行額度 */
+.pace-foot {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px solid color-mix(in srgb, var(--separator) 60%, transparent);
+}
+
+/* 今天的收支：上面那排合計 */
+.today-flow { display: flex; gap: 24px; margin-bottom: 6px; }
+.today-num { font-size: 20px; font-weight: 600; margin-top: 2px; }
+
+/* 遮起來的金額。點點要比數字疏一點，才看得出是「遮住了」
+ * 而不是「壞掉了」。 */
+.masked {
+    color: var(--text-3);
+    letter-spacing: .1em;
+}
+
+/* 眼睛那顆：裡面是 SVG，要自己置中 */
+.eye-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 9px;
+    color: var(--text-2);
+}
+
+.eye-btn[aria-pressed="true"] { color: var(--accent); }
 
 /* 長條圖。用 CSS grid 畫，不拉圖表庫——
  * 這種等級的圖用不到 60KB 的相依，而且離線也要能開。 */
@@ -1055,6 +1141,86 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 .memo-title { font-weight: 500; }
 .memo-preview { color: var(--text-3); font-size: 13px; margin-top: 2px; }
 .memo-date { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+
+/* 分隔線搬到外層那一格上。
+ * 留在 .memo-row 的話，展開的內文會跑到線的外面去，看起來像下一則的開頭。 */
+.memo-item { border-bottom: 1px solid color-mix(in srgb, var(--separator) 60%, transparent); }
+.memo-item:last-child { border-bottom: 0; }
+.memo-item > .memo-row { border-bottom: 0; }
+
+.memo-caret {
+    color: var(--text-3);
+    font-size: 11px;
+    line-height: 1.9;
+    flex: 0 0 auto;
+    width: 10px;
+}
+
+.memo-item.open .memo-title { color: var(--accent); }
+
+.memo-body {
+    padding: 2px 0 14px 22px;      /* 左邊對齊標題，不是對齊三角形 */
+    color: var(--text-2);
+    font-size: 14px;
+    line-height: 1.75;
+    overflow-wrap: anywhere;        /* 長網址不要把版面撐寬 */
+}
+
+.memo-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 14px;
+}
+
+/* ── Markdown ───────────────────────────────────────
+ *
+ * 標題從 h4 起跳（見 js/md.js），所以這裡不用再壓一次字級，
+ * 只要把上下距離收緊——備忘是一整篇短文，用文章的間距會拉得很長。
+ */
+
+.md-h {
+    color: var(--text);
+    margin: 16px 0 6px;
+    line-height: 1.4;
+}
+
+.md-h:first-child { margin-top: 0; }
+h4.md-h { font-size: 15.5px; }
+h5.md-h { font-size: 14.5px; }
+h6.md-h, h7.md-h, h8.md-h, h9.md-h { font-size: 13.5px; color: var(--text-2); }
+
+.md-p { margin: 0 0 10px; }
+.md-p:last-child { margin-bottom: 0; }
+
+.md-list { margin: 0 0 10px; padding-left: 20px; }
+.md-list li { margin: 3px 0; }
+
+.md-quote {
+    margin: 0 0 10px;
+    padding: 2px 0 2px 12px;
+    border-left: 3px solid color-mix(in srgb, var(--accent) 55%, transparent);
+    color: var(--text-3);
+}
+
+.md-quote p { margin: 0; }
+
+.md-hr {
+    border: 0;
+    border-top: 1px solid var(--separator);
+    margin: 14px 0;
+}
+
+.memo-body code {
+    font-size: 12.5px;
+    padding: 1px 5px;
+    border-radius: 5px;
+    background: var(--raised);
+}
+
+.memo-body a { color: var(--accent); }
+
+.memo-body strong { color: var(--text); font-weight: 600; }
 
 /* ── 便利貼牆 ───────────────────────────────────────── */
 
@@ -2443,4 +2609,257 @@ body::before {
     color: var(--text);
     border-color: var(--separator);
     background: var(--raised);
+}
+
+/* ── 課的單次標記 ─────────────────────────────────── */
+
+/* 停掉的那堂課：留在畫面上，但一眼看得出不用去。
+ * 直接隱藏的話，「今天本來有課」這件事就消失了，看起來會像自己記錯。 */
+.event-row.class-row.off .title span:not(.class-off-tag) {
+    text-decoration: line-through;
+    color: var(--text-3);
+}
+
+.event-row.class-row.off .event-time { text-decoration: line-through; }
+
+.class-off-tag {
+    margin-left: 8px;
+    font-size: 11px;
+    color: var(--warn);
+    border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+    border-radius: 999px;
+    padding: 1px 8px;
+    white-space: nowrap;
+}
+
+/* 這次要交什麼、要帶什麼。比地點老師顯眼——那兩個每週都一樣，
+ * 這一行才是這次才有的東西。 */
+.class-note {
+    color: var(--accent) !important;
+    white-space: pre-wrap;
+}
+
+/* 月曆格子裡：停掉的那堂畫成空心 */
+.cls-dot.off {
+    background: none !important;
+    border: 1.5px solid color-mix(in srgb, var(--calendar) 70%, transparent);
+    width: 6px;
+    height: 6px;
+}
+
+/* ── 統計格：看起來是數字，其實是按鈕 ──────────────────
+ *
+ * 長相要跟原本的 <div> 一模一樣，所以把瀏覽器給 button 的東西全部剝掉。
+ * 剝掉之後只留三件事：手指按得到、鍵盤 Tab 進得去、按下去有回饋。
+ */
+.hero .stat {
+    appearance: none;
+    background: none;
+    border: 0;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 8px;
+    /* 手指比游標胖。往外借一點可按範圍，但用 margin 抵銷回來，
+       版面上看起來完全沒有變寬。 */
+    padding: 4px 8px;
+    margin: -4px -8px;
+    transition: background-color .12s ease;
+}
+
+.hero .stat:hover { background: color-mix(in srgb, var(--hue, var(--accent)) 10%, transparent); }
+.hero .stat:active { background: color-mix(in srgb, var(--hue, var(--accent)) 18%, transparent); }
+.hero .stat:hover .k { color: var(--text-2); }
+
+/* 滑鼠按的時候不畫框，鍵盤走到的時候一定要畫——不然 Tab 到哪裡看不出來 */
+.hero .stat:focus { outline: none; }
+.hero .stat:focus-visible {
+    outline: 2px solid var(--hue, var(--accent));
+    outline-offset: 1px;
+}
+
+/* ── 今天的天氣 ────────────────────────────────────── */
+.weather-now {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-top: 2px;
+}
+
+.weather-temp {
+    font-size: 34px;
+    font-weight: 600;
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.15;
+}
+
+.weather-word { font-size: 15px; color: var(--text-2); }
+
+.weather-bits {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+}
+
+/* 過期的時間戳要看得出來是註記，不是資料本身 */
+.weather-stale { color: var(--text-3); }
+
+/* ── 對話框太高的時候自己捲 ────────────────────────────
+ *
+ * 手機上欄位是一欄一欄直排的（見 620px 那段的理由），加行程有六欄，
+ * 在 iPhone 上已經幾乎滿版；備註改成多行之後只會更高。
+ * 高過畫面的時候看不到「存」，那就等於這張表單不能用。
+ */
+dialog {
+    max-height: calc(100dvh - 32px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/* 擠在一排裡的備註那種，兩行就夠，不要把對話框撐成兩倍高 */
+textarea.compact { min-height: 44px; }
+
+/* ── 備忘的編輯畫面 ────────────────────────────────────
+ *
+ * 她的話：「希望備忘錄可以編輯的時候大一點加入 markdown」。
+ *
+ * 原本編輯框固定 190px 高、對話框 440px 寬——那是為「改一行字」設計的
+ * 尺寸。但備忘裡放的是整理好的長文（碩士班那幾則 45–63 行），
+ * 在那個框裡寫東西看不到自己寫了什麼。
+ */
+dialog.editor { width: min(680px, calc(100vw - 24px)); }
+
+#m-text { min-height: min(46vh, 380px); }
+
+/* 語法提示。**要小、要淡、要一行放得下**——它是提示不是說明書，
+ * 佔兩行就會開始跟內容搶注意力。 */
+.md-hint {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 7px;
+    margin: -6px 0 12px;
+    font-size: 11.5px;
+    color: var(--text-3);
+}
+
+.md-hint code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--bg);
+    border: 1px solid var(--separator);
+    border-radius: 5px;
+    padding: 1px 5px;
+    white-space: nowrap;
+}
+
+/* 預覽。跟編輯框一樣高，切換的時候對話框不會忽然跳一下。
+   內容的排版沿用備忘那邊既有的 .md-* 樣式。 */
+.md-preview {
+    background: var(--bg);
+    border: 1px solid var(--separator);
+    border-radius: 9px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    min-height: min(46vh, 380px);
+    max-height: min(46vh, 380px);
+    overflow-y: auto;
+    color: var(--text-2);
+    font-size: 14px;
+    line-height: 1.75;
+    overflow-wrap: anywhere;
+}
+
+.md-preview code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--card);
+    border: 1px solid var(--separator);
+    border-radius: 5px;
+    padding: 1px 4px;
+    font-size: .92em;
+}
+.md-preview strong { color: var(--text); font-weight: 600; }
+.md-preview a { color: var(--accent); }
+.md-preview .empty-preview { color: var(--text-3); }
+
+/* 預覽裡補回來的第一行標題 */
+.md-preview .preview-title {
+    font-size: 15px;
+    font-weight: 650;
+    color: var(--text);
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--separator);
+}
+
+/* ── 排班 ───────────────────────────────────────────
+ *
+ * 這一列擺在月曆上面，不放對話框裡：排班的時候眼睛要一直看著月曆
+ * （這週排幾天了、下週還空著），藏進對話框就得一直開開關關。
+ */
+
+.shift-bar {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin: 0 0 12px;
+    padding: 12px;
+    border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+
+.shift-chips { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+.shift-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--text-2);
+    background: var(--card);
+    border: 1px solid var(--separator);
+    border-radius: 999px;
+    padding: 6px 13px;
+    cursor: pointer;
+}
+
+.shift-chip.on {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg);
+    font-weight: 600;
+}
+
+.shift-chip.on .shift-time { color: color-mix(in srgb, var(--bg) 70%, transparent); }
+.shift-chip.add { border-style: dashed; color: var(--text-3); }
+.shift-time { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.shift-hint { font-size: 12px; color: var(--text-3); }
+
+/* 排班模式下，已經排了這個班的日子。
+ *
+ * 底色要**淡**：26% 的時候格子裡那條行程（本身也有底色）會糊成一片，
+ * 「18:00 打工晚班」幾個字讀不出來。掃視要靠的是邊框和左上角那個勾，
+ * 底色只負責讓那一格「有重量」。 */
+.cal-cell.shift-on {
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+    border-color: var(--accent);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.cal-cell.shift-on .cal-n { color: var(--accent); font-weight: 700; }
+
+/* 排到的日子在數字後面補一個勾。
+ * 只靠顏色的話，色弱的人和列印出來都分不出哪幾天排了班。 */
+.cal-cell.shift-on .cal-n::after {
+    content: '✓';
+    margin-left: 5px;
+    font-size: 11px;
+}
+
+/* 疊在排班底色上的行程條要夠實，不然字會糊掉 */
+.cal-cell.shift-on .cal-item {
+    background: color-mix(in srgb, var(--card) 88%, transparent);
 }

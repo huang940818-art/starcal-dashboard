@@ -60,6 +60,11 @@ const MonthView = {
         return out;
     },
 
+    /** 排班模式。開著的時候，點格子＝在那天排上／取消目前選的班。 */
+    shiftMode: false,
+    /** 目前選的班別 id */
+    pickedShift: null,
+
     render() {
         const box = $('#calendar');
         clear(box);
@@ -79,7 +84,23 @@ const MonthView = {
                 'aria-label': '下個月', onclick: () => this.shift(1) }),
             isNow ? null : el('button', { type: 'button', class: 'btn small ghost',
                 text: '回到這個月', onclick: () => this.today() }),
+            el('button', {
+                type: 'button',
+                class: 'btn small' + (this.shiftMode ? ' primary' : ' ghost'),
+                text: this.shiftMode ? '排完了' : '排班',
+                style: 'margin-left:auto',
+                onclick: () => {
+                    this.shiftMode = !this.shiftMode;
+                    // 只有一種班別的話直接幫她選好——多按一下沒有意義
+                    if (this.shiftMode && !this.pickedShift) {
+                        this.pickedShift = Cal.shifts()[0]?.id || null;
+                    }
+                    this.render();
+                },
+            }),
         ]));
+
+        if (this.shiftMode) box.append(this.shiftBar());
 
         // 星期列
         box.append(el('div', { class: 'cal-grid cal-head' },
@@ -97,20 +118,26 @@ const MonthView = {
             if (c.outside) cls.push('outside');
             if (c.day === todayStr()) cls.push('today');
             if (c.day === this.picked) cls.push('picked');
+            if (this.shiftMode && this.pickedShift
+                && Cal.hasShift(c.day, this.pickedShift)) cls.push('shift-on');
 
             grid.append(el('div', {
                 class: cls.join(' '),
                 role: 'button',
                 tabindex: '0',
                 'aria-label': `${c.n} 日，${items.length} 件事`,
-                onclick: () => { this.picked = c.day; this.render(); },
-                ondblclick: () => Cal.edit(null, c.day),
+                onclick: () => {
+                    if (this.shiftMode) return this.tapShift(c.day);
+                    this.picked = c.day;
+                    this.render();
+                },
+                ondblclick: () => { if (!this.shiftMode) Cal.edit(null, c.day); },
                 onkeydown: e => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        this.picked = c.day;
-                        this.render();
-                    }
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault();
+                    if (this.shiftMode) return this.tapShift(c.day);
+                    this.picked = c.day;
+                    this.render();
                 },
             }, [
                 el('div', { class: 'cal-head-row' }, [
@@ -128,14 +155,22 @@ const MonthView = {
                             title: c.classes.map(k => {
                                 const when = Timetable.whenText(k)
                                     .replace(/^第 /, '').replace(/ 節$/, '');
-                                return [when, k.name, k.place].filter(Boolean).join('　');
+                                const mark = Timetable.markFor(k.id, c.day);
+                                return [when, k.name, k.place,
+                                        mark?.off ? '（這次不用上）' : '',
+                                        mark?.text || ''].filter(Boolean).join('　');
                             }).join('\n'),
                             'aria-label': `${c.classes.length} 堂課`,
                           }, c.classes.slice(0, 4).map(k => {
                             const l = Prefs.label(k.label);
+                            // 停掉的那堂畫成空心。**不是拿掉那個點**——
+                            // 拿掉的話「今天本來有課」這件事就消失了，
+                            // 看起來會像自己記錯。
+                            const off = Timetable.isOff(k.id, c.day);
                             return el('span', {
-                                class: 'cls-dot',
-                                style: l ? `background:${l.color}` : '',
+                                class: 'cls-dot' + (off ? ' off' : ''),
+                                style: l ? (off ? `border-color:${l.color}`
+                                                : `background:${l.color}`) : '',
                             });
                           }))
                         : null,
@@ -220,6 +255,92 @@ const MonthView = {
         box.append(this.dayPanel());
     },
 
+    /**
+     * 排班那一列。
+     *
+     * 擺在月曆上面而不是對話框裡：排班的時候眼睛要一直看著月曆
+     * （這週排幾天了、下週還空著），把班別藏進對話框就得一直開開關關。
+     */
+    shiftBar() {
+        const shifts = Cal.shifts();
+
+        return el('div', { class: 'shift-bar' }, [
+            el('div', { class: 'shift-chips' }, [
+                ...shifts.map(s => el('button', {
+                    type: 'button',
+                    class: 'shift-chip' + (s.id === this.pickedShift ? ' on' : ''),
+                    onclick: () => { this.pickedShift = s.id; this.render(); },
+                    // 長按／右鍵刪掉這個班別。排出去的班留著。
+                    oncontextmenu: e => {
+                        e.preventDefault();
+                        Cal.removeShift(s.id);
+                        if (this.pickedShift === s.id) {
+                            this.pickedShift = Cal.shifts()[0]?.id || null;
+                        }
+                        this.render();
+                        toast(`拿掉班別「${s.name}」，已經排出去的班留著`);
+                    },
+                }, [
+                    Prefs.dot(s.label),
+                    el('span', { text: s.name }),
+                    s.time ? el('span', { class: 'shift-time',
+                                          text: s.time + (s.endTime ? '–' + s.endTime : '') })
+                           : null,
+                ])),
+                el('button', {
+                    type: 'button', class: 'shift-chip add', text: '＋ 新的班別',
+                    onclick: () => this.editShift(),
+                }),
+            ]),
+            el('div', { class: 'shift-hint', text: shifts.length
+                ? (this.pickedShift ? '點日期排上去，再點一次取消。' : '先選一個班別。')
+                : '先開一個班別：它是重複用的樣板，之後點日期就排得上去。' }),
+        ]);
+    },
+
+    tapShift(day) {
+        if (!this.pickedShift) {
+            const first = Cal.shifts()[0];
+            if (!first) return this.editShift();
+            this.pickedShift = first.id;
+        }
+        const on = Cal.toggleShift(day, this.pickedShift);
+        this.render();
+        Agenda.renderTimeline?.();
+        Overview.render();
+
+        // 排到哪一天要講出來。整個月的格子長得很像，點錯一天不容易發現。
+        const d = parseYmd(day);
+        const name = Cal.shift(this.pickedShift)?.name || '班';
+        toast(`${d.getMonth() + 1}/${d.getDate()} ${on ? '排上' : '取消'}${name}`);
+    },
+
+    editShift() {
+        $('#sf-name').value = '';
+        $('#sf-time').value = '';
+        $('#sf-end').value = '';
+        Prefs.fillSelect($('#sf-label'), null);
+
+        const dlg = openDialog('#dlg-shift');
+        $('#sf-save').onclick = () => {
+            const time = $('#sf-time').value;
+            const endTime = $('#sf-end').value;
+            if (time && endTime && endTime < time) return toast('結束時間比開始還早', true);
+
+            const s = Cal.addShift({
+                name: $('#sf-name').value,
+                time, endTime,
+                label: $('#sf-label').value || null,
+            });
+            if (!s) return toast('這個班叫什麼？', true);
+
+            this.pickedShift = s.id;
+            this.shiftMode = true;
+            dlg.close();
+            this.render();
+        };
+    },
+
     /** 選中那天的完整內容。月曆格子塞不下的東西全在這裡。 */
     dayPanel() {
         const day = this.picked;
@@ -251,8 +372,9 @@ const MonthView = {
             ...(events.length || todos.length || classes.length
                 ? [
                     // 跟時間線同一套規則：課和行程照時間混排，待辦排最後
+                    // 課要帶上日期，點下去才知道是「標記這一天」而不是改整學期
                     ...Agenda.mergeTimed(events, classes).map(r => r.kind === 'class'
-                        ? Agenda.classRow(r.item)
+                        ? Agenda.classRow(r.item, day)
                         : Agenda.eventRow(r.item)),
                     ...todos.map(t => Todo.row(t)),
                   ]

@@ -61,6 +61,14 @@ function monthLabel(ym) {
     return `${Number(m)}月`;
 }
 
+/** 這個月有幾天。"2026-09" → 30。
+ *  （`new Date(y, m, 0)` 是「第 m 個月的第 0 天」，也就是上個月的最後一天，
+ *  而 m 這裡是 1-based 的月份，所以剛好是那個月的天數。閏年也對。） */
+function daysInMonth(ym) {
+    const [y, m] = String(ym).split('-').map(Number);
+    return new Date(y, m, 0).getDate();
+}
+
 /** 相對日期，給列表用 */
 function relativeDay(s) {
     const d = parseYmd(s);

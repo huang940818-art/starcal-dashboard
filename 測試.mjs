@@ -17,12 +17,17 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad'];
+    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
+    // **沒定義的名字要給 undefined，不能直接丟出去。** names 是所有 load()
+    // 共用的一份清單，只載其中一支檔案的時候，其他名字本來就不存在——
+    // 直接 `return { Weather }` 會 ReferenceError，而且錯在 eval 出來的
+    // <anonymous_script> 裡，行號對不回任何一個檔案，很難查。
+    const pick = names.map(n => `${n}: typeof ${n} === 'undefined' ? undefined : ${n}`);
     return new Function(`
         const document = { querySelector: () => null, querySelectorAll: () => [] };
         ${src}
-        return { ${names.join(', ')} };
+        return { ${pick.join(', ')} };
     `)();
 }
 
@@ -223,6 +228,12 @@ test('示範資料自己是一致的', () => {
     }
 
     assert.ok(m.data.transactions.length > 100, '示範資料要夠多，趨勢圖才有東西看');
+
+    // 總預算要比分類加起來大，不然作品集上一打開就掛著一句
+    // 「分類加起來超過總預算」，看的人會以為是壞的
+    const sum = m.data.budgets.reduce((s, b) => s + b.limit, 0);
+    assert.ok(m.totalBudgetFor(thisMonthStr) > sum,
+        `示範的總預算 ${m.totalBudgetFor(thisMonthStr)} 不該小於分類加總 ${sum}`);
 });
 
 test('示範資料涵蓋近 12 個月，趨勢圖不會有空洞', () => {
@@ -716,6 +727,128 @@ test('查得出這個月有沒有自己的一套', () => {
     assert.ok(!m.hasOwnBudget('2026-10'));
 });
 
+/* ── 總預算與「一天可以用多少」──────────────────────
+ *
+ * 這幾條算錯了最危險：它會給一個看起來很合理的數字，
+ * 照著花到月底才發現早就爆了。
+ */
+
+test('沒設總預算就是 null，不是 0', () => {
+    const m = setup({ totalBudgets: [] });
+    assert.equal(m.totalBudgetFor(thisMonthStr), null);
+    assert.equal(m.budgetPace(thisMonthStr), null);
+});
+
+test('總預算也是平常一份、某個月可以另外設', () => {
+    const m = setup({ totalBudgets: [
+        { limit: 15000 },
+        { limit: 22000, month: '2026-09' },
+    ] });
+    assert.equal(m.totalBudgetFor('2026-09'), 22000);
+    assert.equal(m.totalBudgetFor('2026-10'), 15000);
+    assert.ok(m.hasOwnTotalBudget('2026-09'));
+    assert.ok(!m.hasOwnTotalBudget('2026-10'));
+});
+
+test('一開始的每日額度是總預算除以整個月的天數', () => {
+    const m = setup({ totalBudgets: [{ limit: 15000 }] });
+    const p = m.budgetPace(thisMonthStr);
+    const days = new Date(Number(thisMonthStr.slice(0, 4)),
+                          Number(thisMonthStr.slice(5, 7)), 0).getDate();
+    assert.equal(p.days, days);
+    assert.equal(p.perDay, 15000 / days);
+});
+
+test('今天起每天可以用＝剩下的錢 ÷ 含今天在內的剩餘天數', () => {
+    const m = setup({
+        totalBudgets: [{ limit: 15000 }],
+        transactions: [{ id: 't1', date: day(1), kind: 'expense', amount: 3000, category: '餐飲', account: '現金' }],
+    });
+    const p = m.budgetPace(thisMonthStr);
+    const today = new Date().getDate();
+    assert.equal(p.used, 3000);
+    assert.equal(p.left, 12000);
+    // **今天要算進去**：剩下的錢本來就得撐過今天
+    assert.equal(p.daysLeft, p.days - today + 1);
+    assert.equal(p.perDayLeft, 12000 / p.daysLeft);
+});
+
+test('今天花掉的會讓「今天起每天可以用」跟著掉下來', () => {
+    const base = setup({ totalBudgets: [{ limit: 15000 }] }).budgetPace(thisMonthStr);
+    const m = setup({
+        totalBudgets: [{ limit: 15000 }],
+        transactions: [{ id: 't1', date: ymd(), kind: 'expense', amount: 2000, category: '餐飲', account: '現金' }],
+    });
+    const after = m.budgetPace(thisMonthStr);
+    assert.ok(after.perDayLeft < base.perDayLeft, '花了錢額度卻沒變，那個數字就是死的');
+    assert.equal(after.daysLeft, base.daysLeft, '同一天，剩餘天數不該變');
+});
+
+test('超支的時候每日額度是 0，不會變成負的', () => {
+    const m = setup({
+        totalBudgets: [{ limit: 5000 }],
+        transactions: [{ id: 't1', date: day(1), kind: 'expense', amount: 8000, category: '餐飲', account: '現金' }],
+    });
+    const p = m.budgetPace(thisMonthStr);
+    assert.ok(p.over);
+    assert.equal(p.left, -3000, '超出多少要看得到');
+    assert.equal(p.perDayLeft, 0, '不能給一個負的「每天可以用」');
+});
+
+test('轉帳不算進總預算——換個口袋不是花掉', () => {
+    const m = setup({
+        totalBudgets: [{ limit: 15000 }],
+        transactions: [
+            { id: 't1', date: day(2), kind: 'transfer', amount: 6000, account: '郵局', toAccount: '現金' },
+        ],
+    });
+    assert.equal(m.budgetPace(thisMonthStr).used, 0);
+});
+
+test('過去的月份沒有「還能用多少」，只有平均花了多少', () => {
+    const m = setup({
+        totalBudgets: [{ limit: 3100 }],
+        transactions: [{ id: 't1', date: '2025-01-10', kind: 'expense', amount: 1550, category: '餐飲', account: '現金' }],
+    });
+    const p = m.budgetPace('2025-01');
+    assert.equal(p.days, 31);
+    assert.equal(p.daysLeft, 0);
+    assert.equal(p.perDayLeft, null, '過去的月份不該給「今天起每天可以用」');
+    assert.equal(p.spentPerDay, 50);
+});
+
+test('二月的天數要對，額度才不會算錯', () => {
+    const m = setup({ totalBudgets: [{ limit: 2900 }] });
+    assert.equal(m.budgetPace('2024-02').days, 29, '閏年');
+    assert.equal(m.budgetPace('2025-02').days, 28);
+});
+
+/* ── 今天的收支 ────────────────────────────────────── */
+
+test('今天的收支只算今天，轉帳兩邊都不算', () => {
+    const m = setup({ transactions: [
+        { id: 't1', date: ymd(), kind: 'expense', amount: 155, category: '交通', account: '現金' },
+        { id: 't2', date: ymd(), kind: 'income', amount: 500, category: '打工', account: '郵局' },
+        { id: 't3', date: ymd(), kind: 'transfer', amount: 9000, account: '郵局', toAccount: '現金' },
+        // 別的日子。**寫死一個很久以前的日期**，不能用 day(1)——
+        // 每個月的 1 號跑這支測試的時候，那就是今天。
+        { id: 't4', date: '2025-01-10', kind: 'expense', amount: 999, category: '餐飲', account: '現金' },
+    ] });
+    const f = m.dayFlow();
+    assert.equal(f.expense, 155);
+    assert.equal(f.income, 500);
+    assert.equal(f.net, 345);
+    assert.equal(m.onDay().length, 3, '轉帳不算收支，但明細上還是要看得到');
+});
+
+test('今天沒記帳就是空的，不是 0 筆假資料', () => {
+    const m = setup({ transactions: [
+        { id: 't1', date: '2025-01-10', kind: 'expense', amount: 100, category: '餐飲', account: '現金' },
+    ] });
+    assert.equal(m.onDay().length, 0);
+    assert.equal(m.dayFlow().expense, 0);
+});
+
 /* ── 報表：帳戶篩選 ─────────────────────────────────
  *
  * 篩錯了不會報錯，只會給一個看起來很合理的小數字。
@@ -837,4 +970,109 @@ test('沒有點就給空字串，不是畫不出來的 M', () => {
 test('點串得成 SVG 的 d', () => {
     const d = Charts.linePath([{ x: 0, y: 10 }, { x: 5, y: 0 }]);
     assert.equal(d, 'M0.0 10.0 L5.0 0.0');
+});
+
+/* ── 天氣 ──────────────────────────────────────────────
+ *
+ * 只測純的那幾支：代碼對照、回傳整形、快取鍵。
+ * 抓網路和定位權限測不了，但「API 少給一個欄位的時候會不會畫出半張卡片」
+ * 測得到——而那正是最容易出事、又最不會有人報錯的地方。
+ */
+
+const { Weather } = load('./js/weather.js');
+
+test('天氣代碼分成七類，看得懂的都對得上', () => {
+    assert.equal(Weather.describe(0).text, '晴');
+    assert.equal(Weather.describe(1).text, '多雲');
+    assert.equal(Weather.describe(2).text, '多雲');
+    assert.equal(Weather.describe(3).text, '陰');
+    assert.equal(Weather.describe(45).text, '有霧');
+    assert.equal(Weather.describe(63).text, '下雨');
+    assert.equal(Weather.describe(71).text, '下雪');
+    assert.equal(Weather.describe(81).text, '陣雨');
+    assert.equal(Weather.describe(95).text, '雷雨');
+});
+
+test('認不得的代碼當多雲，不要讓畫面開天窗', () => {
+    assert.equal(Weather.describe(999).ico, 'cloud');
+    assert.equal(Weather.describe(null).ico, 'cloud');
+    assert.equal(Weather.describe('晴天').ico, 'cloud');
+    assert.equal(Weather.describe(undefined).text, '—');
+});
+
+test('每一類都指到真的存在的圖示名字', () => {
+    const names = ['sun', 'cloudsun', 'cloud', 'fog', 'rain', 'snow', 'storm'];
+    for (const c of Weather.CODES) {
+        assert.ok(names.includes(c.ico), `${c.ico} 不在圖示清單裡`);
+    }
+});
+
+const FULL = {
+    current: { temperature_2m: 28.4, apparent_temperature: 31.2, weather_code: 3 },
+    daily: {
+        temperature_2m_max: [31.8],
+        temperature_2m_min: [24.1],
+        precipitation_probability_max: [70],
+    },
+};
+
+test('完整的回應整形成畫得出來的形狀，溫度四捨五入', () => {
+    assert.deepEqual(Weather.shape(FULL), {
+        now: 28, feels: 31, code: 3, high: 32, low: 24, rain: 70,
+    });
+});
+
+test('沒有 current 或 daily 就回 null，不畫半張卡片', () => {
+    assert.equal(Weather.shape({ daily: FULL.daily }), null);
+    assert.equal(Weather.shape({ current: FULL.current }), null);
+    assert.equal(Weather.shape({}), null);
+    assert.equal(Weather.shape(null), null);
+});
+
+test('連現在的溫度都沒有就整份不要', () => {
+    assert.equal(Weather.shape({ current: { weather_code: 0 }, daily: FULL.daily }), null);
+});
+
+test('缺的欄位給 null，不要變成 NaN 印在畫面上', () => {
+    const s = Weather.shape({
+        current: { temperature_2m: 20 },
+        daily: {},
+    });
+    assert.equal(s.now, 20);
+    assert.equal(s.feels, null);
+    assert.equal(s.high, null);
+    assert.equal(s.low, null);
+    assert.equal(s.rain, null);
+});
+
+test('降雨機率 0% 是資料不是缺值', () => {
+    const s = Weather.shape({
+        current: { temperature_2m: 20 },
+        daily: { precipitation_probability_max: [0] },
+    });
+    assert.equal(s.rain, 0);
+});
+
+test('快取鍵綁地點，換了地方就不是同一份', () => {
+    const a = Weather.keyOf({ lat: 22.645, lon: 120.605 });
+    const b = Weather.keyOf({ lat: 25.033, lon: 121.565 });
+    assert.notEqual(a, b);
+    // 小數點後第四位以後不算——那個精度的差別對天氣沒有意義，
+    // 只會讓快取每次都失效
+    assert.equal(Weather.keyOf({ lat: 22.6451, lon: 120.6052 }), a);
+});
+
+test('網址帶得齊要用的欄位', () => {
+    const u = Weather.url({ lat: 22.645, lon: 120.605 });
+    assert.ok(u.startsWith('https://api.open-meteo.com/'), u);
+    for (const k of ['latitude=22.645', 'longitude=120.605', 'temperature_2m',
+                     'weather_code', 'precipitation_probability_max', 'forecast_days=1']) {
+        assert.ok(u.includes(k), `網址少了 ${k}`);
+    }
+});
+
+test('預設地點寫在程式裡，而且是台灣的經緯度', () => {
+    assert.ok(Weather.DEFAULT.lat > 21 && Weather.DEFAULT.lat < 26, '緯度不在台灣');
+    assert.ok(Weather.DEFAULT.lon > 119 && Weather.DEFAULT.lon < 122, '經度不在台灣');
+    assert.ok(Weather.DEFAULT.name.length > 0, '一定要有地名，不然看的人會以為是自己的天氣');
 });

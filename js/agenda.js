@@ -18,9 +18,77 @@ const Cal = {
     async init() {
         this.data = await Store.load('行事曆');
         this.data.events ??= [];
+        this.data.shifts ??= [];
     },
 
     save() { Store.save('行事曆'); },
+
+    // MARK: 班別與排班
+    //
+    // 打工的班**每週都不一樣**，塞不進課表——課表是「每個禮拜的這個時段」。
+    // 但一天一天加行程也不行：排一個禮拜要開七次對話框、打七次同樣的時間。
+    //
+    // 所以拆成兩層：**班別**是重複用的樣板（名字＋幾點到幾點＋顏色），
+    // **排班**是在月曆上點日期，點到哪天就在那天長一筆行程出來。
+    // 排一整週＝點五下。
+    //
+    // 排出來的就是普通行程，不是另一種資料。這樣時間線、過期提醒、
+    // 分類篩選、總覽那句話全部自動有——多一種資料型別就要多維護一遍。
+    //
+    // **班別的名字自己取。** 不寫死「打工」：實驗室、家教、社團、值班都是班。
+
+    shifts() {
+        this.data.shifts ??= [];
+        return this.data.shifts;
+    },
+
+    shift(id) { return this.shifts().find(s => s.id === id) || null; },
+
+    addShift({ name, time = '', endTime = '', label = null }) {
+        const clean = (name || '').trim();
+        if (!clean) return null;
+        const s = { id: uid(), name: clean, time, endTime, label };
+        this.shifts().push(s);
+        this.save();
+        return s;
+    },
+
+    removeShift(id) {
+        // **排出去的班留著。** 刪掉一個班別是「以後不用這個樣板了」，
+        // 不是「我上個月沒去上班」。連著刪掉的話，過去的紀錄會憑空消失。
+        this.data.shifts = this.shifts().filter(s => s.id !== id);
+        this.save();
+    },
+
+    /** 這一天有沒有排這個班 */
+    hasShift(day, shiftId) {
+        return this.data.events.some(e => e.date === day && e.shift === shiftId);
+    },
+
+    /**
+     * 在這一天排上／取消這個班。回傳排完之後有沒有班。
+     *
+     * 同一個班在同一天只會有一筆——點兩下是「排上去、又拿掉」，
+     * 不是「排兩次」。
+     */
+    toggleShift(day, shiftId) {
+        const s = this.shift(shiftId);
+        if (!s) return false;
+
+        if (this.hasShift(day, shiftId)) {
+            this.data.events = this.data.events.filter(
+                e => !(e.date === day && e.shift === shiftId));
+            this.save();
+            return false;
+        }
+        this.data.events.push({
+            id: uid(), date: day, title: s.name,
+            time: s.time || '', endTime: s.endTime || '',
+            note: '', label: s.label || null, shift: s.id,
+        });
+        this.save();
+        return true;
+    },
 
     /** 某一天的行程，有時間的排前面 */
     on(day) {
@@ -409,7 +477,7 @@ const Agenda = {
                     el('span', { class: 'day-count', text: this.dayLabel(day) }),
                 ]),
                 ...timed.map(r => r.kind === 'class'
-                    ? this.classRow(r.item)
+                    ? this.classRow(r.item, day)
                     : this.eventRow(r.item)),
                 ...todos.map(t => Todo.row(t)),
             ]));
@@ -591,20 +659,73 @@ const Agenda = {
      * 看到一件事卻不能動它，比改錯的風險真實得多。
      * 對話框上寫清楚「改的是課表，每個禮拜都會變」就夠了。
      */
-    classRow(c) {
+    /**
+     * 時間線上的一堂課。
+     *
+     * **點一下開的是「這一天的標記」，不是課表編輯。**
+     * 在某一天的畫面上看到一堂課，最常想做的事是「這週停課」或
+     * 「這次要交報告」，不是改整學期的上課時間——後者改一次會動到
+     * 每個禮拜，放在單日的畫面上很容易誤觸。要改課表，對話框裡有指路。
+     *
+     * @param day 這一列是哪一天。沒有的話（沒有日期脈絡）就退回改課表。
+     */
+    classRow(c, day) {
+        const mark = day ? Timetable.markFor(c.id, day) : null;
+        const off = !!mark?.off;
+
         return el('div', {
-            class: 'event-row class-row',
-            title: '課表裡的固定時段・點一下改或刪',
-            onclick: () => Timetable.editSlot(c),
+            class: 'event-row class-row' + (off ? ' off' : ''),
+            title: day ? '點一下標記這一天（停課、作業、要帶的東西）'
+                       : '課表裡的固定時段・點一下改或刪',
+            onclick: () => day ? this.editMark(c, day) : Timetable.editSlot(c),
         }, [
             el('div', { class: 'event-time', text: Timetable.whenText(c) }),
             el('div', { class: 'grow' }, [
                 el('div', { class: 'title ellipsis' }, [
-                    Prefs.dot(c.label), el('span', { text: c.name }),
+                    Prefs.dot(c.label),
+                    el('span', { text: c.name }),
+                    off ? el('span', { class: 'class-off-tag', text: '這次不用上' }) : null,
                 ]),
+                // 標記的內容直接寫在這裡。**要點開才看得到的提醒等於沒有提醒。**
+                mark?.text
+                    ? el('div', { class: 'meta class-note', text: mark.text })
+                    : null,
                 el('div', { class: 'meta ellipsis',
                     text: [c.place, c.teacher].filter(Boolean).join('　') || null }),
             ]),
         ]);
+    },
+
+    /** 標記某一天的某一堂課 */
+    editMark(c, day) {
+        const mark = Timetable.markFor(c.id, day);
+        const d = parseYmd(day);
+
+        $('#cm-title').textContent = c.name;
+        $('#cm-when').textContent =
+            `${d.getMonth() + 1}/${d.getDate()}（${'日一二三四五六'[d.getDay()]}）　`
+            + Timetable.whenText(c);
+        $('#cm-off').checked = !!mark?.off;
+        $('#cm-text').value = mark?.text || '';
+        $('#cm-clear').hidden = !mark;
+
+        const dlg = openDialog('#dlg-class-mark');
+
+        $('#cm-save').onclick = () => {
+            Timetable.setMark(c.id, day, {
+                off: $('#cm-off').checked,
+                text: $('#cm-text').value,
+            });
+            dlg.close();
+            this.render();
+            Overview.render();
+        };
+
+        $('#cm-clear').onclick = () => {
+            Timetable.setMark(c.id, day, { off: false, text: '' });
+            dlg.close();
+            this.render();
+            Overview.render();
+        };
     },
 };

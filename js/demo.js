@@ -185,6 +185,12 @@ function demoMoney() {
             { category: '日用品', limit: 1200 },
             { category: '衣服', limit: 1000 },
         ],
+        /* 總預算。兩個條件都要滿足，不然示範資料看起來像壞的：
+         * 比分類加起來（9,700）大——不然一打開就掛著一句
+         * 「分類加起來超過總預算」；也要比一個月的實際花費
+         * （房租 8,500 ＋ 日常 7,000 上下）大——不然月初打開就已經爆了，
+         * 「今天起每天可以用多少」這個主打的數字反而看不到。 */
+        totalBudgets: [{ limit: 20000 }],
         categories: {
             expense,
             income: [{ name: '打工' }, { name: '獎學金' }, { name: '家裡給的' }, { name: '其他' }],
@@ -359,7 +365,7 @@ const DEMO = {
  * 少一個欄位，前端就得到處寫 `?? []`，漏一個就整頁爆掉。 */
 const EMPTY_DATA = {
     記帳: {
-        accounts: [], transactions: [], subscriptions: [], budgets: [],
+        accounts: [], transactions: [], subscriptions: [], budgets: [], totalBudgets: [],
         categories: { expense: [], income: [] },
     },
     待辦: { items: [] },
