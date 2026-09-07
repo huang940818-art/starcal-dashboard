@@ -343,6 +343,31 @@ const Overview = {
      */
     renderWeather(grid) {
         const w = Weather.data;
+
+        /* **「不知道你在哪裡」跟「抓不到天氣」是兩件事。**
+         *
+         * 抓不到天氣就整張不畫，那是刻意的：一塊常駐的「載入失敗」
+         * 會變成每天都要看一次的雜訊，而它什麼忙也幫不上。
+         *
+         * 但不知道地點需要一個動作，**而唯一的入口就在這張卡上**——
+         * 不畫的話，時區猜不出城市的人（UTC、Etc/GMT+8、把時區設成
+         * UTC 的隱私瀏覽器）就永遠沒有天氣，而且不知道為什麼。 */
+        if (!Weather.place) {
+            grid.append(el('div', { class: 'card', 'data-hue': 'calendar' }, [
+                this.head('cloud', '今天的天氣',
+                    el('button', {
+                        class: 'btn small', text: '選地點',
+                        onclick: () => Weather.openPicker(),
+                    })),
+                el('div', { class: 'empty' }, [
+                    icon('cloud', 26), '還不知道你在哪裡',
+                    el('div', { class: 'hint',
+                                text: '從你的時區猜不出來。按右上角挑一個地方。' }),
+                ]),
+            ]));
+            return;
+        }
+
         if (!w) return;
 
         const d = Weather.describe(w.code);
