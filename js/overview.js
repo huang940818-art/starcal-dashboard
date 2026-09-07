@@ -704,6 +704,22 @@ const Overview = {
         ]));
     },
 
+    /**
+     * 一列額度右邊要寫什麼。
+     *
+     * **「0 / 0」是壞掉的長相。** 那發生在「這一類這個月已經超支，
+     * 所以今天推算出來沒有額度」——那是一句話，不是一個分數。
+     */
+    quotaValue(q) {
+        if (q.source === 'month' && q.limit <= 0) {
+            return el('span', { class: 'sub', text: '這個月的額度用完了' });
+        }
+        return el('span', {
+            class: 'money-num' + (q.left < 0 ? ' negative' : ''),
+            text: `${money(q.spent)} / ${money(q.limit)}`,
+        });
+    },
+
     /* ── 今天的收支 ────────────────────────────────────
      *
      * 總覽本來只有「這個月 −2,228」。那個數字回答不了
@@ -766,6 +782,37 @@ const Overview = {
             ]));
         }
 
+        /* ── 今天的額度 ──
+         *
+         * 她的原話：「我希望可以放在今日收支，比如支出食物 155/300 這種的」。
+         *
+         * 「花了 155」自己回答不了「還能不能再吃一餐」，要旁邊那個 300
+         * 才行。所以額度就貼在明細下面，不用切到別的地方。
+         */
+        const quotas = Money.todayQuotas();
+        const totalQ = Money.todayTotalQuota();
+        if (quotas.length || totalQ) {
+            body.push(el('div', { class: 'quota has-total' }, [
+                totalQ ? el('div', { class: 'quota-row strong' }, [
+                    el('span', { class: 'grow', text: '今天總共' }),
+                    el('span', {
+                        class: 'money-num' + (totalQ.left < 0 ? ' negative' : ''),
+                        text: `${money(totalQ.spent)} / ${money(totalQ.limit)}`,
+                    }),
+                ]) : null,
+                ...quotas.map(q => el('div', { class: 'quota-row' }, [
+                    el('span', { class: 'dot', style: `background:${Money.colorOf(q.category)}` }),
+                    el('span', { class: 'grow ellipsis', text: q.category }),
+                    // **要看得出這個額度是她定的還是我算的。** 兩個長得一樣的
+                    // 數字，一個是決定一個是推算，分不出來就沒辦法信任任何一個。
+                    q.source === 'month'
+                        ? el('span', { class: 'sub tiny', text: '照月預算' })
+                        : null,
+                    this.quotaValue(q),
+                ])),
+            ]));
+        }
+
         grid.append(el('div', { class: 'card', 'data-hue': 'money' }, [
             this.head('list', '今天的收支',
                 el('button', { class: 'btn primary small', text: '記一筆',
@@ -789,10 +836,10 @@ const Overview = {
     renderTodayBudget(grid) {
         const ym = thisMonth();
         const pace = Money.budgetPace(ym);
-        const cats = Money.budgetsFor(ym)
-            .filter(b => Number(b.limit) > 0)
-            .map(b => ({ name: b.category, p: Money.categoryPace(ym, b.category, b.limit) }))
-            .filter(c => c.p && c.p.isNow && c.p.perDayLeft !== null);
+        // 自己定的每日額度優先，沒定的才拿月預算推——跟「今天的收支」
+        // 那張同一套，兩張卡不該給出兩個不一樣的數字。
+        const quotas = Money.todayQuotas();
+        const totalQ = Money.todayTotalQuota();
 
         const head = this.head('budget', '今天的預算',
             el('button', {
@@ -800,7 +847,7 @@ const Overview = {
                 onclick: () => { showPanel('money'); Money.editBudgets(); },
             }));
 
-        if (!pace && !cats.length) {
+        if (!totalQ && !quotas.length) {
             grid.append(el('div', { class: 'card', 'data-hue': 'budget' }, [
                 head,
                 el('div', { class: 'empty' }, [
@@ -814,8 +861,9 @@ const Overview = {
 
         const body = [];
 
-        if (pace) {
-            if (pace.over) {
+        if (totalQ) {
+            // 這個月的總額已經沒了的話，「今天還能花多少」是騙人的
+            if (pace && pace.over && totalQ.source === 'month') {
                 // 這個月的總額已經沒了。**不要印一個「今天可以用 0」**，
                 // 那看起來像算壞了，而且它要講的是一句話不是一個數字。
                 body.push(
@@ -824,13 +872,13 @@ const Overview = {
                         text: `超出 ${money(pace.used - pace.limit)}`
                             + (pace.daysLeft > 0 ? `，還有 ${pace.daysLeft} 天` : '') }));
             } else {
-                const ratio = pace.perDayLeft ? pace.spentToday / pace.perDayLeft : 0;
+                const ratio = totalQ.limit ? totalQ.spent / totalQ.limit : 0;
                 body.push(
-                    el('div', { class: 'big money-num' + (pace.todayLeft < 0 ? ' negative' : ''),
-                                text: money(pace.todayLeft) }),
-                    el('div', { class: 'sub', text: pace.todayLeft < 0
-                        ? `今天超出了（額度 ${money(pace.perDayLeft)}，花了 ${money(pace.spentToday)}）`
-                        : `今天還可以花　額度 ${money(pace.perDayLeft)}，花了 ${money(pace.spentToday)}` }),
+                    el('div', { class: 'big money-num' + (totalQ.left < 0 ? ' negative' : ''),
+                                text: money(totalQ.left) }),
+                    el('div', { class: 'sub', text: (totalQ.left < 0 ? '今天超出了　' : '今天還可以花　')
+                        + `${money(totalQ.spent)} / ${money(totalQ.limit)}`
+                        + (totalQ.source === 'month' ? '（照月預算算的）' : '') }),
                     el('div', { class: 'track', style: 'margin-top:12px' }, [
                         el('div', {
                             class: 'fill' + (ratio > 1 ? ' over' : ratio > 0.8 ? ' warn' : ''),
@@ -840,22 +888,18 @@ const Overview = {
             }
         }
 
-        if (cats.length) {
-            const shown = cats.slice(0, 6);
-            body.push(el('div', { class: 'quota' + (pace ? ' has-total' : '') },
-                shown.map(c => el('div', { class: 'quota-row' }, [
-                    el('span', { class: 'dot', style: `background:${Money.colorOf(c.name)}` }),
-                    el('span', { class: 'grow ellipsis', text: c.name }),
-                    el('span', {
-                        class: 'money-num' + (c.p.todayLeft < 0 ? ' negative' : ' sub'),
-                        text: c.p.todayLeft < 0
-                            ? `超出 ${money(-c.p.todayLeft)}`
-                            : money(c.p.todayLeft),
-                    }),
+        if (quotas.length) {
+            const shown = quotas.slice(0, 6);
+            body.push(el('div', { class: 'quota' + (totalQ ? ' has-total' : '') },
+                shown.map(q => el('div', { class: 'quota-row' }, [
+                    el('span', { class: 'dot', style: `background:${Money.colorOf(q.category)}` }),
+                    el('span', { class: 'grow ellipsis', text: q.category }),
+                    q.source === 'month' ? el('span', { class: 'sub tiny', text: '照月預算' }) : null,
+                    this.quotaValue(q),
                 ]))));
-            if (cats.length > shown.length) {
+            if (quotas.length > shown.length) {
                 body.push(el('div', { class: 'sub', style: 'margin-top:8px',
-                    text: `還有 ${cats.length - shown.length} 類` }));
+                    text: `還有 ${quotas.length - shown.length} 類` }));
             }
         }
 

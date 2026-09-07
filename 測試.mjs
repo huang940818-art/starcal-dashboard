@@ -806,6 +806,84 @@ test('今天花超過額度，剩下的是負的（要看得見）', () => {
     assert.equal(p.todayLeft, p.perDayLeft - 900);
 });
 
+/* ── 自己定的每日預算 ──────────────────────────────────
+ *
+ * 她的原話：「今日預算沒有補上，你給的是這個月的，我希望可以放在
+ * 今日收支，比如支出食物 155/300 這種的，還要可以自訂」。
+ *
+ * **月預算除以天數是推算，自己定一天 300 是決定。** 兩件事。
+ */
+
+test('自己定的每日額度優先，而且標成 daily', () => {
+    const m = setup({
+        budgets: [{ category: '餐飲', limit: 9000 }],       // 月的，一天 300 上下
+        dailyBudgets: [{ category: '餐飲', limit: 300 }],
+        transactions: [{ id: 't1', date: ymd(), kind: 'expense', amount: 155,
+                         category: '餐飲', account: '現金' }],
+    });
+    const q = m.todayQuota('餐飲');
+    assert.equal(q.limit, 300, '要用她定的那個，不是月預算除出來的');
+    assert.equal(q.spent, 155);
+    assert.equal(q.left, 145);
+    assert.equal(q.source, 'daily', '來源要標出來——她定的和我算的不能長得一樣');
+});
+
+test('沒自己定的就退回月預算去推，標成 month', () => {
+    const m = setup({
+        budgets: [{ category: '餐飲', limit: 3000 }],
+        dailyBudgets: [],
+    });
+    const q = m.todayQuota('餐飲');
+    assert.equal(q.source, 'month');
+    assert.equal(q.limit, m.categoryPace(thisMonthStr, '餐飲', 3000).perDayLeft);
+});
+
+test('兩種都沒有就是沒有額度，不要編一個出來', () => {
+    const m = setup({ budgets: [], dailyBudgets: [] });
+    assert.equal(m.todayQuota('餐飲'), null);
+});
+
+test('今天花超過自己定的額度，剩下的是負的', () => {
+    const m = setup({
+        dailyBudgets: [{ category: '餐飲', limit: 300 }],
+        transactions: [{ id: 't1', date: ymd(), kind: 'expense', amount: 420,
+                         category: '餐飲', account: '現金' }],
+    });
+    const q = m.todayQuota('餐飲');
+    assert.equal(q.left, -120, '超出多少要看得見');
+});
+
+test('一天總共可以花多少，也是自己定的優先', () => {
+    const m = setup({
+        totalBudgets: [{ limit: 30000 }],
+        dailyTotal: 800,
+        transactions: [{ id: 't1', date: ymd(), kind: 'expense', amount: 155,
+                         category: '餐飲', account: '現金' }],
+    });
+    const q = m.todayTotalQuota();
+    assert.equal(q.limit, 800);
+    assert.equal(q.spent, 155);
+    assert.equal(q.left, 645);
+    assert.equal(q.source, 'daily');
+});
+
+test('每日額度照分類清單的順序，位置每天不會跳', () => {
+    // 照金額或超支排的話，每天都要重新找一次「吃的在哪一行」
+    const m = setup({
+        dailyBudgets: [{ category: '房租', limit: 100 }, { category: '餐飲', limit: 300 }],
+    });
+    assert.deepEqual(m.todayQuotas().map(q => q.category), ['餐飲', '房租'],
+        '要照 categories.expense 的順序，不是照 dailyBudgets 存的順序');
+});
+
+test('有沒有自己定過每日預算，查得出來', () => {
+    assert.equal(setup({ dailyBudgets: [], dailyTotal: null }).hasDailyBudget(), false);
+    assert.equal(setup({ dailyBudgets: [{ category: '餐飲', limit: 300 }] }).hasDailyBudget(), true);
+    assert.equal(setup({ dailyTotal: 800 }).hasDailyBudget(), true);
+    assert.equal(setup({ dailyBudgets: [{ category: '餐飲', limit: 0 }] }).hasDailyBudget(), false,
+        '填 0 等於沒填');
+});
+
 /* ── 分類也有今天的額度 ────────────────────────────────
  *
  * 她的原話：「沒有分類，比如今天的預算，吃的、交通這種」。

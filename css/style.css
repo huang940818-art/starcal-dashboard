@@ -961,6 +961,19 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 
 /* 分類的色點。**顏色照分類在清單裡的位置給**（見 money.js 的 colorOf），
  * 所以每天打開，吃的永遠是同一個顏色。 */
+/* 「今天總共」那一列比分類重一點 */
+.quota-row.strong { font-weight: 600; }
+
+/* 「照月預算」那個小標——要看得出這個額度是算的不是她定的，
+ * 但不能搶走數字。 */
+.quota-row .tiny {
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 999px;
+    background: var(--raised);
+    white-space: nowrap;
+}
+
 .quota-row .dot {
     width: 8px;
     height: 8px;

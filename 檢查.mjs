@@ -504,7 +504,10 @@ const guard = (p, what, ms = 5000) => Promise.race([
 
       // 某個月另外設，不能把平常那份洗掉
       q('#edit-budgets').click(); await sleep(180);
-      const scopeBtns = document.querySelectorAll('#budget-scope .view-btn');
+      // #budget-scope 現在有兩排切換（每個月／每天，再來才是平常／單月），
+      // 所以要挑文字，不能數個數
+      const scopeBtns = [...document.querySelectorAll('#budget-scope .view-btn')]
+        .filter(b => b.textContent === '平常' || b.textContent.startsWith('只有'));
       ok('預算對話框有平常/單月兩個切換', scopeBtns.length === 2, scopeBtns.length + ' 個');
       if (scopeBtns.length === 2) {
         scopeBtns[1].click(); await sleep(120);
@@ -640,6 +643,114 @@ const guard = (p, what, ms = 5000) => Promise.race([
       }
     }
 
+    // ── 自己定的每日預算 ──
+    //
+    // 她的原話：「今日預算沒有補上，你給的是這個月的，我希望可以放在
+    // 今日收支，比如支出食物 155/300 這種的，還要可以自訂」。
+    {
+      await tab('money');
+      const keep = JSON.stringify(Money.data);
+      const cat = Money.data.categories.expense[0].name;
+      const today = new Date().toISOString().slice(0, 10);
+
+      Money.data.accounts = [{ id: 'db1', name: '甲', kind: 'cash', opening: 9999,
+                               includeInTotal: true, order: 0 }];
+      Money.data.transactions = [
+        { id: 'db-t1', date: today, kind: 'expense', amount: 155, category: cat,
+          account: '甲', note: '午餐' },
+      ];
+      Money.data.budgets = [];
+      Money.data.totalBudgets = [];
+      Money.data.dailyBudgets = [];
+      Money.data.dailyTotal = null;
+      Money.save(); Money.render(); await sleep(200);
+
+      // 對話框要有「每個月／每天」兩頁
+      q('#edit-budgets').click(); await sleep(220);
+      const units = [...document.querySelectorAll('#budget-scope .view-btn')];
+      const dayBtn = units.find(b => b.textContent === '每天');
+      ok('預算設定有「每天」那一頁', !!dayBtn, units.map(b => b.textContent).join('/'));
+
+      if (dayBtn) {
+        dayBtn.click(); await sleep(200);
+        ok('每天那頁有「一天總共可以花」', !!q('#b-daily-total'));
+        const catInputs = document.querySelectorAll('#budget-fields input[data-daily-cat]');
+        ok('每天那頁列得出分類', catInputs.length > 0, catInputs.length + ' 個');
+
+        // 切到每天之後，月的那組欄位不該還留著——兩組數字混在一頁，
+        // 隔一天就分不出哪個是月哪個是日
+        ok('切到每天就看不到月的欄位',
+           document.querySelectorAll('#budget-fields input[data-cat]').length === 0);
+
+        q('#b-daily-total').value = '700';
+        catInputs[0].value = '300';
+        q('#b-save').click(); await sleep(320);
+
+        ok('每天的預算存得進去',
+           Money.dailyTotalLimit() === 700 && Money.dailyLimitFor(cat) === 300,
+           JSON.stringify([Money.data.dailyTotal, Money.data.dailyBudgets]));
+
+        // **重點：她要的格式是「155 / 300」，而且要在「今天的收支」上**
+        await tab('overview'); await sleep(280);
+        const todayCard = [...document.querySelectorAll('#overview-grid .card')]
+          .find(c => c.textContent.includes('今天的收支'));
+        ok('「今天的收支」上看得到 花了/額度', !!todayCard
+           && todayCard.textContent.includes('155 / 300'),
+           todayCard ? todayCard.textContent.slice(0, 90) : '沒有那張卡');
+        ok('今天總共也是同一個格式',
+           !!todayCard && todayCard.textContent.includes('155 / 700'),
+           todayCard ? todayCard.textContent.slice(0, 90) : '');
+
+        // 沒自己定的分類要標「照月預算」，不能跟她定的長得一樣
+        Money.data.budgets = [{ category: Money.data.categories.expense[1].name, limit: 3000 }];
+        Money.save(); Overview.render(); await sleep(280);
+        const card2 = [...document.querySelectorAll('#overview-grid .card')]
+          .find(c => c.textContent.includes('今天的收支'));
+        ok('沒自己定的那幾類標成「照月預算」',
+           !!card2 && card2.textContent.includes('照月預算'),
+           card2 ? card2.textContent.slice(0, 110) : '');
+
+        // 「0 / 0」是壞掉的長相。那發生在這一類這個月已經超支、
+        // 今天推算不出額度的時候——那是一句話不是一個分數。
+        const other = Money.data.categories.expense[1].name;
+        // **那筆要記在今天以前。** 記在今天的話它算「今天花的」，
+        // 而今天的額度是拿「今天以前」算的——額度不會歸零，
+        // 造不出要驗的情況。第一次寫這條就是這樣自己騙自己的。
+        const first = today.slice(0, 8) + '01';
+        if (first !== today) {
+          Money.data.transactions.push({ id: 'db-over', date: first, kind: 'expense',
+            amount: 99999, category: other, account: '甲' });
+          Money.save(); Overview.render(); await sleep(280);
+          const card2b = [...document.querySelectorAll('#overview-grid .card')]
+            .find(c => c.textContent.includes('今天的收支'));
+          ok('月預算爆掉的那一類不會印 0 / 0',
+             !!card2b && !card2b.textContent.includes('0 / 0')
+             && card2b.textContent.includes('額度用完了'),
+             card2b ? card2b.textContent.slice(0, 120) : '');
+          Money.data.transactions = Money.data.transactions.filter(t => t.id !== 'db-over');
+          Money.save(); Overview.render(); await sleep(220);
+        } else {
+          ok('月預算爆掉那條今天驗不到（今天是 1 號，沒有「今天以前」）', true);
+        }
+
+        // 花超過自己定的額度要變紅
+        Money.data.transactions.push({ id: 'db-t2', date: today, kind: 'expense',
+          amount: 400, category: cat, account: '甲' });
+        Money.save(); Overview.render(); await sleep(280);
+        const q3 = Money.todayQuota(cat);
+        ok('花超過自己定的額度，剩下的是負的', q3.left === 300 - 555, String(q3.left));
+        const card3 = [...document.querySelectorAll('#overview-grid .card')]
+          .find(c => c.textContent.includes('今天的收支'));
+        ok('超出的那一列是紅的',
+           !!card3 && !!card3.querySelector('.quota-row .negative'),
+           card3 ? card3.textContent.slice(0, 90) : '');
+      }
+
+      if (q('#dlg-budget').open) q('#dlg-budget').close();
+      Money.data = JSON.parse(keep);
+      Money.save(); Money.render(); Overview.render(); await sleep(200);
+    }
+
     // ── 總覽上的「今天的預算」──
     //
     // 記帳那頁的預算卡回答「這個月」，站在超商前面要的是「今天還能花多少」。
@@ -675,9 +786,9 @@ const guard = (p, what, ms = 5000) => Promise.race([
       ok('主角是「今天還可以花」那個數字',
          !!card() && card().textContent.includes(Math.round(p.todayLeft).toLocaleString('zh-TW')),
          card() ? card().textContent.slice(0, 60) : '');
-      ok('額度和今天花掉的都寫出來',
-         !!card() && card().textContent.includes('額度')
-         && card().textContent.includes('200'),
+      // 格式統一成她要的「花了 / 額度」（原話：支出食物 155/300 這種的）
+      ok('額度和今天花掉的寫成 花了/額度',
+         !!card() && card().textContent.includes('200 / '),
          card() ? card().textContent.slice(0, 70) : '');
 
       // 分類的今天額度
@@ -689,11 +800,12 @@ const guard = (p, what, ms = 5000) => Promise.race([
       ok('分類有色點，每天位置和顏色都不會跳',
          !!card() && !!card().querySelector('.quota-row .dot'));
 
-      // 分類今天花超過：要看得見，而且是紅的
+      // 分類今天花超過：數字照樣是「花了/額度」，但整列變紅——
+      // 她要的是同一個格式，超支不該換一種講法讓人重新讀一次
       Money.data.budgets = [{ category: cat, limit: 300 }];
       Money.save(); Overview.render(); await sleep(250);
-      ok('分類今天超出的話講「超出」不是印 0',
-         !!card() && card().textContent.includes('超出'),
+      ok('分類今天超出的話那一列是紅的',
+         !!card() && !!card().querySelector('.quota-row .negative'),
          card() ? card().textContent.slice(0, 90) : '');
 
       // 同一個數字不要在同一頁講兩次

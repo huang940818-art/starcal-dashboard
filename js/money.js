@@ -154,6 +154,14 @@ const Money = {
         // 的話，每一支照分類跑的迴圈都要記得跳過它——漏一個地方，
         // 總預算就會變成一個叫「」的分類混在畫面上。
         d.totalBudgets ??= [];
+        /* 每天的預算。**跟月預算是兩件事，不是同一個數字換算。**
+         *
+         * 月預算除以天數推算得出「今天大概可以用多少」，但她要的是
+         * 自己定「吃的一天最多 300」——那是一個決定，不是一個除法。
+         * 兩個並存：有自訂的就用自訂的，沒有的才退回月預算去推。
+         */
+        d.dailyBudgets ??= [];      // [{ category, limit }]
+        d.dailyTotal ??= null;      // 一天總共可以花多少
         d.categories ??= { expense: [], income: [] };
         // 分類原本可能只是字串陣列，補上「固定／彈性」這個性質
         d.categories.expense = (d.categories.expense ?? []).map(
@@ -456,6 +464,82 @@ const Money = {
         const isNow = ym === thisMonth();
         return this.pace(ym, limit, this.monthSummary(ym).expense,
                          isNow ? this.dayFlow().expense : 0);
+    },
+
+    /* ── 每天的預算（自己定的）────────────────────────
+     *
+     * 她的原話：「今日預算沒有補上，你給的是這個月的，我希望可以放在
+     * 今日收支，比如支出食物 155/300 這種的，還要可以自訂」。
+     */
+
+    /** 這一類每天的額度（自己定的）。沒定就是 null。 */
+    dailyLimitFor(category) {
+        const row = (this.data.dailyBudgets ?? []).find(b => b.category === category);
+        const n = Number(row?.limit) || 0;
+        return n > 0 ? n : null;
+    },
+
+    /** 一天總共可以花多少（自己定的）。沒定就是 null。 */
+    dailyTotalLimit() {
+        const n = Number(this.data.dailyTotal) || 0;
+        return n > 0 ? n : null;
+    },
+
+    hasDailyBudget() {
+        return !!this.dailyTotalLimit()
+            || (this.data.dailyBudgets ?? []).some(b => Number(b.limit) > 0);
+    },
+
+    /**
+     * 今天這一類的額度和花掉的。
+     *
+     * **自己定的優先，沒定的才拿月預算去推。** 兩種都要能講出來源，
+     * 不然畫面上兩個長得一樣的數字，一個是她決定的、一個是我算的，
+     * 分不出來就沒辦法信任任何一個。
+     *
+     * @returns null＝這一類既沒自訂也沒有月預算，沒有額度可講
+     */
+    todayQuota(category) {
+        const spent = this.dayCategoryExpense(category);
+
+        const own = this.dailyLimitFor(category);
+        if (own !== null) {
+            return { category, limit: own, spent, left: own - spent, source: 'daily' };
+        }
+
+        const month = this.budgetsFor(thisMonth())
+            .find(b => b.category === category && Number(b.limit) > 0);
+        if (!month) return null;
+
+        const p = this.categoryPace(thisMonth(), category, month.limit);
+        if (!p || !p.isNow || p.perDayLeft === null) return null;
+        return {
+            category, limit: p.perDayLeft, spent, left: p.todayLeft, source: 'month',
+        };
+    },
+
+    /** 今天總共的額度和花掉的。規則同上。 */
+    todayTotalQuota() {
+        const spent = this.dayFlow().expense;
+
+        const own = this.dailyTotalLimit();
+        if (own !== null) {
+            return { limit: own, spent, left: own - spent, source: 'daily' };
+        }
+
+        const p = this.budgetPace(thisMonth());
+        if (!p || !p.isNow || p.perDayLeft === null) return null;
+        return { limit: p.perDayLeft, spent, left: p.todayLeft, source: 'month' };
+    },
+
+    /** 今天有額度可以講的那幾類。**照分類清單的順序**，位置每天不動。 */
+    todayQuotas() {
+        const out = [];
+        for (const c of this.data.categories.expense) {
+            const q = this.todayQuota(c.name);
+            if (q) out.push(q);
+        }
+        return out;
     },
 
     /** 某一天某個分類花了多少 */
@@ -1934,11 +2018,32 @@ const Money = {
         const days = daysInMonth(ym);
         // 這個月已經有自己的一套就直接編那一套，不然先編平常的
         let scope = this.hasOwnBudget(ym) || this.hasOwnTotalBudget(ym) ? ym : '';
+        /* 現在在編月的還是日的。
+         *
+         * **兩組數字不能混在同一頁。** 「飲食 5000」和「飲食 300」
+         * 擺在一起，隔一天就分不出哪個是月哪個是日了。 */
+        let unit = this.hasDailyBudget() ? 'day' : 'month';
 
         const draw = () => {
             clear(scopeBox);
             clear(totalBox);
             clear(box);
+
+            scopeBox.append(el('div', { class: 'view-switch', style: 'margin-bottom:14px' }, [
+                el('button', {
+                    type: 'button', class: 'view-btn' + (unit === 'month' ? ' on' : ''),
+                    text: '每個月', onclick: () => { unit = 'month'; draw(); },
+                }),
+                el('button', {
+                    type: 'button', class: 'view-btn' + (unit === 'day' ? ' on' : ''),
+                    text: '每天', onclick: () => { unit = 'day'; draw(); },
+                }),
+            ]));
+
+            if (unit === 'day') {
+                this.drawDailyFields(scopeBox, totalBox, box);
+                return;
+            }
 
             scopeBox.append(el('div', { class: 'view-switch', style: 'margin-bottom:14px' }, [
                 el('button', {
@@ -2020,6 +2125,8 @@ const Money = {
         const dlg = openDialog('#dlg-budget');
 
         $('#b-save').onclick = () => {
+            if (unit === 'day') return this.saveDailyBudgets(dlg);
+
             // **只挑有 data-cat 的。** 總預算那格也在這個對話框裡，
             // 掃進來的話會變成一個名字是 undefined 的分類。
             const rows = $$('#budget-fields input[data-cat]')
@@ -2045,6 +2152,69 @@ const Money = {
             Overview.render();
             toast(scope ? `${Number(mm)} 月的預算存好了` : '預算存好了');
         };
+    },
+
+    /**
+     * 「每天」那一頁的欄位。
+     *
+     * 留白不是 0，是「這一類沒有自己的每日額度」——那時候會退回
+     * 月預算去推算（畫面上會標成「照月預算算的」）。**這件事一定要
+     * 寫在提示裡**，不然留白看起來像「不設限」。
+     */
+    drawDailyFields(scopeBox, totalBox, box) {
+        scopeBox.append(el('p', { class: 'sub', style: 'margin:-6px 0 12px' },
+            '自己定「一天最多花多少」。留白的分類會拿月預算除以剩下的天數'
+            + '去推，畫面上會標出來哪個是你定的、哪個是算的。'));
+
+        const totalInput = el('input', {
+            type: 'number', min: '0', step: '50', id: 'b-daily-total',
+            value: this.dailyTotal ?? this.data.dailyTotal ?? '',
+            placeholder: '照月預算算',
+        });
+        totalBox.append(
+            el('label', { class: 'field' }, [
+                el('span', { text: '一天總共可以花' }),
+                totalInput,
+            ]),
+            el('div', { class: 'section-title', text: '分類（一天）' }));
+
+        for (const c of this.data.categories.expense) {
+            const own = this.dailyLimitFor(c.name);
+            // 月預算推出來的數字寫在提示裡，她才知道留白會拿到什麼
+            const month = this.budgetsFor(thisMonth())
+                .find(b => b.category === c.name && Number(b.limit) > 0);
+            const guess = month
+                ? this.categoryPace(thisMonth(), c.name, month.limit)?.perDayLeft
+                : null;
+
+            box.append(el('label', { class: 'field' }, [
+                el('span', {}, [
+                    c.name, ' ',
+                    el('span', { class: 'tag ' + (c.nature || 'flexible'),
+                                 text: c.nature === 'fixed' ? '固定' : '彈性' }),
+                ]),
+                el('input', {
+                    type: 'number', min: '0', step: '10', 'data-daily-cat': c.name,
+                    value: own ?? '',
+                    placeholder: guess ? `照月預算算是 ${money(guess)}` : '沒有額度',
+                }),
+            ]));
+        }
+    },
+
+    saveDailyBudgets(dlg) {
+        const rows = $$('#budget-fields input[data-daily-cat]')
+            .map(i => ({ category: i.dataset.dailyCat, limit: Number(i.value) || 0 }))
+            .filter(b => b.limit > 0);
+
+        this.data.dailyBudgets = rows;
+        this.data.dailyTotal = Number($('#b-daily-total').value) || null;
+
+        this.save();
+        dlg.close();
+        this.render();
+        Overview.render();
+        toast(rows.length || this.data.dailyTotal ? '每天的預算存好了' : '每天的預算清掉了');
     },
 
     /** 自訂分類。寫死的分類遲早會缺一個，缺了就只能記到「其他」。 */

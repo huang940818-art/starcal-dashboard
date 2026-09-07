@@ -74,6 +74,9 @@ EMPTY = {
         "budgets": [],
         # 總預算（一個月總共可以花多少）跟分類預算分開放
         "totalBudgets": [],
+        # 每天的預算是另一件事，不是月預算除以天數
+        "dailyBudgets": [],
+        "dailyTotal": None,
         "categories": {"expense": [], "income": []},
     },
     "待辦": {"items": []},

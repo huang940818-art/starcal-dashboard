@@ -191,6 +191,13 @@ function demoMoney() {
          * （房租 8,500 ＋ 日常 7,000 上下）大——不然月初打開就已經爆了，
          * 「今天起每天可以用多少」這個主打的數字反而看不到。 */
         totalBudgets: [{ limit: 20000 }],
+        // 示範一組自己定的每日額度。**不是每一類都給**——留幾類空的，
+        // 才看得到「照月預算算的」那個標記長什麼樣。
+        dailyBudgets: [
+            { category: '餐飲', limit: 300 },
+            { category: '交通', limit: 100 },
+        ],
+        dailyTotal: 700,
         categories: {
             expense,
             income: [{ name: '打工' }, { name: '獎學金' }, { name: '家裡給的' }, { name: '其他' }],
@@ -366,6 +373,7 @@ const DEMO = {
 const EMPTY_DATA = {
     記帳: {
         accounts: [], transactions: [], subscriptions: [], budgets: [], totalBudgets: [],
+        dailyBudgets: [], dailyTotal: null,
         categories: { expense: [], income: [] },
     },
     待辦: { items: [] },
