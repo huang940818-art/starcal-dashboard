@@ -130,12 +130,77 @@ const Overview = {
         for (const id of this.savedOrder()) {
             const node = drawn.get(id);
             if (!node) continue;
-            grid.append(this.arranging ? this.wrapForArrange(id, node) : node);
+            if (this.arranging) {
+                grid.append(this.wrapForArrange(id, node));
+            } else {
+                this.armLongPress(node);     // 長按這張卡就進排版
+                grid.append(node);
+            }
         }
 
         // 排版的時候，關掉的那幾張列在最下面——**看不到的東西沒辦法被打開**，
         // 沒有這一排的話，關掉一張卡就等於永遠關掉了。
         if (this.arranging) this.renderOffShelf(grid);
+        else this.renderArrangeHint(grid);
+
+        this.syncArrangeButton();
+    },
+
+    /* ── 怎麼進排版 ────────────────────────────────────
+     *
+     * 本來頂上掛著一顆「排版」按鈕。她的原話：「排版的按鈕有點醜，
+     * 有沒有辦法隱藏　可能長按某個卡片拖動這樣比較好」。
+     *
+     * 所以按鈕平常不出現了，改成**長按任何一張卡**進去。
+     * 代價是這件事變得看不見——所以還沒排過版的人，格子底下留一行
+     * 很淡的字說明。排過一次就不再出現：她已經知道了，畫面就該乾淨。
+     */
+    arrangedBefore() {
+        return Array.isArray(Prefs.data?.overviewOrder)
+            || Array.isArray(Prefs.data?.overviewOff);
+    },
+
+    renderArrangeHint(grid) {
+        if (this.arrangedBefore()) return;
+        grid.append(el('div', { class: 'arrange-hint',
+                                text: '長按任一張卡可以重新排列' }));
+    },
+
+    /**
+     * 長按進排版模式。
+     *
+     * **按住不動 500 毫秒才算**，手指動超過 10px 就取消——不然在手機上
+     * 捲動頁面時手指本來就壓在卡片上，一捲就跳進排版模式。
+     *
+     * 按在按鈕、輸入框、連結上不算。那些地方本來就有自己的事要做，
+     * 長按它們進排版會讓人以為按壞了。
+     */
+    armLongPress(node) {
+        let timer = null, x0 = 0, y0 = 0;
+        const cancel = () => { clearTimeout(timer); timer = null; };
+
+        node.addEventListener('pointerdown', e => {
+            if (e.target.closest('button, a, input, textarea, select, label')) return;
+            if (e.button !== 0 && e.pointerType === 'mouse') return;
+            x0 = e.clientX; y0 = e.clientY;
+            timer = setTimeout(() => {
+                timer = null;
+                navigator.vibrate?.(15);      // 有震動的機器上給一下回饋
+                this.arranging = true;
+                this.render();
+                // 捲到剛剛按住的那張卡，不然重畫之後她會不知道自己在哪
+                node.scrollIntoView?.({ block: 'nearest' });
+            }, 500);
+        });
+
+        node.addEventListener('pointermove', e => {
+            if (timer && Math.hypot(e.clientX - x0, e.clientY - y0) > 10) cancel();
+        });
+        node.addEventListener('pointerup', cancel);
+        node.addEventListener('pointercancel', cancel);
+        // 捲動一開始就取消。手機上 pointermove 有時候會被捲動吃掉，
+        // 只靠上面那條會漏。
+        node.addEventListener('scroll', cancel, true);
     },
 
     /** 排版模式最下面那一排「還沒放上去的」 */
@@ -188,12 +253,20 @@ const Overview = {
         this.syncArrangeButton();
     },
 
+    /**
+     * 那顆按鈕**只在排版模式裡出現**，而且只有一個意思：「好了」。
+     *
+     * 進去的路是長按卡片，所以平常整條工具列都收起來——
+     * 一顆一輩子用不到五次的按鈕不該每天都掛在最上面。
+     */
     syncArrangeButton() {
         const b = $('#arrange-cards');
         if (!b) return;
-        b.textContent = this.arranging ? '好了' : '排版';
-        b.classList.toggle('primary', this.arranging);
+        b.textContent = '好了';
+        b.classList.add('primary');
         b.setAttribute('aria-pressed', String(this.arranging));
+        const tools = b.closest('.overview-tools') || b.parentElement;
+        if (tools) tools.hidden = !this.arranging;
     },
 
     /** 把一張卡包起來，上面加一條「上／下」的工具列 */
@@ -202,8 +275,12 @@ const Overview = {
         const order = this.savedOrder().filter(x => this.shown.has(x));
         const at = order.indexOf(id);
 
-        const wrap = el('div', { class: 'arrange' + (card?.wide ? ' wide' : '') }, [
+        const wrap = el('div', { class: 'arrange' + (card?.wide ? ' wide' : ''),
+                                 'data-card-id': id }, [
             el('div', { class: 'arrange-bar' }, [
+                // 這條 bar 就是拖曳的把手。**只有它 touch-action: none**——
+                // 整張卡都設成 none 的話，排版模式裡就捲不動頁面了。
+                el('span', { class: 'grip', 'aria-hidden': 'true', text: '⠿' }),
                 el('span', { class: 'arrange-name', text: card?.name || id }),
                 el('button', {
                     class: 'btn small ghost', type: 'button', text: '↑',
@@ -226,7 +303,106 @@ const Overview = {
             ]),
             node,
         ]);
+        this.makeSortable(wrap);
         return wrap;
+    },
+
+    /* ── 拖著換位置 ────────────────────────────────────
+     *
+     * 箭頭留著（桌機、精準、看得懂哪一顆在做什麼），拖曳是給手機的。
+     *
+     * **不做「卡片跟著手指跑」的動畫。** 那要處理 transform 和 DOM
+     * 位置同時變動，很容易對不齊；而換位置本身即時看得到，
+     * 已經回答了「我現在會放到哪」。
+     */
+    makeSortable(wrap) {
+        const bar = wrap.querySelector('.arrange-bar');
+
+        bar.addEventListener('pointerdown', e => {
+            if (e.target.closest('button')) return;       // 箭頭和 ✕ 不算拖
+            if (e.button !== 0 && e.pointerType === 'mouse') return;
+
+            wrap.classList.add('dragging');
+            // 沒有 capture 也拖得動（只是手指滑出 bar 之後會斷），
+            // 但沒有 capture 就丟例外會讓整個拖曳掛掉，所以包起來
+            try { bar.setPointerCapture(e.pointerId); } catch { /* 沒抓到就算了 */ }
+            e.preventDefault();
+        });
+
+        bar.addEventListener('pointermove', e => {
+            if (!wrap.classList.contains('dragging')) return;
+
+            // 手指底下是哪一張卡。被拖的那張自己不算（它就在手指下面），
+            // 所以先讓它不吃 hit-test。
+            wrap.style.pointerEvents = 'none';
+            const under = document.elementFromPoint(e.clientX, e.clientY)
+                ?.closest('.arrange');
+            wrap.style.pointerEvents = '';
+
+            if (under && under !== wrap && under.parentNode === wrap.parentNode) {
+                // 往上拖就插在它前面，往下拖就插在它後面
+                const rect = under.getBoundingClientRect();
+                const after = e.clientY > rect.top + rect.height / 2;
+                under.parentNode.insertBefore(wrap, after ? under.nextSibling : under);
+            }
+
+            this.edgeScroll(e.clientY);
+        });
+
+        const end = e => {
+            if (!wrap.classList.contains('dragging')) return;
+            wrap.classList.remove('dragging');
+            bar.releasePointerCapture?.(e.pointerId);
+            this.stopEdgeScroll();
+            this.saveDomOrder();
+            /* **拖完要重畫。** DOM 順序是拖出來的，但箭頭的「按不按得動」
+             * 是畫的時候算好的——不重畫的話，搬到最前面那張的「往前」
+             * 還是亮的，按下去什麼都不會發生。 */
+            this.render();
+        };
+
+        bar.addEventListener('pointerup', end);
+        bar.addEventListener('pointercancel', end);
+    },
+
+    /**
+     * 拖到畫面上下緣就自己捲。
+     *
+     * 沒有這個的話，卡片比一個螢幕多的時候，最下面那張永遠拖不到最上面——
+     * 手指一離開螢幕邊緣拖曳就結束了。
+     */
+    edgeScroll(y) {
+        const EDGE = 90, STEP = 12;
+        const up = y < EDGE, down = y > innerHeight - EDGE;
+        if (!up && !down) return this.stopEdgeScroll();
+        if (this.scrollTimer) return;
+        this.scrollTimer = setInterval(() => scrollBy(0, up ? -STEP : STEP), 16);
+    },
+
+    stopEdgeScroll() {
+        clearInterval(this.scrollTimer);
+        this.scrollTimer = null;
+    },
+
+    /**
+     * 把畫面上現在的順序寫回設定。
+     *
+     * 讀 DOM 而不是自己記一份陣列：拖曳過程改的就是 DOM，
+     * 兩邊各記一份遲早會不一樣，而且不一樣的時候沒有人會發現。
+     *
+     * 跟 `move()` 一樣，**只重排「這次有出現的那幾張」**，
+     * 沒出現的卡片留在完整清單裡原本的位置上。
+     */
+    saveDomOrder() {
+        const grid = $('#overview-grid');
+        if (!grid) return;
+        const next = [...grid.querySelectorAll('.arrange[data-card-id]')]
+            .map(n => n.dataset.cardId);
+
+        const full = this.savedOrder();
+        let i = 0;
+        Prefs.data.overviewOrder = full.map(x => this.shown.has(x) ? next[i++] ?? x : x);
+        Prefs.save();
     },
 
     /**
@@ -915,13 +1091,41 @@ const Overview = {
     },
 
     /** 總覽上的「接下來」：今天和明天，行程和待辦混在一起。 */
+    /**
+     * 今天的這件事**還沒過**嗎。
+     *
+     * 她的原話：「為什麼已經過時間的行程還在我的接下來」——晚上七點多
+     * 打開，最上面掛著下午 3:30 的羽毛球，把真正接下來的明天早班擠下去。
+     * 「接下來」這張卡如果會列已經發生完的事，它就不是接下來了。
+     *
+     * **沒填結束時間的，開始時間過了就算過了。** 這裡不給緩衝——
+     * 「再留 30 分鐘」那個 30 是憑空的數字，說不出理由。
+     * 真的想讓一件事留到幾點，行程本來就填得了結束時間，
+     * 那是她說了算的，不是我猜的。
+     *
+     * 整天的行程（沒有時間）不算過期，一整天都還在。
+     */
+    stillAhead(e, nowHM) {
+        if (!e.time) return true;                  // 整天的
+        return (e.endTime || e.time) > nowHM;
+    },
+
     renderUpcoming(grid) {
         const today = todayStr();
         const tomorrow = ymd(new Date(Date.now() + 86400000));
+        const now = new Date();
+        const nowHM = `${pad(now.getHours())}:${pad(now.getMinutes())}`;
         const rows = [];
+        let passed = 0;                            // 今天過掉了幾件（給空狀態用）
 
         for (const day of [today, tomorrow]) {
-            for (const e of Cal.on(day)) rows.push({ kind: 'event', day, item: e });
+            for (const e of Cal.on(day)) {
+                // 只有今天要看時鐘。明天的還沒到，後天更不用說。
+                if (day === today && !this.stillAhead(e, nowHM)) { passed++; continue; }
+                rows.push({ kind: 'event', day, item: e });
+            }
+            // 待辦不看時鐘：**今天到期的待辦到半夜都還是今天到期的**，
+            // 它沒做完不會因為時間過了就不用做。
             for (const t of Todo.data.items.filter(x => !x.done && x.due === day)) {
                 rows.push({ kind: 'todo', day, item: t });
             }
@@ -961,7 +1165,10 @@ const Overview = {
                     ])))
                 : el('div', { class: 'empty' }, [
                     icon('calendar', 26),
-                    open.length ? '今明兩天沒有排定的事' : '還沒有行程或待辦',
+                    // 今天排過事、只是都過完了——這時候寫「今明兩天沒有排定的事」
+                    // 是不對的，她今天明明有去打球
+                    passed ? '今天的都結束了，明天還沒有排事情'
+                           : open.length ? '今明兩天沒有排定的事' : '還沒有行程或待辦',
                     el('div', { class: 'hint',
                                 text: open.length ? `另外有 ${open.length} 件沒有期限的待辦`
                                                   : '行程和待辦會排在同一條線上' }),

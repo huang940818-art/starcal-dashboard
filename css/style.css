@@ -329,11 +329,49 @@ main {
 .arrange.wide { grid-column: 1 / -1; }
 .arrange > .card { flex: 1; }
 
+/* 這條 bar 是拖曳的把手。
+ *
+ * **touch-action 只設在這裡，不設在整張卡上。** 整張卡設成 none 的話，
+ * 排版模式裡手指壓在卡片上就捲不動頁面了——而卡片一定比一個螢幕多。 */
 .arrange-bar {
     display: flex;
     align-items: center;
     gap: 6px;
-    padding: 0 2px 6px;
+    padding: 2px 2px 6px;
+    touch-action: none;
+    cursor: grab;
+    user-select: none;
+}
+
+.arrange.dragging .arrange-bar { cursor: grabbing; }
+
+.grip {
+    color: var(--text-3);
+    font-size: 15px;
+    line-height: 1;
+    letter-spacing: -.05em;
+}
+
+/* 拖到哪就長什麼樣：被拖的那張浮起來一點，其他的即時讓位 */
+.arrange.dragging > .card {
+    border-style: solid;
+    border-color: var(--accent);
+    box-shadow: 0 8px 24px rgb(0 0 0 / .18);
+    transform: scale(1.01);
+}
+
+.arrange.dragging { opacity: .92; }
+
+/* 還沒排過版的人才看得到的一行字。排過一次就不再出現——
+ * 她已經知道怎麼進去了，畫面就該乾淨。 */
+.arrange-hint {
+    /* 橫跨整排。`.wide` 那條只認 .card 和 .arrange，這裡要自己寫，
+       不然寬螢幕上這行字會擠在左半欄。 */
+    grid-column: 1 / -1;
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--text-3);
+    padding: 2px 0 6px;
 }
 
 .arrange-name {

@@ -38,11 +38,12 @@
     <!-- ── 總覽 ─────────────────────────────────────── -->
     <section class="panel" id="panel-overview">
         <div id="hero"></div>
-        <!-- 「排順序」平常只是一顆很淡的小按鈕。七張卡各掛兩顆箭頭的話，
-             等於每天都在看一組一輩子用不到五次的東西。 -->
-        <div class="overview-tools">
-            <button class="btn small ghost" id="arrange-cards" type="button"
-                    aria-pressed="false">排版</button>
+        <!-- 排版的入口是**長按任何一張卡**，不是按鈕。這條工具列平常
+             收起來（hidden 由 Overview.syncArrangeButton 控制），
+             只有在排版模式裡才冒出來，而且只有一個意思：「好了」。 -->
+        <div class="overview-tools" hidden>
+            <button class="btn small primary" id="arrange-cards" type="button"
+                    aria-pressed="false">好了</button>
         </div>
         <div class="grid" id="overview-grid"></div>
     </section>

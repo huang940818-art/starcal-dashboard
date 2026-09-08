@@ -975,6 +975,63 @@ const guard = (p, what, ms = 5000) => Promise.race([
          !Money.data.accounts.length ? q('#pick-savings').hidden : true);
     }
 
+    /* ── 「接下來」不列已經過完的事 ────────────────────
+     *
+     * 她的原話：「為什麼已經過時間的行程還在我的接下來」。晚上七點多
+     * 打開，最上面掛著下午 3:30 的羽毛球，把真正接下來的明天早班擠掉。
+     *
+     * 這條用眼睛看不出來——中午看的時候畫面是對的。
+     */
+    {
+      await tab('overview');
+      const keepEvents = Cal.data.events.slice();
+      const keepTodos = Todo.data.items.slice();
+      const today = new Date().toISOString().slice(0, 10);
+      const now = new Date();
+      const nowHM = String(now.getHours()).padStart(2, '0') + ':'
+                  + String(now.getMinutes()).padStart(2, '0');
+
+      // 23:59 那一分鐘沒有「還沒到的今天」可以拿來測，跳過就好
+      if (nowHM !== '23:59') {
+        Cal.data.events = [
+          { id: 'ck-past', date: today, time: '00:00', title: '過完的球局' },
+          { id: 'ck-soon', date: today, time: '23:59', title: '等一下的事' },
+          // 填了結束時間的，照結束時間算——這是她自己決定要留多久的方式
+          { id: 'ck-long', date: today, time: '00:00', endTime: '23:59',
+            title: '還在進行的事' },
+        ];
+        Todo.data.items = [
+          { id: 'ck-due', due: today, done: false, title: '今天到期的待辦' },
+        ];
+        Cal.save(); Todo.save(); Overview.render(); await sleep(250);
+
+        const card = [...document.querySelectorAll('#overview-grid .card')]
+          .find(c => c.textContent.includes('接下來'));
+        const txt = card ? card.textContent : '';
+
+        ok('過完的行程不列在「接下來」', !!card && !txt.includes('過完的球局'), txt.slice(0, 90));
+        ok('還沒到的照常列', txt.includes('等一下的事'), txt.slice(0, 90));
+        ok('填了結束時間就算到結束時間', txt.includes('還在進行的事'), txt.slice(0, 90));
+        /* **待辦不看時鐘。** 今天到期的待辦到半夜都還是今天到期的，
+         * 它沒做完不會因為過了幾點就不用做。 */
+        ok('今天到期的待辦不會被時間濾掉', txt.includes('今天到期的待辦'), txt.slice(0, 90));
+
+        // 今天排過事、只是都過完了：不能寫成「今明兩天沒有排定的事」
+        Cal.data.events = [{ id: 'ck-past', date: today, time: '00:00', title: '過完的球局' }];
+        Todo.data.items = [];
+        Cal.save(); Todo.save(); Overview.render(); await sleep(250);
+        const card2 = [...document.querySelectorAll('#overview-grid .card')]
+          .find(c => c.textContent.includes('接下來'));
+        ok('今天的都過完了要講清楚，不是說沒排事情',
+           !!card2 && card2.textContent.includes('今天的都結束了'),
+           card2 ? card2.textContent.slice(0, 90) : '');
+      }
+
+      Cal.data.events = keepEvents;
+      Todo.data.items = keepTodos;
+      Cal.save(); Todo.save(); Overview.render(); await sleep(200);
+    }
+
     // ── 總覽的卡片可以自己排順序 ──
     //
     // 排錯了不會報錯，只會讓她排好的順序自己跑掉。
@@ -989,13 +1046,36 @@ const guard = (p, what, ms = 5000) => Promise.race([
                   : '?');
 
       const before = ids();
-      ok('總覽上有「排順序」', !!q('#arrange-cards'));
       ok('平常沒有上下箭頭', !q('.arrange-bar'), before.join('｜'));
+      /* 她的原話：「排版的按鈕有點醜，有沒有辦法隱藏」。
+       * 按鈕還在 DOM 裡（排版模式要用），但整條工具列是收起來的。
+       * **要驗 hidden，不能只驗存在**——.click() 對看不見的元素照樣有效，
+       * 只查 !!q('#arrange-cards') 的話這條永遠是綠的。 */
+      const tools = () => q('#arrange-cards').closest('.overview-tools');
+      ok('平常看不到那顆按鈕', tools().hidden === true);
 
-      q('#arrange-cards').click(); await sleep(250);
-      ok('按了才長出箭頭', !!q('.arrange-bar'));
-      ok('按鈕自己會變成「好了」', q('#arrange-cards').textContent === '好了',
+      // 進排版的路是長按卡片，不是按鈕
+      const press = (node, type, extra = {}) => node.dispatchEvent(
+        new PointerEvent(type, { bubbles: true, button: 0, pointerType: 'touch',
+                                 clientX: 100, clientY: 200, ...extra }));
+      /* **手指滑動不能算長按。** 手機上捲頁面的時候手指本來就壓在卡片上，
+       * 沒有這條的話一捲就跳進排版模式——那會是每天都在踩的雷。 */
+      const card0 = q('#overview-grid > .card');
+      press(card0, 'pointerdown');
+      press(card0, 'pointermove', { clientY: 260 });   // 移了 60px＝在捲動
+      await sleep(750);
+      ok('滑動不會誤觸長按', !q('.arrange-bar'));
+
+      press(q('#overview-grid > .card'), 'pointerdown');
+      await sleep(750);
+      ok('長按卡片就進排版', !!q('.arrange-bar'));
+      ok('進了排版才看得到按鈕', tools().hidden === false);
+      ok('按鈕上寫的是「好了」', q('#arrange-cards').textContent === '好了',
          q('#arrange-cards').textContent);
+      ok('每一張都有拖曳的把手',
+         document.querySelectorAll('.arrange-bar .grip').length
+         === document.querySelectorAll('.arrange').length);
+
       ok('每一張都標了名字', document.querySelectorAll('.arrange-name').length === before.length,
          document.querySelectorAll('.arrange-name').length + ' vs ' + before.length);
       ok('第一張的「往前」按不動',
@@ -1069,6 +1149,33 @@ const guard = (p, what, ms = 5000) => Promise.race([
           chip.click(); await sleep(300);
           ok('加得回來', document.querySelectorAll('.arrange').length === before,
              String(document.querySelectorAll('.arrange').length));
+        }
+      }
+
+      /* 拖著把手把第一張搬到第二張後面。
+       *
+       * 這條測的是**存下來了沒**，不只是畫面上動了——DOM 動了但沒寫進
+       * Prefs 的話，重新整理就跑回去，而那要下一次開才看得到。 */
+      {
+        const wraps = [...document.querySelectorAll('#overview-grid .arrange')];
+        if (wraps.length >= 2) {
+          const firstId = wraps[0].dataset.cardId;
+          const bar = wraps[0].querySelector('.arrange-bar');
+          const target = wraps[1].getBoundingClientRect();
+          press(bar, 'pointerdown', { pointerId: 1 });
+          press(bar, 'pointermove', { pointerId: 1,
+            clientX: target.left + target.width / 2,
+            clientY: target.top + target.height - 4 });   // 下半部＝插到它後面
+          press(bar, 'pointerup', { pointerId: 1 });
+          await sleep(250);
+
+          const after = [...document.querySelectorAll('#overview-grid .arrange')]
+            .map(n => n.dataset.cardId);
+          ok('拖了就換位置', after[0] !== firstId && after.includes(firstId),
+             after.join('｜'));
+          const saved = (Prefs.data.overviewOrder || []).filter(x => Overview.shown.has(x));
+          ok('拖完的順序有存起來', saved.join(',') === after.join(','),
+             saved.join('｜') + ' vs ' + after.join('｜'));
         }
       }
 
