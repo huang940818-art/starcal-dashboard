@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview'];
+    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview', 'Countdown'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
     // **沒定義的名字要給 undefined，不能直接丟出去。** names 是所有 load()
     // 共用的一份清單，只載其中一支檔案的時候，其他名字本來就不存在——
@@ -34,6 +34,9 @@ function load(...files) {
 const { Charts, Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO, AutoCat, Range, Csv } =
     load('./js/util.js', './js/demo.js', './js/money.js', './js/autocat.js', './js/csv.js',
          './js/charts.js');
+
+// 倒數的算日子那幾支也是純函式，跟畫面無關。
+const { Countdown } = load('./js/util.js', './js/countdown.js');
 
 // overview.js 只是宣告一個物件，載進來不會跑任何畫面的東西。
 // 這裡要的是卡片順序那段純算的邏輯。
@@ -64,6 +67,135 @@ function setup(overrides = {}) {
 
 const thisMonthStr = ymd().slice(0, 7);
 const day = n => `${thisMonthStr}-${String(n).padStart(2, '0')}`;
+
+/* ── 倒數：還有幾天 ──────────────────────────────────
+ *
+ * 她的原話：「我要增加　離寒假　暑假　國定假日或是期中期末考還有幾天
+ * 這樣的東西　可以自訂」。
+ *
+ * 這一段全是算術。算錯了不會有任何地方報錯，畫面上就是一個很像對的數字。
+ */
+
+const cd = (o) => ({ id: 'x', title: '測', endDate: '', yearly: false, ...o });
+
+test('還沒到的就數還有幾天', () => {
+    const st = Countdown.statusOf(cd({ date: '2026-12-25' }), '2026-12-01');
+    assert.equal(st.phase, 'before');
+    assert.equal(st.days, 24);
+    assert.equal(Countdown.wordOf(st), '還有 24 天');
+});
+
+test('就是今天不寫「還有 0 天」', () => {
+    const st = Countdown.statusOf(cd({ date: '2026-12-25' }), '2026-12-25');
+    assert.equal(st.phase, 'today');
+    assert.equal(Countdown.wordOf(st), '就是今天');
+});
+
+test('明天就寫明天', () => {
+    const st = Countdown.statusOf(cd({ date: '2026-12-25' }), '2026-12-24');
+    assert.equal(Countdown.wordOf(st), '明天');
+});
+
+/* 寒假不是一個點，是一段。開始了要說「進行中」——
+ * 不是消失，也不是繼續數一個負的天數。 */
+test('期間開始了就是進行中，數的是還有幾天結束', () => {
+    const item = cd({ date: '2027-01-20', endDate: '2027-02-15' });
+    const st = Countdown.statusOf(item, '2027-01-25');
+    assert.equal(st.phase, 'during');
+    assert.equal(st.days, 21, '從 1/25 到 2/15');
+    assert.match(Countdown.wordOf(st), /^進行中/);
+});
+
+test('期間的最後一天還算進行中，不算過了', () => {
+    const item = cd({ date: '2027-01-20', endDate: '2027-02-15' });
+    assert.equal(Countdown.statusOf(item, '2027-02-15').phase, 'during');
+    assert.equal(Countdown.statusOf(item, '2027-02-16').phase, 'past');
+});
+
+test('過完的講「幾天前就過了」，不是負的天數', () => {
+    const st = Countdown.statusOf(cd({ date: '2026-01-01' }), '2026-01-11');
+    assert.equal(st.phase, 'past');
+    assert.equal(st.days, 10);
+    assert.ok(!Countdown.wordOf(st).includes('-'), Countdown.wordOf(st));
+});
+
+/* ── 每年重複 ──────────────────────────────────── */
+
+test('每年重複的，今年過完就跳明年', () => {
+    const item = cd({ date: '2020-01-01', yearly: true });
+    const st = Countdown.statusOf(item, '2026-06-15');
+    assert.equal(st.start, '2027-01-01', '不是 2020 也不是 2026');
+    assert.equal(st.phase, 'before');
+});
+
+test('每年重複的，今年還沒到就用今年', () => {
+    const item = cd({ date: '2020-10-10', yearly: true });
+    assert.equal(Countdown.statusOf(item, '2026-06-15').start, '2026-10-10');
+});
+
+test('每年重複的日子當天就是今天', () => {
+    const item = cd({ date: '2020-10-10', yearly: true });
+    assert.equal(Countdown.statusOf(item, '2026-10-10').phase, 'today');
+});
+
+/* **跨年的期間要接起來。** 12/25 到 1/5，結束的月日比開始小，
+ * 那個 1/5 是隔年的——不接的話會算出一段負長度的假期。 */
+test('跨年的期間不會算出負的長度', () => {
+    const item = cd({ date: '2020-12-25', endDate: '2020-01-05', yearly: true });
+    const st = Countdown.statusOf(item, '2026-12-30');
+    assert.equal(st.start, '2026-12-25');
+    assert.equal(st.end, '2027-01-05', '結束是隔年的 1/5');
+    assert.equal(st.phase, 'during');
+    assert.ok(st.days > 0, '還有 ' + st.days + ' 天');
+});
+
+test('跨年的期間，在一月的時候還在進行中', () => {
+    const item = cd({ date: '2020-12-25', endDate: '2020-01-05', yearly: true });
+    const st = Countdown.statusOf(item, '2027-01-03');
+    assert.equal(st.phase, 'during', '這一次是去年 12/25 開始的');
+    assert.equal(st.start, '2026-12-25');
+});
+
+test('2/29 落在平年退到 2/28，不會跑到 3/1', () => {
+    assert.equal(Countdown.onYear('2024-02-29', 2027), '2027-02-28');
+    assert.equal(Countdown.onYear('2024-02-29', 2028), '2028-02-29');
+});
+
+/* 天數差要用日曆算，不是毫秒除以 86400000——那個在跨日光節約時間的
+ * 那天會少一小時，取整之後整整少一天。 */
+test('跨月跨年的天數差算得對', () => {
+    assert.equal(Countdown.daysBetween('2026-12-25', '2027-01-05'), 11);
+    assert.equal(Countdown.daysBetween('2026-02-28', '2026-03-01'), 1, '平年');
+    assert.equal(Countdown.daysBetween('2028-02-28', '2028-03-01'), 2, '閏年多一天');
+});
+
+/* ── 排序 ──────────────────────────────────────── */
+
+test('進行中的排最前面，過完的排最後', () => {
+    Countdown.data = { items: [
+        { id: 'a', title: '很遠的事', date: '2027-06-01' },
+        { id: 'b', title: '過完的', date: '2026-01-01' },
+        { id: 'c', title: '進行中', date: '2026-06-01', endDate: '2026-12-31' },
+        { id: 'd', title: '快到了', date: '2026-06-20' },
+    ] };
+    const order = Countdown.sorted('2026-06-15').map(r => r.item.title);
+    assert.deepEqual(order, ['進行中', '快到了', '很遠的事', '過完的']);
+});
+
+test('總覽上不列已經過完的', () => {
+    Countdown.data = { items: [
+        { id: 'b', title: '過完的', date: '2026-01-01' },
+        { id: 'd', title: '快到了', date: '2026-06-20' },
+    ] };
+    assert.deepEqual(Countdown.upcoming('2026-06-15').map(r => r.item.title), ['快到了']);
+});
+
+test('每年重複的永遠不會變成「過完的」', () => {
+    Countdown.data = { items: [
+        { id: 'y', title: '元旦', date: '2020-01-01', yearly: true },
+    ] };
+    assert.equal(Countdown.upcoming('2026-06-15').length, 1);
+});
 
 /* ── 餘額 ──────────────────────────────────────────── */
 

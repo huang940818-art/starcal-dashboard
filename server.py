@@ -60,6 +60,7 @@ FILES = {
     "備忘": "備忘.json",
     "便利貼": "便利貼.json",
     "課表": "課表.json",
+    "倒數": "倒數.json",
     "設定": "設定.json",
     "小克": "小克.json",
 }
@@ -85,6 +86,9 @@ EMPTY = {
     "便利貼": {"notes": []},
     # 課表可以有好幾份（這學期、下學期、打工班表），active 說現在用哪一份
     "課表": {"active": None, "periods": [], "sets": []},
+    # 倒數的日子（寒假、期中考、國定假日）。一筆是 title + date，
+    # 可以加 endDate 變成一段期間，yearly 表示每年重複。
+    "倒數": {"items": []},
     "設定": {"accent": None, "labels": [], "labelsSeeded": False,
              "overviewOrder": [], "overviewOff": None, "weatherPlace": None},
     # 小克的額度。這份**不是使用者寫的**，是 ~/.star-bridge/小克額度.sh 產的，

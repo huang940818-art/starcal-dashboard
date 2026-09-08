@@ -53,7 +53,7 @@ function showPanel(name) {
     if (name === 'wall') Wall.render();
     // 接下來那頁在 hidden 的時候不畫（省掉一次沒人看的月曆和課表），
     // 所以切過去的時候要自己補一次。
-    if (name === 'agenda') Agenda.render();
+    if (name === 'agenda') { Agenda.render(); Countdown.render(); }
 }
 
 function renderAll() {
@@ -61,6 +61,7 @@ function renderAll() {
     Money.render();
     Agenda.render();
     Memo.render();
+    Countdown.render();
     if (!$('#panel-wall').hidden) Wall.render();
 }
 
@@ -86,7 +87,8 @@ async function main() {
 
     try {
         await Promise.all([Money.init(), Todo.init(), Cal.init(), Memo.init(),
-                           Wall.init(), Timetable.init(), Ke.init()]);
+                           Wall.init(), Timetable.init(), Ke.init(),
+                           Countdown.init()]);
         // Prefs 要等 Cal 和 Todo 讀完——「完全空的時候才補預設分類」
         // 這個判斷得先看得到有沒有行程和待辦。
         await Prefs.init();

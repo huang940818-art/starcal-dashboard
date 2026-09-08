@@ -40,6 +40,7 @@ const Overview = {
         { id: 'memo',        name: '備忘' },
         // 想法牆只在寬螢幕有意義（見 app.js 的 WALL_MIN_WIDTH），
         // 窄螢幕上這張卡跟著整個分頁一起收起來。
+        { id: 'countdown',   name: '倒數' },
         { id: 'wall',        name: '想法牆', wide: false },
         // 小克那塊預設放最後：它不是待辦事項，不該排在
         // 「現在需要注意什麼」前面。展示模式時它自己不會出現。
@@ -53,7 +54,7 @@ const Overview = {
      * 「大部分人每天都會看」的，其他的在排版裡自己開。
      */
     DEFAULT_ON: ['attention', 'weather', 'money', 'today', 'todaybudget',
-                 'upcoming', 'memo', 'ke'],
+                 'upcoming', 'countdown', 'memo', 'ke'],
 
     /** 現在排順序中 */
     arranging: false,
@@ -234,6 +235,7 @@ const Overview = {
         if (id === 'balance') return this.renderBalance(box);
         if (id === 'spending') return this.renderSpending(box);
         if (id === 'subs') return this.renderSubs(box);
+        if (id === 'countdown') return this.renderCountdown(box);
         if (id === 'wall') return this.renderWall(box);
         if (id === 'ke') return Ke.render(box);
     },
@@ -1191,6 +1193,34 @@ const Overview = {
                 ]),
             rows.length > 6
                 ? el('div', { class: 'sub', style: 'margin-top:10px', text: `還有 ${rows.length - 6} 件` })
+                : null,
+        ]));
+    },
+
+    /**
+     * 倒數的日子。
+     *
+     * **已經過完的不上總覽。** 過期的項目留在「接下來」那邊的清單裡，
+     * 讓她自己決定要刪掉還是改日期；但總覽這一頁只回答
+     * 「現在需要我注意什麼」，去年的期中考不在那個問題裡面。
+     *
+     * 一張卡沒東西就整張不畫（renderCard 的慣例）——還沒設過任何倒數的人
+     * 不該每天看到一張空卡，要設的時候在「接下來」那邊加。
+     */
+    renderCountdown(grid) {
+        const rows = Countdown.upcoming();
+        if (!rows.length) return;
+
+        const shown = rows.slice(0, 5);
+        grid.append(el('div', { class: 'card', 'data-hue': 'countdown' }, [
+            this.head('calendar', '倒數',
+                el('button', { class: 'btn small ghost', text: '管理',
+                               onclick: () => showPanel('agenda') })),
+            el('div', {}, shown.map(r => Countdown.row(r,
+                () => { showPanel('agenda'); Countdown.edit(r.item); }))),
+            rows.length > shown.length
+                ? el('div', { class: 'sub', style: 'margin-top:10px',
+                              text: `還有 ${rows.length - shown.length} 個` })
                 : null,
         ]));
     },

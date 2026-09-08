@@ -11,6 +11,13 @@
  *    看的人會以為是隨機產生器而不是一份帳。
  */
 
+/** 今天往後 n 天的日期字串。示範資料的日子要跟著今天走，不能寫死。 */
+function demoDay(n) {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    return ymd(d);
+}
+
 /** 固定種子的偽隨機。mulberry32，短、夠均勻、不需要相依。 */
 function seeded(seed) {
     return function () {
@@ -322,6 +329,19 @@ const DEMO = {
         ],
     },
 
+    /* 示範的倒數。四種狀態各一個，作品集上點開就看得到差別：
+     * 還沒到的、每年重複的、一整段的、以及一段期間。
+     * 日期跟其他示範資料一樣相對今天算，不然過半年打開全部變成「過了」。 */
+    倒數: {
+        items: [
+            { id: 'cd1', title: '期中考', date: demoDay(24), endDate: demoDay(28) },
+            { id: 'cd2', title: '寒假', date: demoDay(103), endDate: demoDay(145) },
+            { id: 'cd3', title: '期末考', date: demoDay(88), endDate: demoDay(92) },
+            // 每年重複的那種：國曆固定的節日
+            { id: 'cd4', title: '元旦', date: '2026-01-01', yearly: true },
+        ],
+    },
+
     // 示範課表用節次制——學校發的課表就是這樣，示範資料要像真的。
     // 另外附一份時間制的班表，兩種模式都看得到。
     課表: {
@@ -381,5 +401,6 @@ const EMPTY_DATA = {
     備忘: { items: [] },
     便利貼: { notes: [] },
     課表: { active: null, periods: [], sets: [] },
+    倒數: { items: [] },
     設定: {},
 };

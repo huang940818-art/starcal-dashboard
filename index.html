@@ -175,6 +175,18 @@
                 <div id="calendar" hidden></div>
                 <div id="timetable" hidden></div>
             </div>
+
+            <!-- 倒數跟上面那條時間線刻意分開。時間線回答「接下來要做什麼」，
+                 這裡回答「那天還有多久會到」——寒假不是一個要赴的約，
+                 混進去只會被明天的早班擠掉。 -->
+            <div class="card wide" data-hue="countdown">
+                <h2 data-icon="calendar"><span class="label">倒數</span>
+                    <span>
+                        <button class="btn small primary" id="add-countdown">加一個</button>
+                    </span>
+                </h2>
+                <div id="countdown-list"></div>
+            </div>
         </div>
     </section>
 
@@ -486,6 +498,31 @@
     </form>
 </dialog>
 
+<dialog id="dlg-countdown">
+    <form method="dialog">
+        <h3 id="dlg-countdown-title">加一個倒數</h3>
+        <label class="field"><span>在數什麼</span>
+            <input id="cd-title" aria-required="true" placeholder="例：寒假、期中考、中秋節"></label>
+        <div class="row">
+            <label class="field"><span>那一天</span>
+                <input id="cd-date" type="date" aria-required="true"></label>
+            <label class="field"><span>到哪一天（留白＝只有一天）</span>
+                <input id="cd-end" type="date"></label>
+        </div>
+        <!-- 每年重複走的是**國曆**。中秋、端午這種農曆節日每年的國曆日期
+             都不一樣，勾了會數到錯的那天——那種就每年自己改一次日期。 -->
+        <label class="field" style="display:flex;align-items:center;gap:9px">
+            <input id="cd-yearly" type="checkbox" style="width:auto">
+            <span style="margin:0">每年重複（國曆。農曆節日不要勾）</span>
+        </label>
+        <div class="dialog-actions">
+            <button type="button" class="btn danger spacer" id="cd-delete" hidden>刪除</button>
+            <button class="btn" value="cancel" formnovalidate>取消</button>
+            <button type="button" class="btn primary" id="cd-save">存</button>
+        </div>
+    </form>
+</dialog>
+
 <dialog id="dlg-event">
     <form method="dialog">
         <h3 id="dlg-event-title">加行程</h3>
@@ -691,6 +728,7 @@
 <script src="js/update.js"></script>
 <script src="js/md.js"></script>
 <script src="js/memo.js"></script>
+<script src="js/countdown.js"></script>
 <script src="js/wall.js"></script>
 <script src="js/weather.js"></script>
 <script src="js/ke.js"></script>

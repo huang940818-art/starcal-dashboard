@@ -303,8 +303,38 @@ main {
 .card[data-hue="trend"]    { --hue: var(--lime); }
 .card[data-hue="sub"]      { --hue: var(--calendar); }
 .card[data-hue="alert"]    { --hue: var(--alert); }
+.card[data-hue="countdown"] { --hue: var(--calendar); }
 
 .card.wide { grid-column: 1 / -1; }
+
+/* 倒數的一列：左邊名字和日期，右邊「還有 N 天」。
+ *
+ * 天數用等寬數字（tabular-nums），不然一排數字的寬度會跟著位數跳，
+ * 看起來像沒對齊。 */
+.countdown-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--separator);
+}
+
+.countdown-row:last-child { border-bottom: 0; }
+
+.countdown-days {
+    font-size: 15px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    color: var(--text-2);
+}
+
+/* 今天／進行中的那幾筆是「現在」，不是未來——標出來 */
+.countdown-days.now { color: var(--good); }
+
+/* 過完的還留在清單裡（要讓她自己決定刪掉還是改日期），但要看得出來已經過了 */
+.countdown-row.past { opacity: .5; }
+.countdown-row.past .countdown-days { font-weight: 500; }
 
 /* ── 排順序 ─────────────────────────────────────────
  *

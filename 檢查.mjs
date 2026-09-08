@@ -1896,6 +1896,79 @@ const guard = (p, what, ms = 5000) => Promise.race([
         Cal.save(); Agenda.render(); await sleep(200);
     }
 
+    /* ── 倒數：加得進去、數得對、上得了總覽 ──────────────
+     *
+     * 她的原話：「我要增加　離寒假　暑假　國定假日或是期中期末考還有幾天
+     * 這樣的東西　可以自訂」。
+     */
+    {
+      await tab('agenda');
+      await sleep(200);
+      ok('「接下來」那頁有倒數這一區', !!q('#countdown-list'));
+
+      const keep = Countdown.data.items.slice();
+      Countdown.data.items = [];
+      Countdown.render(); await sleep(150);
+      ok('沒東西的時候講得出要做什麼',
+         q('#countdown-list').textContent.includes('填一個日期'),
+         q('#countdown-list').textContent.slice(0, 60));
+
+      // 從對話框加一筆，走她真的會走的那條路
+      q('#add-countdown').click(); await sleep(200);
+      const future = new Date(); future.setDate(future.getDate() + 30);
+      const fstr = future.toISOString().slice(0, 10);
+      q('#cd-title').value = '期中考';
+      q('#cd-date').value = fstr;
+      q('#cd-save').click(); await sleep(300);
+
+      ok('加得進去', Countdown.data.items.length === 1,
+         JSON.stringify(Countdown.data.items));
+      ok('清單上數得出還有幾天',
+         q('#countdown-list').textContent.includes('還有 30 天'),
+         q('#countdown-list').textContent.slice(0, 80));
+
+      // 總覽也要看得到
+      await tab('overview'); await sleep(250);
+      const card = [...document.querySelectorAll('#overview-grid .card')]
+        .find(c => c.textContent.includes('倒數'));
+      ok('總覽上有倒數這張卡', !!card, '沒找到');
+      ok('卡片上寫得出還有幾天',
+         !!card && card.textContent.includes('還有 30 天'),
+         card ? card.textContent.slice(0, 80) : '');
+
+      /* **過完的不上總覽。** 那一頁只回答「現在需要我注意什麼」，
+       * 去年的期中考不在那個問題裡面——但它要留在「接下來」那邊的清單上，
+       * 讓她自己決定刪掉還是改日期。 */
+      Countdown.data.items = [
+        { id: 'ck-past', title: '去年的期末考', date: '2020-06-01' },
+      ];
+      Countdown.save(); Overview.render(); await sleep(250);
+      const card2 = [...document.querySelectorAll('#overview-grid .card')]
+        .find(c => c.textContent.includes('倒數'));
+      ok('過完的不上總覽（整張卡就不畫）', !card2, card2 ? card2.textContent.slice(0, 60) : '');
+
+      await tab('agenda'); await sleep(250);
+      ok('但過完的還留在清單上',
+         q('#countdown-list').textContent.includes('去年的期末考'),
+         q('#countdown-list').textContent.slice(0, 80));
+
+      // 刪掉要給得回來——跟總覽的 ✕ 同一個道理
+      q('#countdown-list .countdown-row').click(); await sleep(220);
+      q('#cd-delete').click(); await sleep(300);
+      ok('刪得掉', Countdown.data.items.length === 0);
+      const undo = q('#toast .toast-btn');
+      ok('刪掉有得復原', !!undo && undo.textContent === '復原',
+         undo ? undo.textContent : '沒有復原鍵');
+      if (undo) {
+        undo.click(); await sleep(300);
+        ok('按復原就回來了', Countdown.data.items.length === 1,
+           JSON.stringify(Countdown.data.items));
+      }
+
+      Countdown.data.items = keep;
+      Countdown.save(); Countdown.render(); Overview.render(); await sleep(200);
+    }
+
     // ── 便利貼：貼得上去 ──
     await tab('wall');
     q('#add-sticky').click(); await sleep(260);
