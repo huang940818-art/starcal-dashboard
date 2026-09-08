@@ -18,6 +18,20 @@ const Todo = {
 
     save() { Store.save('待辦'); },
 
+    /**
+     * 幫一筆蓋上「剛剛改過」的時間戳，然後存檔。
+     *
+     * 同步靠這個判斷兩邊誰新（見 ~/.star-bridge/待辦同步.sh）。**沒有它的話
+     * 合併只能靠猜**，而猜錯的方向是「手機上剛改好的被 Mac 上的舊版蓋回去」。
+     *
+     * 時間戳一律 ISO 帶毫秒（`stamp()`）——兩端比的是字串，
+     * `.` 排在 `Z` 前面，混格式的話帶毫秒的反而會被當成比較舊的。
+     */
+    touch(i) {
+        if (i) i.updatedAt = stamp();
+        this.save();
+    },
+
     /** 沒做完的，按急迫程度排 */
     open() {
         return this.data.items.filter(i => !i.done).sort((a, b) => {
@@ -72,7 +86,7 @@ const Todo = {
                 text: i.priority ? '★' : '☆',
                 onclick: () => {
                     i.priority = i.priority ? 0 : 1;
-                    this.save();
+                    this.touch(i);
                     this.render();
                     Overview.render();
                 },
@@ -83,7 +97,7 @@ const Todo = {
     toggle(i) {
         i.done = !i.done;
         i.completedAt = i.done ? Date.now() : null;
-        this.save();
+        this.touch(i);
         this.render();
         Overview.render();
     },
@@ -113,7 +127,7 @@ const Todo = {
     edit(i, defaultDay = null) {
         const isNew = !i;
         i = i || { id: uid(), title: '', done: false, priority: 0, due: defaultDay,
-                   note: '', label: null, createdAt: Date.now() };
+                   note: '', label: null, createdAt: Date.now(), updatedAt: stamp() };
 
         $('#dlg-todo-title').textContent = isNew ? '新增待辦' : '改待辦';
         $('#d-title').value = i.title;
@@ -137,7 +151,7 @@ const Todo = {
                 label: $('#d-label').value || null,
             });
             if (isNew) this.data.items.push(i);
-            this.save();
+            this.touch(i);
             dlg.close();
             this.render();
             Overview.render();

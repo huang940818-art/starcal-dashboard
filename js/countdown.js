@@ -29,6 +29,16 @@ const Countdown = {
 
     save() { Store.save('倒數'); },
 
+    /**
+     * 蓋上「剛剛改過」的時間戳再存。理由跟待辦那邊一樣
+     * （見 js/todo.js 的 touch）：同步靠這個判斷兩邊誰新，
+     * 沒有它就只能猜，而猜錯的方向是新的被舊的蓋回去。
+     */
+    touch(i) {
+        if (i) i.updatedAt = stamp();
+        this.save();
+    },
+
     /* ── 算日子 ────────────────────────────────────────
      *
      * **用日曆天數差，不要拿毫秒去除。**
@@ -203,7 +213,7 @@ const Countdown = {
     edit(item) {
         const isNew = !item;
         item = item || { id: uid(), title: '', date: todayStr(),
-                         endDate: '', yearly: false };
+                         endDate: '', yearly: false, updatedAt: stamp() };
 
         $('#dlg-countdown-title').textContent = isNew ? '加一個倒數' : '改倒數';
         $('#cd-title').value = item.title;
@@ -240,7 +250,7 @@ const Countdown = {
                 yearly: $('#cd-yearly').checked,
             });
             if (isNew) this.data.items.push(item);
-            this.save();
+            this.touch(item);
             this.refresh();
             $('#dlg-countdown').close();
         };
