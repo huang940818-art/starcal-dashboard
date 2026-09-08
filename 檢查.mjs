@@ -600,26 +600,33 @@ const guard = (p, what, ms = 5000) => Promise.race([
            q('#budgets').textContent.includes('今天花了 200'),
            q('#budgets').textContent.slice(0, 90));
 
-        /* 分類也要有今天的額度。
+        /* 分類條**只講這個月**。
          *
-         * 兩種狀態分開驗，而且**上限要挑對**：上限 3,000 的話每天只有
-         * 125，今天花 200 走的是「超出」那條，不是「還有」。
-         * （第一次寫這條檢查就是這樣被打臉的——畫面是對的，是我期待錯了。） */
+         * 這裡本來每一列右邊還接一段「今天可以用 169」。她的原話：
+         * 「不能只顯示當月就好了 當日放總覽」——一列同時擺兩種期間的
+         * 數字，六列疊起來就是一面數字牆，而且「還有 345」和
+         * 「今天超出 134」一綠一紅並排，看起來像自己跟自己打架。
+         *
+         * 當日的分類額度在總覽那張卡上（底下「今天的額度」那一段有驗）。
+         * 這條是**反向**的：確認它沒有偷偷長回來。 */
         const cat = Money.data.categories.expense[0].name;
 
         Money.data.budgets = [{ category: cat, limit: 30000 }];
         Money.save(); Money.render(); await sleep(220);
         const foot = q('.budget-foot');
-        ok('分類條底下有今天的額度', !!foot && foot.textContent.includes('今天'),
+        ok('分類條底下只有這個月，沒有當日的數字',
+           !!foot && !foot.textContent.includes('今天'),
            foot ? foot.textContent : '沒有那一行');
-        ok('分類今天花過了就講還剩多少',
-           q('#budgets').textContent.includes('今天還有'),
+        ok('分類條底下寫的是 花了 / 上限',
+           !!foot && foot.textContent.includes(' / 30,000'),
            foot ? foot.textContent : '');
 
-        Money.data.budgets = [{ category: cat, limit: 3000 }];
+        // 真的超過月上限（花了 200、上限 100），不是「今天的份超了」
+        Money.data.budgets = [{ category: cat, limit: 100 }];
         Money.save(); Money.render(); await sleep(220);
-        ok('分類今天花超了就講超出多少，不是印 0',
-           q('#budgets').textContent.includes('今天超出'),
+        ok('這一類超出上限的時候，寫的還是這個月的超支不是今天的',
+           q('#budgets').textContent.includes('超支')
+           && !q('.budget-foot').textContent.includes('今天'),
            q('.budget-foot') ? q('.budget-foot').textContent : '');
 
         // 超支：不要印一個「每天可以用 0」，那看起來像算壞了

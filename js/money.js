@@ -1096,33 +1096,21 @@ const Money = {
                 el('div', { class: 'track' }, [
                     el('div', { class: `fill ${cls}`, style: `width:${Math.min(ratio, 1) * 100}%` }),
                 ]),
-                /* 底下這一行：左邊是這個月的進度，右邊是**今天這一類還能花多少**。
+                /* 底下這一行只寫**這個月**的進度。
                  *
-                 * 她的原話：「沒有分類，比如今天的預算，吃的、交通這種」。
-                 * 「這個月飲食還有 4,047」站在超商前面回答不了問題——
-                 * 那要自己除以剩下的天數，六個分類就要算六次。 */
+                 * 這裡本來右邊還接一段「今天可以用 169」。算的是對的，
+                 * 但一列同時擺兩種期間的數字，六列疊起來就是一面數字牆——
+                 * 而且「還有 345」和「今天超出 134」一綠一紅並排，
+                 * 看起來像自己跟自己打架。
+                 *
+                 * **當日的額度歸總覽的「今天的額度」那張卡**（`Overview.renderBudget`），
+                 * 那裡本來就是一天一次的視角。這張卡回答的是「這個月剩多少」。
+                 * 一張卡一種期間。 */
                 el('div', { class: 'budget-foot' }, [
                     el('span', { class: 'sub', text: `${money(used)} / ${money(limit)}` }),
-                    this.todayQuotaText(budgetMonth, b.category, limit),
                 ]),
             ]));
         }
-    },
-
-    /** 分類條右邊那一小段「今天可以用⋯」。不是這個月就不寫。 */
-    todayQuotaText(ym, category, limit) {
-        const p = this.categoryPace(ym, category, limit);
-        if (!p || !p.isNow || p.perDayLeft === null) return null;
-
-        // 這一類今天已經花超過額度了：講超出多少，不要印一個 0
-        if (p.todayLeft < 0) {
-            return el('span', { class: 'sub negative',
-                text: `今天超出 ${money(-p.todayLeft)}` });
-        }
-        // 今天還沒花過這一類的話不用寫「已花 0」——那是一句廢話
-        return el('span', { class: 'sub', text: p.spentToday
-            ? `今天還有 ${money(p.todayLeft)}（額度 ${money(p.perDayLeft)}）`
-            : `今天可以用 ${money(p.perDayLeft)}` });
     },
 
     /** 每月收支畫成長條還是折線 */
