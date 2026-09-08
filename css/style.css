@@ -369,6 +369,11 @@ main {
 
 .arrange.dragging .arrange-bar { cursor: grabbing; }
 
+/* ✕ 跟箭頭拉開一點。它跟拖曳的把手在同一條 bar 上，
+   而且是這條 bar 上唯一會讓卡片消失的鍵——手指擠在一起按錯的代價
+   比其他幾顆大得多。 */
+.arrange-bar .btn.danger { margin-left: 8px; }
+
 .grip {
     color: var(--text-3);
     font-size: 15px;

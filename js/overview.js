@@ -295,10 +295,10 @@ const Overview = {
                     onclick: () => this.move(id, 1),
                 }),
                 el('button', {
-                    class: 'btn small ghost', type: 'button', text: '✕',
+                    class: 'btn small ghost danger', type: 'button', text: '✕',
                     'aria-label': `把${card?.name}拿掉`,
                     title: '從總覽拿掉（之後可以再加回來）',
-                    onclick: () => this.toggleCard(id),
+                    onclick: () => this.removeCard(id),
                 }),
             ]),
             node,
@@ -403,6 +403,22 @@ const Overview = {
         let i = 0;
         Prefs.data.overviewOrder = full.map(x => this.shown.has(x) ? next[i++] ?? x : x);
         Prefs.save();
+    },
+
+    /**
+     * 從總覽拿掉一張卡，**而且給得回來**。
+     *
+     * 她把「接下來」拿掉了，然後問我「為什麼我的接下來不見了」——
+     * 那顆 ✕ 就在拖曳把手的同一條 bar 上，按下去卡片直接消失，
+     * 沒有任何一句話說剛剛發生了什麼。離開排版模式之後更是完全找不到。
+     *
+     * **拿掉不需要先確認，但要有得復原。** 多一次「確定嗎」會擋住
+     * 真的想拿掉的那次；一句話加一顆復原鍵只在按錯的時候才有人碰。
+     */
+    removeCard(id) {
+        const name = this.CARDS.find(c => c.id === id)?.name || '這張卡';
+        this.toggleCard(id);
+        toastAction(`${name}拿掉了`, '復原', () => this.toggleCard(id));
     },
 
     /**

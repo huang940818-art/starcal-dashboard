@@ -1151,6 +1151,30 @@ const guard = (p, what, ms = 5000) => Promise.race([
         const now = [...document.querySelectorAll('.arrange')];
         ok('按 ✕ 真的把卡片拿掉了', now.length === before - 1,
            before + ' → ' + now.length);
+
+        /* 她把「接下來」按掉了，然後問「為什麼我的接下來不見了」。
+         * 那顆 ✕ 就在拖曳把手的同一條 bar 上，按下去卡片直接消失，
+         * 沒有一句話說剛剛發生了什麼——離開排版模式之後更是找不到。 */
+        {
+          const t = q('#toast');
+          ok('拿掉的時候有講一聲',
+             t.classList.contains('show') && t.textContent.includes(gone),
+             t.textContent);
+          const undo = t.querySelector('.toast-btn');
+          ok('而且給得回來', !!undo && undo.textContent === '復原',
+             undo ? undo.textContent : '沒有復原鍵');
+          if (undo) {
+            undo.click(); await sleep(300);
+            ok('按復原就回來了',
+               document.querySelectorAll('.arrange').length === before,
+               String(document.querySelectorAll('.arrange').length));
+            // 回到「拿掉」的狀態，底下那幾條還要驗「從那一排加回來」
+            const xs2 = [...document.querySelectorAll('.arrange')]
+              .find(n => n.querySelector('.arrange-name').textContent === gone)
+              ?.querySelectorAll('.arrange-bar .btn');
+            if (xs2) { xs2[xs2.length - 1].click(); await sleep(300); }
+          }
+        }
         ok('拿掉的存進設定裡了',
            Array.isArray(Prefs.data.overviewOff) && Prefs.data.overviewOff.length > 0,
            JSON.stringify(Prefs.data.overviewOff));
