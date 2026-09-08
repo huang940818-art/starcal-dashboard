@@ -1072,6 +1072,26 @@ const guard = (p, what, ms = 5000) => Promise.race([
       ok('進了排版才看得到按鈕', tools().hidden === false);
       ok('按鈕上寫的是「好了」', q('#arrange-cards').textContent === '好了',
          q('#arrange-cards').textContent);
+      /* 長按在手機上原本就是「選字」，所以每次進排版都會先反白一片，
+       * iOS 還會彈出「拷貝／查詢」蓋住畫面。她的原話：
+       * 「這個卡片可以不要動不動就反白到字嗎」。 */
+      {
+        const sel = n => getComputedStyle(n).webkitUserSelect
+                      || getComputedStyle(n).userSelect;
+        ok('總覽的卡片不會被選到字', sel(q('#overview-grid .card')) === 'none',
+           sel(q('#overview-grid .card')));
+        /* 輸入的地方要留活口——想法牆的便利貼就長在總覽上，
+         * 一起鎖掉的話那面牆就打不了字了。
+         *
+         * **自己插一個 textarea 進去驗，不繞想法牆。** 想法牆不在預設
+         * 放上去的那幾張裡，等它出現才驗的話，這條大部分時候會是
+         * 「沒找到輸入框」的空綠燈——那比沒有這條更糟。 */
+        const probe = document.createElement('textarea');
+        q('#overview-grid .card').append(probe);
+        ok('總覽上的輸入框還是打得了字', sel(probe) === 'text', sel(probe));
+        probe.remove();
+      }
+
       ok('每一張都有拖曳的把手',
          document.querySelectorAll('.arrange-bar .grip').length
          === document.querySelectorAll('.arrange').length);

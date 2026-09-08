@@ -329,6 +329,30 @@ main {
 .arrange.wide { grid-column: 1 / -1; }
 .arrange > .card { flex: 1; }
 
+/* 總覽的卡片不給選字。
+ *
+ * 她的原話：「這個卡片可以不要動不動就反白到字嗎」。長按卡片是進排版的
+ * 動作，而長按在手機上原本就是「選字」——所以每次要排版都會先反白一片，
+ * iOS 還會彈出「拷貝／查詢」把畫面蓋掉。
+ *
+ * 只鎖總覽。記帳、備忘那些地方的字是拿來讀、拿來複製的，不能一起鎖。
+ * **輸入的地方要留活口**：便利貼的 textarea 就在總覽上，
+ * 一起鎖掉的話那面牆就打不了字了。 */
+#overview-grid .card,
+#overview-grid .arrange {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;     /* iOS 長按不要跳出那排選單 */
+}
+
+#overview-grid input,
+#overview-grid textarea,
+#overview-grid [contenteditable] {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+}
+
 /* 這條 bar 是拖曳的把手。
  *
  * **touch-action 只設在這裡，不設在整張卡上。** 整張卡設成 none 的話，
