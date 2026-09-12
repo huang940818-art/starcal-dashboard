@@ -1086,8 +1086,37 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 }
 
 /* 今天的收支：上面那排合計 */
-.today-flow { display: flex; gap: 24px; margin-bottom: 6px; }
+.today-flow { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-bottom: 6px; }
 .today-num { font-size: 20px; font-weight: 600; margin-top: 2px; }
+
+/* 「今天可以用 414／569」。**比支出小一號**——它是拿來對照的，
+   不是今天的主角；一樣大的話兩個數字會互相搶。 */
+.quota-note {
+    font-size: 15px;
+    font-weight: 600;
+    margin-top: 4px;
+    font-variant-numeric: tabular-nums;
+}
+
+.quota-note.negative { color: var(--alert); }
+.quota-note .sub { font-size: 12.5px; font-weight: 400; }
+
+/* 今天的收支底下那一行月結。上面那條線是在說「以下換一個時間尺度」。 */
+.month-foot {
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--separator);
+}
+
+.month-foot-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 2px;
+}
+
+.month-foot-line .money-num { font-size: 17px; font-weight: 600; }
 
 /* 遮起來的金額。點點要比數字疏一點，才看得出是「遮住了」
  * 而不是「壞掉了」。 */
@@ -1201,6 +1230,40 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
     background: var(--money);
     opacity: .8;
 }
+
+/* 點得進去的分類。**要看得出來可以點**——不然那一排長條跟原本
+   一模一樣，沒有人會想到去按它。 */
+
+.cat-row.tappable {
+    cursor: pointer;
+    padding: 6px 8px;
+    margin: 0 -8px 6px;
+    border-radius: 9px;
+    transition: background .12s;
+}
+
+.cat-row.tappable:hover,
+.cat-row.tappable:focus-visible { background: var(--raised); }
+
+.cat-row.tappable.on { background: var(--raised); }
+
+/* 攤開的那幾筆。左邊那條線把它跟下一類分開，
+   不然會看起來像「餐飲底下的交通」。 */
+.cat-detail {
+    margin: -2px 0 14px 10px;
+    padding-left: 12px;
+    border-left: 2px solid var(--separator);
+}
+
+.cat-detail .txn-row { padding: 7px 0; }
+
+.pie-key.tappable { cursor: pointer; border-radius: 7px; }
+
+.pie-key.tappable:hover,
+.pie-key.tappable.on { background: var(--raised); }
+
+/* 圖例本來緊貼著左邊，加了底色要留一點內距才不會卡邊 */
+.pie-key.tappable { padding: 3px 6px; margin: 0 -6px; }
 
 /* ── 待辦 ───────────────────────────────────────────── */
 
@@ -1392,6 +1455,11 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 .day-group .todo-row { padding-left: 63px; }
 .day-group .todo-row .check { margin-left: 0; }
 .event-row.late .event-time { color: var(--alert); }
+
+/* 收起來的行程。**淡掉但看得到**——刪掉線是在說「這件事處理完了」，
+   不是在說「這件事沒發生過」。 */
+.event-row.gone .title span { text-decoration: line-through; }
+.event-row.gone { opacity: .58; }
 
 /* 收起來的行程。淡一點但看得到——「收掉了」不等於「不見了」。 */
 .archived .title { color: var(--text-3); text-decoration: line-through; }
@@ -2902,6 +2970,16 @@ body::before {
 .class-note {
     color: var(--accent) !important;
     white-space: pre-wrap;
+}
+
+/* 月曆格子裡：收起來的行程畫成空心。
+ *
+ * 她的原話：「我希望工作的部分過了之後點點不要消失」。
+ * 跟停課那顆同一套——留著才看得出「這天有排班」，
+ * 拿掉的話那天會變成空的，像自己沒排到。 */
+.label-dot.gone {
+    background: none !important;
+    border: 1.5px solid color-mix(in srgb, var(--text-3) 90%, transparent);
 }
 
 /* 月曆格子裡：停掉的那堂畫成空心 */

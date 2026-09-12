@@ -52,7 +52,9 @@ const MonthView = {
                 day,
                 n: d.getDate(),
                 outside: monthOf(day) !== this.ym,
-                events: Agenda.eventsOn(day),
+                // **含已經收起來的。** 收起來是「不用再理了」，
+                // 不是「沒發生過」——月曆要回答的是後者。
+                events: Agenda.eventsOnWithDone(day),
                 todos: Agenda.todosOn(day),
                 classes: Timetable.on(day).filter(c => Agenda.match(c)),
             });
@@ -125,7 +127,9 @@ const MonthView = {
                 class: cls.join(' '),
                 role: 'button',
                 tabindex: '0',
-                'aria-label': `${c.n} 日，${items.length} 件事`,
+                // 唸出來的件數只算還沒收起來的——收起來的那幾件
+                // 在畫面上是空心點，講成「還有 3 件事」會對不上。
+                'aria-label': `${c.n} 日，${items.filter(x => !x.it.done).length} 件事`,
                 onclick: () => {
                     if (this.shiftMode) return this.tapShift(c.day);
                     this.picked = c.day;
@@ -243,9 +247,13 @@ const MonthView = {
                 el('div', { class: 'cal-dots' },
                     items.slice(0, 5).map(x => {
                         const l = Prefs.label(x.it.label);
+                        // 收起來的畫成空心，**不是拿掉**——跟上面停課那顆
+                        // 同一個道理：拿掉的話「這天有排班」就消失了。
+                        const gone = !!x.it.done;
                         return el('span', {
-                            class: 'label-dot' + (l ? '' : ' none'),
-                            style: l ? `background:${l.color}` : '',
+                            class: 'label-dot' + (l ? '' : ' none') + (gone ? ' gone' : ''),
+                            style: l ? (gone ? `border-color:${l.color}`
+                                             : `background:${l.color}`) : '',
                         });
                     })),
             ]));
@@ -344,7 +352,9 @@ const MonthView = {
     /** 選中那天的完整內容。月曆格子塞不下的東西全在這裡。 */
     dayPanel() {
         const day = this.picked;
-        const events = Agenda.eventsOn(day);
+        // 格子裡看得到空心點，點進來卻是「這天沒有排事」的話，
+        // 那個點會變成一個查不出來的疑問。
+        const events = Agenda.eventsOnWithDone(day);
         const todos = Agenda.todosOn(day);
         const classes = Timetable.on(day).filter(c => Agenda.match(c));
         const d = parseYmd(day);

@@ -657,6 +657,10 @@ const guard = (p, what, ms = 5000) => Promise.race([
     {
       await tab('money');
       const keep = JSON.stringify(Money.data);
+      const keepOff = Prefs.data.overviewOff;
+      // 「今天的預算」合併之後不預設出現（每天可以用多少已經用小字
+      // 貼在「今天的收支」上了）。這一段要驗的正是那張卡，所以先打開。
+      Prefs.data.overviewOff = [];
       const cat = Money.data.categories.expense[0].name;
       const today = new Date().toISOString().slice(0, 10);
 
@@ -769,6 +773,7 @@ const guard = (p, what, ms = 5000) => Promise.race([
 
       if (q('#dlg-budget').open) q('#dlg-budget').close();
       Money.data = JSON.parse(keep);
+      Prefs.data.overviewOff = keepOff;
       Money.save(); Money.render(); Overview.render(); await sleep(200);
     }
 
@@ -778,6 +783,8 @@ const guard = (p, what, ms = 5000) => Promise.race([
     {
       await tab('money');
       const keep = JSON.stringify(Money.data);
+      const keepOff = Prefs.data.overviewOff;
+      Prefs.data.overviewOff = [];      // 同上：這一段驗的是那張卡本身
       const cat = Money.data.categories.expense[0].name;
       const today = new Date().toISOString().slice(0, 10);
 
@@ -837,6 +844,7 @@ const guard = (p, what, ms = 5000) => Promise.race([
          todayCard ? todayCard.textContent.slice(0, 60) : '');
 
       Money.data = JSON.parse(keep);
+      Prefs.data.overviewOff = keepOff;
       Money.save(); Money.render(); Overview.render(); await sleep(200);
     }
 
@@ -2049,12 +2057,39 @@ const guard = (p, what, ms = 5000) => Promise.race([
     // 她要「可以看月或週或是年，可以自訂」。
     ok('現在這一段時「下一段」是停用的——未來還沒發生',
        q('#month-nav button[aria-label=\"下一段\"]').disabled);
-    ok('四種粒度都在',
-       document.querySelectorAll('#month-nav .range-kinds .view-btn').length === 4);
+    ok('五種粒度都在（日週月年自訂）',
+       document.querySelectorAll('#month-nav .range-kinds .view-btn').length === 5,
+       [...document.querySelectorAll('#month-nav .range-kinds .view-btn')]
+           .map(b => b.textContent).join(''));
 
     {
       const kinds = [...document.querySelectorAll('#month-nav .range-kinds .view-btn')];
       const byName = n => kinds.find(b => b.textContent === n);
+
+      /* 「日」。她的原話：「自訂時間下去看可以增加一天嗎，
+         想要一天的總花費可以飆出來」。 */
+      byName('日').click(); await sleep(250);
+      ok('切到日', Money.range.kind === 'day');
+      ok('一天的開始和結束是同一天',
+         Money.range.start === Money.range.end, Money.range.start);
+      ok('一天的標題寫得出星期幾',
+         /（[日一二三四五六]）/.test(q('#month-nav .month-label').textContent),
+         q('#month-nav .month-label').textContent);
+      ok('翻上一天真的只退一天', (() => {
+        const before = Money.range.start;
+        Money.shiftRange(-1);
+        const diff = (parseYmd(before) - parseYmd(Money.range.start)) / 86400000;
+        Money.shiftRange(1);
+        return diff === 1;
+      })());
+      // **一天的主角是支出。** 一天幾乎不會有收入，淨額只是支出換一個
+      // 比較難讀的寫法——她要的是「這一天總共花多少」自己站出來。
+      ok('看一天的時候大字寫的是花掉的，不是收支相抵',
+         q('#month-summary .sub').textContent.includes('花掉的'),
+         q('#month-summary').textContent.slice(0, 50));
+      ok('看一天的時候卡片標題跟著變',
+         q('#month-card-title').textContent === '今天',
+         q('#month-card-title').textContent);
 
       byName('週').click(); await sleep(250);
       ok('切到週', Money.range.kind === 'week');
@@ -2092,6 +2127,161 @@ const guard = (p, what, ms = 5000) => Promise.race([
       byName('月').click(); await sleep(250);
       Money.setRange('month', todayStr()); await sleep(200);
       ok('回得到這個月', Money.range.kind === 'month' && Range.hasToday(Money.range));
+    }
+
+    /* ── 圓餅底下的分類點得進去 ──
+     *
+     * 她的原話：「圓餅圖下面的分類可以直接點進去看」。
+     * 「餐飲 3,240」自己回答不了「那到底是哪幾餐」。
+     */
+    {
+      await tab('money');
+      const keep = JSON.stringify(Money.data);
+      const today = new Date().toISOString().slice(0, 10);
+      const cat = Money.data.categories.expense[0].name;
+      const other = Money.data.categories.expense[1].name;
+
+      Money.data.accounts = [{ id: 'cc1', name: '甲', kind: 'cash', opening: 9999,
+                               includeInTotal: true, order: 0 }];
+      Money.data.transactions = [
+        { id: 'cc-t1', date: today, kind: 'expense', amount: 155, category: cat,
+          account: '甲', note: '滷肉飯' },
+        { id: 'cc-t2', date: today, kind: 'expense', amount: 60, category: cat,
+          account: '甲', note: '紅茶' },
+        { id: 'cc-t3', date: today, kind: 'expense', amount: 30, category: other,
+          account: '甲', note: '公車' },
+      ];
+      Money.save(); Money.setRange('month', today); await sleep(260);
+
+      const rows = () => [...document.querySelectorAll('#by-category .cat-row')];
+      ok('分類那幾列看得出可以點',
+         rows().length > 0 && rows().every(r => r.classList.contains('tappable')),
+         rows().length + ' 列');
+
+      const first = rows().find(r => r.textContent.includes(cat));
+      ok('點得到第一類', !!first);
+      first.click(); await sleep(240);
+
+      const detail = q('#by-category .cat-detail');
+      ok('點下去攤得開', !!detail);
+      ok('攤開的是這一類的每一筆',
+         !!detail && detail.textContent.includes('滷肉飯')
+         && detail.textContent.includes('紅茶'),
+         detail ? detail.textContent.slice(0, 60) : '');
+      // 攤開的只能是這一類。混進別類的話「點進去看」就沒有意義了
+      ok('別類的不會混進來',
+         !!detail && !detail.textContent.includes('公車'),
+         detail ? detail.textContent.slice(0, 60) : '');
+
+      ok('攤開的那一筆點得進去改', (() => {
+        const row = detail && detail.querySelector('.txn-row');
+        if (!row) return false;
+        row.click();
+        const open = q('#dlg-txn').open;
+        if (open) q('#dlg-txn').close();
+        return open;
+      })());
+
+      await sleep(200);
+      const again = [...document.querySelectorAll('#by-category .cat-row')]
+        .find(r => r.textContent.includes(cat));
+      again.click(); await sleep(240);
+      ok('再點一次收回去', !q('#by-category .cat-detail'));
+
+      // 換到看一天的時候，那一類在這一段沒花過就不該留著一塊空白
+      const rowCat = [...document.querySelectorAll('#by-category .cat-row')]
+        .find(r => r.textContent.includes(cat));
+      rowCat.click(); await sleep(200);
+      Money.setRange('day', '2019-01-01'); await sleep(260);
+      ok('換到沒有帳的期間，攤開的那一類自己收起來',
+         Money.openCategory === null, String(Money.openCategory));
+
+      Money.setRange('month', today); await sleep(200);
+      Money.data = JSON.parse(keep);
+      Money.save(); Money.render(); Overview.render(); await sleep(200);
+    }
+
+    /* ── 總覽：今天的收支和這個月合併成一張 ──
+     *
+     * 她的原話：「今天的收支跟這個月的卡片合併，還有平均每天可用
+     * 那邊可以直接放在今天收支旁邊用小字標出來就好」。
+     */
+    {
+      await tab('money');
+      const keep = JSON.stringify(Money.data);
+      const keepOff = Prefs.data.overviewOff;
+      Prefs.data.overviewOff = null;      // 回到預設那一組
+      const today = new Date().toISOString().slice(0, 10);
+      const cat = Money.data.categories.expense[0].name;
+
+      Money.data.accounts = [{ id: 'mg1', name: '甲', kind: 'cash', opening: 9999,
+                               includeInTotal: true, order: 0 }];
+      Money.data.transactions = [
+        { id: 'mg-t1', date: today, kind: 'expense', amount: 155, category: cat,
+          account: '甲', note: '午餐' },
+      ];
+      Money.data.totalBudgets = [{ limit: 30000 }];
+      Money.data.budgets = [];
+      Money.data.dailyBudgets = [];
+      Money.data.dailyTotal = null;
+      Money.save(); Overview.render(); await tab('overview'); await sleep(300);
+
+      const cards = () => [...document.querySelectorAll('#overview-grid .card')];
+      const todayCard = cards().find(c => c.textContent.includes('今天的收支'));
+      ok('總覽上還有「今天的收支」', !!todayCard);
+      ok('「這個月」不再是自己一張卡',
+         !cards().some(c => c.querySelector('h2 .label')
+                            && c.querySelector('h2 .label').textContent.trim() === '這個月'),
+         cards().map(c => c.querySelector('h2 .label')
+                          ? c.querySelector('h2 .label').textContent.trim() : '?').join('／'));
+      ok('月結併進今天那張卡的底下',
+         !!todayCard && !!todayCard.querySelector('.month-foot')
+         && todayCard.querySelector('.month-foot').textContent.includes('這個月'),
+         todayCard ? todayCard.textContent.slice(-60) : '');
+      ok('併進去之後還進得去報表',
+         !!todayCard && [...todayCard.querySelectorAll('button')]
+             .some(b => b.textContent === '看報表'));
+
+      // 「今天可以用」貼在支出旁邊，小字，而且在同一排
+      const note = todayCard && todayCard.querySelector('.quota-note');
+      ok('今天可以用多少貼在支出旁邊', !!note,
+         todayCard ? todayCard.textContent.slice(0, 70) : '');
+      ok('它跟支出在同一排，不是另起一行',
+         !!note && note.closest('.today-flow') !== null);
+      ok('它比支出的數字小一號', (() => {
+        if (!note) return false;
+        const big = todayCard.querySelector('.today-num');
+        return parseFloat(getComputedStyle(note).fontSize)
+             < parseFloat(getComputedStyle(big).fontSize);
+      })());
+
+      // 合併之後「今天的預算」那張不再預設出現，不然同一個數字講兩次
+      ok('「今天的預算」不再預設出現',
+         !cards().some(c => c.textContent.includes('今天的預算')),
+         cards().length + ' 張');
+      ok('但排版裡還找得回來',
+         Overview.CARDS.some(c => c.id === 'todaybudget'));
+
+      // 一筆都沒記的時候額度還是要看得到——那正是還沒花之前最想知道的
+      Money.data.transactions = [];
+      Money.save(); Overview.render(); await sleep(280);
+      const empty = cards().find(c => c.textContent.includes('今天的收支'));
+      ok('還沒記帳的時候也看得到今天可以用多少',
+         !!empty && !!empty.querySelector('.quota-note'),
+         empty ? empty.textContent.slice(0, 70) : '');
+
+      // 沒設預算就不要印一個永遠是破折號的欄位
+      Money.data.totalBudgets = [];
+      Money.save(); Overview.render(); await sleep(280);
+      const noBudget = cards().find(c => c.textContent.includes('今天的收支'));
+      ok('沒設預算的時候不印空額度',
+         !!noBudget && !noBudget.querySelector('.quota-note'),
+         noBudget ? noBudget.textContent.slice(0, 70) : '');
+
+      Money.data = JSON.parse(keep);
+      Prefs.data.overviewOff = keepOff;
+      Money.save(); Money.render(); Overview.render(); await sleep(200);
+      await tab('money');
     }
 
     // ── 主題色 ──
@@ -2415,6 +2605,79 @@ const guard = (p, what, ms = 5000) => Promise.race([
         Cal.removeShift(shiftId);
         ok('班別拿得掉', Cal.shifts().length === 0);
         ok('已經排出去的班留著', Cal.data.events.filter(e => e.shift === shiftId).length === 2);
+
+        /* ── 收起來的班，月曆上的點點要留著 ──
+         *
+         * 她的原話：「我希望工作的部分過了之後點點不要消失」。
+         *
+         * 收起來回答的是「這件事不用再理了」，不是「這件事沒發生過」。
+         * 月曆問的是後者——她月底翻月曆是要看「這個月上了哪幾天班」，
+         * 拿掉的話那幾天會變成空的，看起來像自己沒排到班。
+         */
+        {
+            Agenda.view = 'month'; Agenda.render(); await sleep(240);
+            const shifts = Cal.data.events.filter(e => e.shift);
+            const day = shifts[0].date;
+
+            const cellOf = d => [...document.querySelectorAll('#calendar .cal-cell')]
+                .find(c => c.getAttribute('aria-label')
+                        && c.querySelector('.cal-n')
+                        && c.querySelector('.cal-n').textContent
+                           === String(Number(d.slice(8))));
+
+            const dotsBefore = cellOf(day).querySelectorAll('.cal-dots .label-dot').length;
+            ok('排了班的那天有點點', dotsBefore > 0, String(dotsBefore));
+
+            // 收起來（過期那區按✓、或「清掉過去的行程」走的都是這一支）
+            Agenda.doneWithEvent(shifts[0]);
+            await sleep(300);
+            Agenda.view = 'month'; Agenda.render(); await sleep(260);
+
+            const cell = cellOf(day);
+            const dots = cell.querySelectorAll('.cal-dots .label-dot');
+            ok('收起來之後點點還在', dots.length === dotsBefore,
+               dots.length + ' vs ' + dotsBefore);
+            ok('收起來的點畫成空心，看得出跟還沒處理的不一樣',
+               cell.querySelectorAll('.cal-dots .label-dot.gone').length === 1,
+               cell.querySelector('.cal-dots').className);
+
+            // 桌機格子裡那一列也要留著，而且劃掉
+            ok('桌機格子裡那一列也留著',
+               [...cell.querySelectorAll('.cal-item')]
+                   .some(x => x.textContent.includes('打工晚班')),
+               cell.textContent.slice(0, 40));
+            ok('留著的那一列看得出是收起來的',
+               !!cell.querySelector('.cal-item.done'));
+
+            // 點進那天要看得到它，而且放得回去——格子裡有點、
+            // 點進去卻寫「這天沒有排事」的話，那個點會變成一個查不出來的疑問
+            cell.click(); await sleep(260);
+            const panel = q('#calendar .cal-day');
+            ok('點進那天看得到收起來的那件',
+               panel.textContent.includes('打工晚班'), panel.textContent.slice(0, 60));
+            const back = [...panel.querySelectorAll('button')]
+                .find(b => b.textContent === '放回去');
+            ok('收起來的那件放得回去', !!back);
+
+            back.click(); await sleep(300);
+            ok('放回去之後真的回來了',
+               !Cal.data.events.find(e => e.id === shifts[0].id).done);
+
+            // **時間線不該跟著改。** 「接下來」不列已經過完的事是刻意的
+            // （她的原話：「為什麼已經過時間的行程還在我的接下來」）。
+            Agenda.doneWithEvent(shifts[0]);
+            await sleep(200);
+            // 比的是那一天，不是標題——同一個班別排了好幾天，
+            // 用標題找會被別天的那筆騙過去（第一次寫就是這樣自己騙自己的）
+            ok('時間線拿到的那一份不含收起來的',
+               Agenda.eventsOn(day).every(e => e.id !== shifts[0].id),
+               Agenda.eventsOn(day).length + ' 件');
+            ok('月曆拿到的那一份含收起來的',
+               Agenda.eventsOnWithDone(day).some(e => e.id === shifts[0].id));
+            ok('收起來的排在最後，不會把還要做的擠掉',
+               Agenda.eventsOnWithDone(day).findIndex(e => e.done)
+               === Agenda.eventsOnWithDone(day).filter(e => !e.done).length);
+        }
 
         // 收拾
         Cal.data.events = Cal.data.events.filter(e => !e.shift);

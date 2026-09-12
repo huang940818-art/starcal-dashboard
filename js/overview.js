@@ -30,8 +30,13 @@ const Overview = {
         { id: 'attention',   name: '要注意的', wide: true },
         { id: 'weather',     name: '今天的天氣' },
         { id: 'classes',     name: '今天的課' },
-        { id: 'money',       name: '這個月' },
+        // 「這個月」原本是自己一張卡。她說「今天的收支跟這個月的卡片合併」——
+        // 兩張都在講同一本帳，分開放的時候眼睛要來回跳兩次才拼得起
+        // 「今天花的在這個月裡算多還是算少」。現在月結縮成這張卡最下面一行。
         { id: 'today',       name: '今天的收支' },
+        // 這張整張都在講額度。合併之後「今天可以用多少」已經用小字
+        // 貼在今天的支出旁邊了，所以它不再預設打開——要看每一類的
+        // 額度（含今天還沒花的那幾類）才自己在排版裡加回來。
         { id: 'todaybudget', name: '今天的預算' },
         { id: 'balance',     name: '存款總額' },
         { id: 'spending',    name: '這個月花在哪' },
@@ -53,7 +58,7 @@ const Overview = {
      * 而這一頁只回答一件事：現在需要我注意什麼。所以預設是一組
      * 「大部分人每天都會看」的，其他的在排版裡自己開。
      */
-    DEFAULT_ON: ['attention', 'weather', 'money', 'today', 'todaybudget',
+    DEFAULT_ON: ['attention', 'weather', 'today',
                  'upcoming', 'countdown', 'memo', 'ke'],
 
     /** 現在排順序中 */
@@ -226,7 +231,6 @@ const Overview = {
     renderCard(id, box) {
         if (id === 'attention') return this.renderAttention(box);
         if (id === 'weather') return this.renderWeather(box);
-        if (id === 'money') return this.renderMoney(box);
         if (id === 'today') return this.renderToday(box);
         if (id === 'todaybudget') return this.renderTodayBudget(box);
         if (id === 'upcoming') return this.renderUpcoming(box);
@@ -880,24 +884,6 @@ const Overview = {
         ]));
     },
 
-    renderMoney(grid) {
-        const s = Money.monthSummary(thisMonth());
-        const top = Money.byCategory(thisMonth())[0];
-
-        grid.append(el('div', { class: 'card', 'data-hue': 'money' }, [
-            // 「記一筆」搬到旁邊那張「今天的收支」了——記帳記的就是今天，
-            // 同一排放兩顆一模一樣的主要按鈕，等於兩顆都不重要。
-            this.head('money', '這個月',
-                el('button', { class: 'btn small ghost', text: '看報表',
-                               onclick: () => showPanel('money') })),
-            el('div', { class: 'big' + (s.net < 0 ? ' negative' : '') }, [money(s.net, true)]),
-            el('div', { class: 'sub', text: `收 ${money(s.income)}　支 ${money(s.expense)}` }),
-            top ? el('div', { class: 'sub', style: 'margin-top:12px',
-                              text: `花最多的是${top.category}　${money(top.amount)}` })
-                : null,
-        ]));
-    },
-
     /**
      * 一列額度右邊要寫什麼。
      *
@@ -912,6 +898,36 @@ const Overview = {
             class: 'money-num' + (q.left < 0 ? ' negative' : ''),
             text: `${money(q.spent)} / ${money(q.limit)}`,
         });
+    },
+
+    /**
+     * 支出旁邊那一格小字：今天可以用多少。
+     *
+     * 沒設預算就回 null——**不要印「今天可以用 —」**，
+     * 一個永遠是破折號的欄位每天都在那裡佔一格，卻什麼都沒說。
+     *
+     * 這個月的額度已經用完的時候不寫數字寫一句話：那時候算出來的
+     * 「還可以用 0」看起來像壞掉的，而它要講的本來就是一句話。
+     */
+    dayQuotaNote() {
+        const q = Money.todayTotalQuota();
+        if (!q) return null;
+
+        const pace = Money.budgetPace(thisMonth());
+        if (pace && pace.over && q.source === 'month') {
+            return el('div', {}, [
+                el('div', { class: 'sub', text: '今天可以用' }),
+                el('div', { class: 'quota-note negative', text: '額度用完了' }),
+            ]);
+        }
+
+        return el('div', {}, [
+            el('div', { class: 'sub', text: q.left < 0 ? '今天超出' : '今天可以用' }),
+            el('div', { class: 'quota-note' + (q.left < 0 ? ' negative' : '') },
+                // 剩多少是主角，額度本身是參考——所以後面那個小一號。
+                [money(Math.abs(q.left)),
+                 el('span', { class: 'sub', text: `／${money(q.limit)}` })]),
+        ]);
     },
 
     /* ── 今天的收支 ────────────────────────────────────
@@ -930,6 +946,17 @@ const Overview = {
         // 額度不寫在這裡——旁邊「今天的預算」那張卡整張都在講它。
         // 同一個數字在同一頁講兩次，兩次都會被當成背景。
 
+        /* 「今天可以用多少」。
+         *
+         * 她的原話：「平均每天可用那邊可以直接放在今天收支旁邊用小字
+         * 標出來就好」。本來那是「今天的預算」整整一張卡，但那張卡的主角
+         * 只有一個數字——一個數字撐不起一張卡，還把今天的明細擠到下一排。
+         *
+         * 所以縮成支出旁邊的一格小字。**它要跟支出並排，不是另起一行**：
+         * 「花了 155」和「可以用 414」要在同一個視線裡才減得出來。
+         */
+        const dayQuota = this.dayQuotaNote();
+
         const body = [];
         if (rows.length) {
             body.push(el('div', { class: 'today-flow' }, [
@@ -944,6 +971,7 @@ const Overview = {
                         el('div', { class: 'money-num today-num income', text: money(flow.income) }),
                     ])
                     : null,
+                dayQuota,
             ]));
 
             for (const t of rows.slice(0, SHOWN)) {
@@ -970,6 +998,9 @@ const Overview = {
                                       text: `還有 ${rows.length - SHOWN} 筆` }));
             }
         } else {
+            // 一筆都還沒記的日子，額度是這張卡唯一有內容的東西——
+            // 「今天可以用 414」正是還沒花之前最想知道的那一個數字。
+            if (dayQuota) body.push(el('div', { class: 'today-flow' }, [dayQuota]));
             body.push(el('div', { class: 'empty' }, [
                 icon('money', 26), '今天還沒有記帳',
                 el('div', { class: 'hint', text: '按右上角的「記一筆」' }),
@@ -1015,10 +1046,32 @@ const Overview = {
             ]));
         }
 
+        /* ── 這個月 ──
+         *
+         * 原本是隔壁一整張卡。月結不是每天要盯的數字（月中看它永遠是
+         * 「還好」），但它是今天這筆花費的**背景**——所以留下來，
+         * 縮成一行擺在明細底下，不跟今天搶位置。
+         */
+        const m = Money.monthSummary(thisMonth());
+        const top = Money.byCategory(thisMonth())[0];
+
+        body.push(el('div', { class: 'month-foot' }, [
+            el('div', { class: 'month-foot-line' }, [
+                el('span', { class: 'sub', text: '這個月' }),
+                el('span', { class: 'money-num' + (m.net < 0 ? ' negative' : ''),
+                             text: money(m.net, true) }),
+            ]),
+            el('div', { class: 'sub', text: `收 ${money(m.income)}　支 ${money(m.expense)}`
+                + (top ? `　花最多的是${top.category} ${money(top.amount)}` : '') }),
+        ]));
+
         grid.append(el('div', { class: 'card', 'data-hue': 'money' }, [
-            this.head('list', '今天的收支',
+            this.head('list', '今天的收支', el('span', {}, [
+                el('button', { class: 'btn small ghost', text: '看報表',
+                               onclick: () => showPanel('money') }),
                 el('button', { class: 'btn primary small', text: '記一筆',
-                               onclick: () => Money.editTxn(null) })),
+                               onclick: () => Money.editTxn(null) }),
+            ])),
             ...body,
         ]));
     },

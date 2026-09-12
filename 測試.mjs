@@ -649,6 +649,41 @@ test('跨年的自訂區間標題要帶年份，不然看不出來', () => {
     assert.equal(Range.label(r), '2025/12/20–2026/1/10');
 });
 
+test('一天就是那一天，start 和 end 一樣', () => {
+    const r = Range.make('day', '2026-09-12');
+    assert.equal(r.kind, 'day');
+    assert.equal(r.start, '2026-09-12');
+    assert.equal(r.end, '2026-09-12');
+});
+
+test('往前翻一天是前一天，跨月也對', () => {
+    assert.equal(Range.shift(Range.make('day', '2026-09-01'), -1).start, '2026-08-31');
+    assert.equal(Range.shift(Range.make('day', '2026-09-12'), 1).start, '2026-09-13');
+});
+
+test('翻過年也不會變成 12 月 32 日', () => {
+    const r = Range.shift(Range.make('day', '2026-01-01'), -1);
+    assert.equal(r.start, '2025-12-31');
+    assert.equal(r.end, '2025-12-31');
+});
+
+test('一天的標題寫得出星期幾', () => {
+    // 2026-09-12 是星期六
+    assert.equal(Range.label(Range.make('day', '2026-09-12')), '9 月 12 日（六）');
+});
+
+test('不是今年的那一天要帶年份，不然看不出是哪一年', () => {
+    const label = Range.label(Range.make('day', '2019-03-04'));
+    assert.ok(label.startsWith('2019 年 3 月 4 日（'), label);
+});
+
+test('一天的期間，只有那一天算在裡面', () => {
+    const r = Range.make('day', '2026-09-12');
+    assert.equal(Range.contains(r, '2026-09-12'), true);
+    assert.equal(Range.contains(r, '2026-09-11'), false);
+    assert.equal(Range.contains(r, '2026-09-13'), false);
+});
+
 test('包不包含今天判斷得出來——不給看未來要靠它', () => {
     assert.equal(Range.hasToday(Range.make('month')), true);
     assert.equal(Range.hasToday({ kind: 'custom', start: '2020-01-01', end: '2020-12-31' }), false);

@@ -53,6 +53,8 @@ const Range = {
     /** 這個粒度、包含某一天的那一段 */
     make(kind, day = todayStr()) {
         const d = parseYmd(day);
+        // 一天。start 和 end 同一天，後面每一支照期間跑的算術都不用改。
+        if (kind === 'day') return { kind, start: day, end: day };
         if (kind === 'week') {
             const start = new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay());
             const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
@@ -74,6 +76,10 @@ const Range = {
     shift(range, delta) {
         if (range.kind === 'custom') return range;
         const d = parseYmd(range.start);
+        if (range.kind === 'day') {
+            return this.make('day', ymd(new Date(d.getFullYear(), d.getMonth(),
+                                                 d.getDate() + delta)));
+        }
         if (range.kind === 'week') {
             return this.make('week', ymd(new Date(d.getFullYear(), d.getMonth(),
                                                   d.getDate() + delta * 7)));
@@ -87,6 +93,14 @@ const Range = {
     /** 標題。**要看得出是哪一段**——「這個月」在翻過去之後就是謊話。 */
     label(range) {
         const a = parseYmd(range.start), b = parseYmd(range.end);
+        // 一天要寫出星期幾。「9 月 12 日」看不出是平日還是假日，
+        // 而「那天我怎麼花這麼多」通常第一個想到的就是那天是週幾。
+        if (range.kind === 'day') {
+            const w = '日一二三四五六'[a.getDay()];
+            const sameYear = a.getFullYear() === new Date().getFullYear();
+            return (sameYear ? '' : `${a.getFullYear()} 年 `)
+                 + `${a.getMonth() + 1} 月 ${a.getDate()} 日（${w}）`;
+        }
         if (range.kind === 'year') return `${a.getFullYear()} 年`;
         if (range.kind === 'month') return `${a.getFullYear()} 年 ${a.getMonth() + 1} 月`;
         const same = a.getFullYear() === b.getFullYear();
@@ -624,6 +638,7 @@ const Money = {
     rangeWord() {
         const now = this.isNow();
         switch (this.range.kind) {
+            case 'day': return now ? '今天' : '那天';
             case 'week': return now ? '這一週' : '那一週';
             case 'year': return now ? '今年' : '那一年';
             case 'custom': return '這段期間';
@@ -661,6 +676,9 @@ const Money = {
         clear(box);
 
         const kinds = [
+            // 「日」排第一。她要的是「看某一天總共花了多少」——
+            // 那是最小的一段，放在最左邊才跟後面由小到大接得上。
+            { k: 'day', name: '日' },
             { k: 'week', name: '週' },
             { k: 'month', name: '月' },
             { k: 'year', name: '年' },
@@ -770,9 +788,11 @@ const Money = {
             ]));
         }
 
-        // 這幾張卡的標題要跟著期間走，不然翻到七月還寫「這個月」
-        const title = this.isNow() && this.range.kind === 'month'
-            ? '這個月' : Range.label(this.range);
+        // 這幾張卡的標題要跟著期間走，不然翻到七月還寫「這個月」。
+        // 今天和這個月講得出口語就講口語，其他一律寫出是哪一段。
+        const title = this.isNow() && this.range.kind === 'month' ? '這個月'
+                    : this.isNow() && this.range.kind === 'day' ? '今天'
+                    : Range.label(this.range);
         $('#month-card-title').textContent = title;
         $('#by-category-title').textContent = `${title}花在哪`;
     },
@@ -880,6 +900,42 @@ const Money = {
         const box = $('#month-summary');
         clear(box);
         const s = this.summaryIn(this.range, this.reportAccount);
+
+        /* **看一天的時候主角是支出，不是收支相抵。**
+         *
+         * 月結問的是「這個月到底有沒有透支」，所以主角是淨額。
+         * 但一天幾乎不會有收入，淨額等於支出的負數——那個大大的
+         * 「−480」只是把「花了 480」換一個比較難讀的寫法。
+         * 她要的是「這一天總共花多少」，所以那個數字自己站出來。
+         */
+        if (this.range.kind === 'day') {
+            const count = this.data.transactions.filter(t =>
+                Range.contains(this.range, t.date)
+                && (!this.reportAccount || t.account === this.reportAccount)).length;
+
+            box.append(
+                el('div', { class: 'big money-num', text: money(s.expense) }),
+                el('div', { class: 'sub', text: this.rangeWord() + '花掉的' }),
+                el('div', { style: 'display:flex;gap:22px;margin-top:16px' }, [
+                    // 沒有收入的日子佔絕大多數，寫出來只是每天看一次「0」
+                    s.income ? el('div', {}, [
+                        el('div', { class: 'sub', text: '收入' }),
+                        el('div', { class: 'money-num income', style: 'font-size:19px',
+                                    text: money(s.income) }),
+                    ]) : null,
+                    s.income ? el('div', {}, [
+                        el('div', { class: 'sub', text: '收支相抵' }),
+                        el('div', { class: 'money-num' + (s.net < 0 ? ' negative' : ''),
+                                    style: 'font-size:19px', text: money(s.net, true) }),
+                    ]) : null,
+                    el('div', {}, [
+                        el('div', { class: 'sub', text: '筆數' }),
+                        el('div', { class: 'money-num', style: 'font-size:19px', text: String(count) }),
+                    ]),
+                ]));
+            return;
+        }
+
         box.append(
             el('div', { class: 'big money-num' + (s.net < 0 ? ' negative' : ''), text: money(s.net, true) }),
             el('div', { class: 'sub', text: this.rangeWord() + '收支相抵' }),
@@ -1204,6 +1260,15 @@ const Money = {
         clear(box);
 
         const rows = this.byCategoryIn(this.range, this.reportAccount);
+
+        // 換期間或換帳戶之後，原本攤開的那一類可能在這一段根本沒花過。
+        // 留著的話會掛一塊空白，看起來像壞掉的。
+        // **要在「整段都沒支出」那個 return 之前收**，不然一路翻到空白的
+        // 月份再翻回來，它還記著上一次攤開的那一類。
+        if (this.openCategory && !rows.some(r => r.category === this.openCategory)) {
+            this.openCategory = null;
+        }
+
         if (!rows.length) {
             box.append(el('div', { class: 'empty' }, [
                 icon('list', 26), this.rangeWord() + '沒有支出',
@@ -1228,9 +1293,10 @@ const Money = {
         const pie = head.map(r => ({
             label: r.category, value: r.amount, color: this.colorOf(r.category),
         }));
+        const otherLabel = tail.length ? '其他 ' + tail.length + ' 類' : null;
         if (tail.length) {
             pie.push({
-                label: '其他 ' + tail.length + ' 類',
+                label: otherLabel,
                 value: tail.reduce((a, b) => a + b.amount, 0),
                 color: 'var(--text-3)',
             });
@@ -1243,15 +1309,43 @@ const Money = {
                     el('div', { class: 'sub', text: '總支出' }),
                 ],
             }),
-            el('div', { class: 'pie-legend' }, pie.map(p => el('div', { class: 'pie-key' }, [
-                el('i', { style: `background:${p.color}` }),
-                el('span', { class: 'ellipsis', text: p.label }),
-                el('span', { class: 'sub', text: Math.round(p.value / sum * 100) + '%' }),
-            ]))),
+            el('div', { class: 'pie-legend' }, pie.map(p => {
+                // 「其他 N 類」不是一個分類，點進去沒有一批帳可以列
+                const cat = p.label === otherLabel ? null : p.label;
+                return el('div', {
+                    class: 'pie-key' + (cat ? ' tappable' : '')
+                         + (cat && cat === this.openCategory ? ' on' : ''),
+                    onclick: cat ? () => this.toggleCategory(cat) : null,
+                }, [
+                    el('i', { style: `background:${p.color}` }),
+                    el('span', { class: 'ellipsis', text: p.label }),
+                    el('span', { class: 'sub', text: Math.round(p.value / sum * 100) + '%' }),
+                ]);
+            })),
         ]));
 
-        for (const r of rows.slice(0, 8)) {
-            box.append(el('div', { class: 'cat-row' }, [
+        /* 分類點得進去。
+         *
+         * 她的原話：「圓餅圖下面的分類可以直接點進去看」。
+         * 「餐飲 3,240」自己回答不了「那到底是哪幾餐」——要嘛翻到最下面
+         * 那張「所有帳目」重設一次篩選，要嘛就算了。**攤開在原地**才是
+         * 「直接點進去」：同一段期間、同一個帳戶篩選，不用再對一次條件。
+         */
+        const SHOWN_CATS = 8;
+        for (const r of rows.slice(0, SHOWN_CATS)) {
+            const open = r.category === this.openCategory;
+            box.append(el('div', {
+                class: 'cat-row tappable' + (open ? ' on' : ''),
+                role: 'button', tabindex: '0',
+                'aria-expanded': String(open),
+                onclick: () => this.toggleCategory(r.category),
+                onkeydown: e => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        this.toggleCategory(r.category);
+                    }
+                },
+            }, [
                 el('span', {}, [
                     r.category,
                     ' ',
@@ -1267,7 +1361,58 @@ const Money = {
                             style: `width:${r.amount / peak * 100}%;`
                                  + `background:${this.colorOf(r.category)}` }),
             ]));
+
+            if (open) box.append(this.categoryDetail(r.category));
         }
+
+        // 原本超過八類就安靜地截掉。看不到的不知道自己看不到，
+        // 「加起來怎麼不等於總支出」會變成一個查不出來的疑問。
+        if (rows.length > SHOWN_CATS) {
+            box.append(el('div', { class: 'sub', style: 'margin-top:10px',
+                text: `還有 ${rows.length - SHOWN_CATS} 類，合計 `
+                    + money(rows.slice(SHOWN_CATS).reduce((a, b) => a + b.amount, 0)) }));
+        }
+    },
+
+    /** 現在攤開的是哪一類（null＝都收起來）。只記一個，開新的就收舊的。 */
+    openCategory: null,
+
+    toggleCategory(category) {
+        this.openCategory = this.openCategory === category ? null : category;
+        this.renderByCategory();
+    },
+
+    /** 這一類在這段期間的每一筆。點一筆就能改，跟「所有帳目」那邊一樣。 */
+    categoryDetail(category) {
+        const rows = this.data.transactions
+            .filter(t => t.kind === 'expense'
+                      && Range.contains(this.range, t.date)
+                      && (t.category || '未分類') === category
+                      && (!this.reportAccount || t.account === this.reportAccount))
+            .sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
+
+        const SHOWN = 20;
+        const box = el('div', { class: 'cat-detail' });
+
+        for (const t of rows.slice(0, SHOWN)) {
+            box.append(el('div', { class: 'txn-row', onclick: () => this.editTxn(t) }, [
+                el('div', { class: 'grow' }, [
+                    el('div', { class: 'ellipsis', text: t.note || t.category || '（沒有備註）' }),
+                    el('div', { class: 'sub ellipsis',
+                        // 只看一天的時候每一列的日期都一樣，寫了是廢話
+                        text: [this.range.kind === 'day' ? null : relativeDay(t.date), t.account]
+                            .filter(Boolean).join('　') }),
+                ]),
+                el('div', { class: 'money-num', text: money(t.amount) }),
+            ]));
+        }
+
+        if (rows.length > SHOWN) {
+            box.append(el('div', { class: 'sub', style: 'padding-top:8px',
+                text: `還有 ${rows.length - SHOWN} 筆，到最下面「所有帳目」用篩選看` }));
+        }
+
+        return box;
     },
 
     renderSubs() {

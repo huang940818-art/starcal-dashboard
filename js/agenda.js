@@ -90,10 +90,15 @@ const Cal = {
         return true;
     },
 
-    /** 某一天的行程，有時間的排前面 */
+    /** 某一天的行程，有時間的排前面。**收起來的不算。** */
     on(day) {
+        return this.allOn(day).filter(e => !e.done);
+    },
+
+    /** 某一天的行程，**含收起來的**。理由見 Agenda.eventsOnWithDone。 */
+    allOn(day) {
         return this.data.events
-            .filter(e => e.date === day && !e.done)
+            .filter(e => e.date === day)
             .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
     },
 
@@ -174,6 +179,27 @@ const Agenda = {
     },
 
     eventsOn(day) { return Cal.on(day).filter(e => this.match(e)); },
+
+    /**
+     * 那一天的行程，**含已經收起來的**。
+     *
+     * 她的原話：「我希望工作的部分過了之後點點不要消失」。
+     *
+     * 「收起來」（過期那區的清掉、或單筆按過的）回答的是「這件事不用
+     * 再理了」，不是「這件事沒發生過」。月曆問的是後面那個——
+     * 她月底翻月曆是要看「這個月上了哪幾天班」，把收起來的拿掉的話，
+     * 那幾天會變成空的，看起來像自己沒排到班。
+     *
+     * 跟停課那顆點同一套處理：**留著，但畫成空心**（見 cls-dot.off
+     * 上面那段註解——「拿掉的話『今天本來有課』這件事就消失了」）。
+     *
+     * **收起來的排最後。** 格子裡只放得下三件，讓已經過去的把今天
+     * 真正要做的擠下去，就本末倒置了。
+     */
+    eventsOnWithDone(day) {
+        const rows = Cal.allOn(day).filter(e => this.match(e));
+        return [...rows.filter(e => !e.done), ...rows.filter(e => e.done)];
+    },
 
     todosOn(day) {
         return Todo.data.items.filter(t => !t.done && t.due === day && this.match(t));
@@ -621,8 +647,13 @@ const Agenda = {
             ? this.dayLabel(e.date).split('　')[0]
             : (e.time ? (e.endTime ? `${e.time}–${e.endTime}` : e.time) : '整天');
 
+        // 收起來的也會出現在月曆底下那塊（見 Cal.dayPanel）。
+        // **要看得出它是收起來的，而且放得回去**——長得跟還沒處理的
+        // 一模一樣的話，那顆空心點就變成一個查不出來的疑問。
+        const gone = !!e.done;
+
         return el('div', {
-            class: 'event-row' + (late ? ' late' : ''),
+            class: 'event-row' + (late ? ' late' : '') + (gone ? ' gone' : ''),
             onclick: () => Cal.edit(e),
         }, [
             el('div', { class: 'event-time', text: time }),
@@ -634,7 +665,14 @@ const Agenda = {
                     [showDate && e.time ? e.time : '', e.note || '']
                         .filter(Boolean).join('　') || null),
             ]),
-            late ? el('button', {
+            gone ? el('button', {
+                type: 'button',
+                class: 'btn small ghost',
+                title: '放回去，這件事會回到時間線上',
+                text: '放回去',
+                onclick: ev => { ev.stopPropagation(); this.undoneEvent(e); },
+            }) : null,
+            late && !gone ? el('button', {
                 type: 'button',
                 class: 'check event-done',
                 'aria-label': `收掉「${e.title}」`,
