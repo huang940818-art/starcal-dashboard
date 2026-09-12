@@ -1265,6 +1265,67 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 /* 圖例本來緊貼著左邊，加了底色要留一點內距才不會卡邊 */
 .pie-key.tappable { padding: 3px 6px; margin: 0 -6px; }
 
+/* ── 打工 ───────────────────────────────────────────── */
+
+/* 班別膠囊上那顆「改」。只有選中的那顆才長出來——
+   每顆都掛一顆的話，排班那一列會變成一排按鈕。 */
+.shift-edit {
+    font-size: 11.5px;
+    padding: 1px 7px;
+    margin-left: 2px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--text) 16%, transparent);
+    cursor: pointer;
+}
+
+.shift-edit:hover { background: color-mix(in srgb, var(--text) 28%, transparent); }
+
+.shift-today { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-bottom: 14px; }
+
+.shift-month {
+    padding-top: 12px;
+    border-top: 1px solid var(--separator);
+}
+
+.shift-line {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 2px;
+}
+
+.shift-line .money-num { font-size: 19px; font-weight: 600; }
+
+/* 算不出來的那幾筆。**要看得見**——少算的錢不會有任何地方報錯，
+   只會讓合計安靜地變小。 */
+.shift-warn { color: var(--warn); margin-top: 10px; }
+
+/* 對帳視窗 */
+
+.ps-head { margin: 4px 0 14px; }
+
+.ps-list { max-height: 46vh; overflow-y: auto; }
+
+.ps-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--separator);
+    font-size: 14px;
+}
+
+.ps-row:last-child { border-bottom: 0; }
+
+.ps-day {
+    flex: 0 0 auto;
+    min-width: 62px;
+    color: var(--text-3);
+    font-size: 12.5px;
+    font-variant-numeric: tabular-nums;
+}
+
 /* ── 待辦 ───────────────────────────────────────────── */
 
 .check {

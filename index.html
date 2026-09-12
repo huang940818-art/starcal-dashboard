@@ -294,13 +294,24 @@
      實驗室、家教、社團、值班都是班。 -->
 <dialog id="dlg-shift">
     <form method="dialog">
-        <h3>新的班別</h3>
+        <h3 id="sf-title">新的班別</h3>
         <label class="field"><span>叫什麼</span>
             <input id="sf-name" aria-required="true" placeholder="例：打工晚班、實驗室、家教"></label>
         <div class="row">
             <label class="field"><span>從</span><input id="sf-time" type="time"></label>
             <label class="field"><span>到</span><input id="sf-end" type="time"></label>
         </div>
+        <div class="row">
+            <label class="field"><span>休息（分鐘）</span>
+                <input id="sf-break" type="number" min="0" step="5" placeholder="0"></label>
+            <label class="field"><span>時薪</span>
+                <input id="sf-rate" type="number" min="0" step="1" placeholder="不算薪就留空"></label>
+        </div>
+        <!-- 算出來的工時即時寫在這裡。
+             **不做「要不要扣 30 分鐘」那種提醒**——扣不扣薪是店家的做法，
+             跳出來問等於丟一個開關，而那個問題的答案我也不知道。
+             把量寫出來就好：八小時的班休息留 0，她會看到「實際工時 8 小時」。 -->
+        <p class="sub" id="sf-hours" style="margin:-4px 0 14px"></p>
         <label class="field"><span>分類</span><select id="sf-label"></select></label>
         <div class="dialog-actions">
             <button class="btn" value="cancel" formnovalidate>取消</button>
@@ -308,6 +319,7 @@
         </div>
         <p class="sub" style="margin:12px 0 0">
             建好之後在月曆上點日期就排得上去，點第二下取消。
+            時薪改了只影響之後排的班，已經排出去的還是用當時的。
         </p>
     </form>
 </dialog>
@@ -494,6 +506,27 @@
         <div class="dialog-actions">
             <button class="btn" value="cancel" formnovalidate>取消</button>
             <button type="button" class="btn primary" id="c-save">存</button>
+        </div>
+    </form>
+</dialog>
+
+<!-- 對一下薪水。
+     **實際領到多少由她自己輸入，不從記帳猜。** 薪水通常是隔月發的
+     （這個月十號發上個月的），拿「這個月的收入」比「這個月排的班」
+     一定對不起來；而且獎學金、家裡給的也會混進來。
+     猜錯的那個差額比沒有差額更糟——她會去找一筆不存在的漏帳。 -->
+<dialog id="dlg-payslip">
+    <form method="dialog">
+        <h3>對一下薪水</h3>
+        <div class="row">
+            <label class="field"><span>哪一期的班</span>
+                <select id="ps-month"></select></label>
+            <label class="field"><span>實際領到</span>
+                <input id="ps-actual" type="number" min="0" step="1" placeholder="薪資單上的數字"></label>
+        </div>
+        <div id="ps-body"></div>
+        <div class="dialog-actions">
+            <button class="btn" value="cancel" formnovalidate>關掉</button>
         </div>
     </form>
 </dialog>
@@ -720,6 +753,7 @@
 <script src="js/charts.js"></script>
 <script src="js/money.js"></script>
 <script src="js/todo.js"></script>
+<script src="js/shifts.js"></script>
 <script src="js/timetable.js"></script>
 <script src="js/agenda.js"></script>
 <script src="js/calendar.js"></script>

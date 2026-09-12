@@ -294,6 +294,23 @@ const MonthView = {
                     s.time ? el('span', { class: 'shift-time',
                                           text: s.time + (s.endTime ? '–' + s.endTime : '') })
                            : null,
+                    // 時薪只在「改」裡面看得到／改得到。膠囊上不寫——
+                    // 排班的時候要看的是「這週排幾天了」，不是每顆上面
+                    // 掛一個金額。**只有選中的那顆才長出「改」**，
+                    // 每顆都掛一顆的話這一列會變成一排按鈕。
+                    s.id === this.pickedShift
+                        ? el('span', {
+                            class: 'shift-edit', text: '改',
+                            role: 'button', tabindex: '0',
+                            'aria-label': `改班別「${s.name}」`,
+                            onclick: e => { e.stopPropagation(); this.editShift(s.id); },
+                            onkeydown: e => {
+                                if (e.key !== 'Enter' && e.key !== ' ') return;
+                                e.preventDefault(); e.stopPropagation();
+                                this.editShift(s.id);
+                            },
+                          })
+                        : null,
                 ])),
                 el('button', {
                     type: 'button', class: 'shift-chip add', text: '＋ 新的班別',
@@ -323,29 +340,79 @@ const MonthView = {
         toast(`${d.getMonth() + 1}/${d.getDate()} ${on ? '排上' : '取消'}${name}`);
     },
 
-    editShift() {
-        $('#sf-name').value = '';
-        $('#sf-time').value = '';
-        $('#sf-end').value = '';
-        Prefs.fillSelect($('#sf-label'), null);
+    /**
+     * 開班別的對話框。給 id 就是改既有的，不給就是開新的。
+     *
+     * **改得了很重要。** 時薪是後來才加的欄位，本來已經開好的班別
+     * 全都沒有——沒有「改」的話她得把班別刪掉重開，而刪掉重開的話
+     * 之後排的班會換一個 shift id，跟以前排的對不起來。
+     */
+    editShift(id = null) {
+        const s = id ? Cal.shift(id) : null;
+
+        $('#sf-title').textContent = s ? '改班別' : '新的班別';
+        $('#sf-save').textContent = s ? '存起來' : '建立';
+        $('#sf-name').value = s?.name || '';
+        $('#sf-time').value = s?.time || '';
+        $('#sf-end').value = s?.endTime || '';
+        // 0 要顯示成空的。欄位裡有個「0」的話，游標常落在它前面，
+        // 打 30 會變成 300。
+        $('#sf-break').value = s?.breakMin ? String(s.breakMin) : '';
+        $('#sf-rate').value = s?.rate ? String(s.rate) : '';
+        Prefs.fillSelect($('#sf-label'), s?.label || null);
+
+        /* 算出來的工時即時寫出來。
+         *
+         * **這是「休息時間不算薪」唯一的防線，而且它不是一個開關。**
+         * 八小時的班如果休息留 0，她會看到「實際工時 8 小時」，
+         * 自己就發現了——不用問她、不用替她決定。 */
+        const line = $('#sf-hours');
+        const sync = () => {
+            const row = {
+                time: $('#sf-time').value,
+                endTime: $('#sf-end').value,
+                breakMin: $('#sf-break').value,
+                rate: $('#sf-rate').value,
+            };
+            const h = Shifts.hours(row);
+            if (h === null) {
+                line.textContent = '填了「從」和「到」才算得出工時。';
+                return;
+            }
+            const pay = Shifts.pay(row);
+            line.textContent = `實際工時 ${Shifts.hoursText(h)}`
+                + (pay === null ? '（沒填時薪就不算錢）'
+                                : `　一班 ${money(pay)}`);
+        };
+        for (const sel of ['#sf-time', '#sf-end', '#sf-break', '#sf-rate']) {
+            $(sel).oninput = sync;
+        }
+        sync();
 
         const dlg = openDialog('#dlg-shift');
         $('#sf-save').onclick = () => {
             const time = $('#sf-time').value;
             const endTime = $('#sf-end').value;
-            if (time && endTime && endTime < time) return toast('結束時間比開始還早', true);
+            // 跨夜班是合法的（22:00–06:00），不能擋。擋的是「填了從
+            // 卻沒填到」那種算不出工時的狀態——那個才是打到一半。
+            if (time && !endTime) return toast('填了「從」也要填「到」，不然算不出工時', true);
 
-            const s = Cal.addShift({
+            const patch = {
                 name: $('#sf-name').value,
                 time, endTime,
                 label: $('#sf-label').value || null,
-            });
-            if (!s) return toast('這個班叫什麼？', true);
+                rate: $('#sf-rate').value,
+                breakMin: $('#sf-break').value,
+            };
+            const saved = s ? Cal.updateShift(s.id, patch) : Cal.addShift(patch);
+            if (!saved) return toast('這個班叫什麼？', true);
 
-            this.pickedShift = s.id;
+            this.pickedShift = saved.id;
             this.shiftMode = true;
             dlg.close();
             this.render();
+            Overview.render();
+            if (s) toast(`「${saved.name}」改好了。已經排出去的班還是用原本的時薪`);
         };
     },
 

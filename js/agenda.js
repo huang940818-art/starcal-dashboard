@@ -19,6 +19,9 @@ const Cal = {
         this.data = await Store.load('行事曆');
         this.data.events ??= [];
         this.data.shifts ??= [];
+        // 每一期實際領到多少（"yyyy-MM" → 金額）。存在資料裡不是
+        // localStorage：她在手機上對完帳，回電腦上還要看得到。
+        this.data.payslips ??= {};
     },
 
     save() { Store.save('行事曆'); },
@@ -44,11 +47,38 @@ const Cal = {
 
     shift(id) { return this.shifts().find(s => s.id === id) || null; },
 
-    addShift({ name, time = '', endTime = '', label = null }) {
+    addShift({ name, time = '', endTime = '', label = null, rate = 0, breakMin = 0 }) {
         const clean = (name || '').trim();
         if (!clean) return null;
-        const s = { id: uid(), name: clean, time, endTime, label };
+        const s = { id: uid(), name: clean, time, endTime, label,
+                    rate: Number(rate) || 0, breakMin: Number(breakMin) || 0 };
         this.shifts().push(s);
+        this.save();
+        return s;
+    },
+
+    /**
+     * 改一個班別。
+     *
+     * **改的只有樣板，已經排出去的班一個都不動。**
+     * 六月加薪就改這裡，三到五月的班還是用當時抄過去的時薪算——
+     * 不然過去每一期的預估都會跟著跳，而跟實際領到的對不起來時，
+     * 完全看不出來是為什麼。
+     */
+    updateShift(id, patch) {
+        const s = this.shift(id);
+        if (!s) return null;
+        if (patch.name !== undefined) {
+            const clean = String(patch.name).trim();
+            if (!clean) return null;
+            s.name = clean;
+        }
+        for (const k of ['time', 'endTime', 'label']) {
+            if (patch[k] !== undefined) s[k] = patch[k];
+        }
+        for (const k of ['rate', 'breakMin']) {
+            if (patch[k] !== undefined) s[k] = Number(patch[k]) || 0;
+        }
         this.save();
         return s;
     },
@@ -81,10 +111,13 @@ const Cal = {
             this.save();
             return false;
         }
+        /* 時薪和休息**抄一份過來**，不是每次都回去問班別。
+         * 理由見 updateShift 上面那段：調薪不能讓過去的預估跟著變。 */
         this.data.events.push({
             id: uid(), date: day, title: s.name,
             time: s.time || '', endTime: s.endTime || '',
             note: '', label: s.label || null, shift: s.id,
+            rate: Number(s.rate) || 0, breakMin: Number(s.breakMin) || 0,
         });
         this.save();
         return true;

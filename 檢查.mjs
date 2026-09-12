@@ -2704,10 +2704,164 @@ const guard = (p, what, ms = 5000) => Promise.race([
                === Agenda.eventsOnWithDone(day).filter(e => !e.done).length);
         }
 
+        /* ── 時薪、休息、對帳 ──
+         *
+         * 她的原話：「按我的工時去算我今天賺了多少」＋「有休息時間
+         * 不算時薪」＋「這個為大學生做的，大學生大部分都是 PT」。
+         *
+         * 主角不是「今天賺多少」，是「這期預估 vs 實際領到差多少」。
+         */
+        {
+            // 上面那一段驗完「刪班別、排出去的班留著」之後班別是空的，
+            // 這裡要自己開一個。**不要接著用上面的**——那種相依會讓
+            // 上面改一行、下面紅一片，而且看不出是誰的錯。
+            const made = Cal.addShift({ name: '打工晚班', time: '18:00', endTime: '22:00' });
+            MonthView.pickedShift = made.id;
+            Agenda.view = 'month'; MonthView.shiftMode = true;
+            Agenda.render(); await sleep(260);
+
+            // 選中的班別才長出「改」——每顆都掛一顆的話這一列會變成一排按鈕
+            const chip = () => q('.shift-chip.on');
+            ok('選中的班別上有「改」', !!chip() && !!chip().querySelector('.shift-edit'));
+            ok('沒選中的班別不長「改」',
+               [...document.querySelectorAll('.shift-chip:not(.on)')]
+                   .every(c => !c.querySelector('.shift-edit')));
+
+            chip().querySelector('.shift-edit').click(); await sleep(240);
+            ok('「改」點得開，而且是改不是開新的',
+               q('#dlg-shift').open && q('#sf-title').textContent === '改班別',
+               q('#sf-title').textContent);
+            ok('開既有的班別會把原本的值帶出來',
+               q('#sf-name').value === '打工晚班' && q('#sf-time').value === '18:00',
+               q('#sf-name').value + ' ' + q('#sf-time').value);
+
+            // **工時即時寫出來。** 這是「休息時間不算薪」唯一的防線，
+            // 而且它不是一個開關——八小時的班休息留 0，她會自己看到。
+            ok('還沒填休息時，工時就是整段',
+               q('#sf-hours').textContent.includes('4 小時'),
+               q('#sf-hours').textContent);
+
+            q('#sf-break').value = '30';
+            q('#sf-break').dispatchEvent(new Event('input'));
+            await sleep(120);
+            ok('填了休息，工時即時扣掉',
+               q('#sf-hours').textContent.includes('3.5 小時'),
+               q('#sf-hours').textContent);
+            ok('沒填時薪時說清楚不算錢',
+               q('#sf-hours').textContent.includes('沒填時薪'),
+               q('#sf-hours').textContent);
+
+            q('#sf-rate').value = '200';
+            q('#sf-rate').dispatchEvent(new Event('input'));
+            await sleep(120);
+            ok('填了時薪就算得出一班多少',
+               q('#sf-hours').textContent.includes('700'),
+               q('#sf-hours').textContent);
+
+            q('#sf-save').click(); await sleep(300);
+            ok('時薪和休息存得進班別',
+               Cal.shifts()[0].rate === 200 && Cal.shifts()[0].breakMin === 30,
+               JSON.stringify(Cal.shifts()[0]));
+
+            /* **改班別不能動到已經排出去的班。**
+             * 調薪之後過去每一期的預估都跟著跳的話，跟實際領到的
+             * 對不起來時完全看不出來是為什麼。 */
+            ok('改班別不會動到已經排出去的班',
+               Cal.data.events.filter(e => e.shift === made.id).every(e => !e.rate),
+               JSON.stringify(Cal.data.events.filter(e => e.shift === made.id)
+                                  .map(e => e.rate)));
+
+            // 之後排的才吃得到新的時薪
+            const cells2 = [...document.querySelectorAll('#calendar .cal-cell:not(.outside)')];
+            MonthView.pickedShift = Cal.shifts()[0].id;
+            cells2[14].click(); await sleep(250);
+            const fresh = Cal.data.events.filter(e => e.rate === 200);
+            ok('改完之後排的班才帶新的時薪', fresh.length === 1, String(fresh.length));
+            ok('休息也一起抄過去', fresh[0] && fresh[0].breakMin === 30);
+
+            // 那一筆算得出工時和薪水
+            ok('一筆班算得出工時', Shifts.hours(fresh[0]) === 3.5,
+               String(Shifts.hours(fresh[0])));
+            ok('一筆班算得出薪水', Shifts.pay(fresh[0]) === 700,
+               String(Shifts.pay(fresh[0])));
+
+            /* ── 總覽那張卡 ── */
+            const keepOff = Prefs.data.overviewOff;
+            Prefs.data.overviewOff = [];        // 打工那張預設不打開
+            Overview.render(); await tab('overview'); await sleep(300);
+
+            const card = () => [...document.querySelectorAll('#overview-grid .card')]
+                .find(c => c.querySelector('h2 .label')
+                        && c.querySelector('h2 .label').textContent.trim() === '打工');
+            ok('總覽上有「打工」那張卡', !!card());
+            ok('卡上寫得出這個月排了幾天',
+               !!card() && card().textContent.includes('排了'),
+               card() ? card().textContent.slice(0, 80) : '');
+
+            // **「還沒入帳」不是客氣話，是這個數字唯一正確的讀法。**
+            // 跟今天的支出擺在一起很容易讀成「我今天淨賺 360」。
+            ok('預估一定寫「還沒入帳」',
+               !!card() && card().textContent.includes('還沒入帳'),
+               card() ? card().textContent.slice(0, 120) : '');
+
+            // 算不出來的要講出來，不然合計會安靜地變小
+            ok('沒填時薪的那幾筆有講出來',
+               !!card() && card().textContent.includes('還沒填時薪'),
+               card() ? card().textContent.slice(0, 160) : '');
+
+            /* ── 對帳 ── */
+            const btn = [...card().querySelectorAll('button')]
+                .find(b => b.textContent === '對一下薪水');
+            ok('卡上有「對一下薪水」', !!btn);
+            btn.click(); await sleep(300);
+            ok('對帳視窗開得起來', q('#dlg-payslip').open);
+
+            ok('還沒填實際領到的時候不印一個假的差額',
+               !q('#ps-body').textContent.includes('少了')
+               && q('#ps-body').textContent.includes('填進去'),
+               q('#ps-body').textContent.slice(0, 60));
+
+            // .ps-list 是 class 不是 id
+            const list = q('#ps-body .ps-list');
+            ok('每一天列得出來，看得到是哪天',
+               !!list && list.children.length >= 1,
+               (list ? list.children.length : 0) + ' 列');
+            ok('列裡面寫得出日期、時段和工時',
+               !!list && list.textContent.includes('18:00–22:00')
+               && list.textContent.includes('休 30 分')
+               && list.textContent.includes('3.5 小時'),
+               list ? list.textContent.slice(0, 70) : '');
+
+            const actual = q('#ps-actual');
+            actual.value = '500';
+            actual.dispatchEvent(new Event('input'));
+            await sleep(260);
+            // 預估 700、實際 500 → 少了 200。**先寫差額再寫兩個數字**：
+            // 「預估 700、實際 500」要她自己減一次，而她要的就是那個數字
+            ok('差額算得出來而且是主角',
+               q('#ps-body .big').textContent.includes('少了')
+               && q('#ps-body .big').textContent.includes('200'),
+               q('#ps-body .big').textContent);
+            ok('預估和實際都還寫得出來',
+               q('#ps-body').textContent.includes('預估')
+               && q('#ps-body').textContent.includes('實際'));
+
+            ok('實際領到多少存得起來',
+               Cal.data.payslips[thisMonth()] === 500,
+               JSON.stringify(Cal.data.payslips));
+
+            q('#dlg-payslip').close();
+            Prefs.data.overviewOff = keepOff;
+            await tab('agenda');
+            Agenda.view = 'month'; Agenda.render(); await sleep(240);
+        }
+
         // 收拾
         Cal.data.events = Cal.data.events.filter(e => !e.shift);
+        Cal.data.payslips = {};
         Cal.save();
         MonthView.pickedShift = null;
+        MonthView.shiftMode = false;
         Agenda.view = 'month'; Agenda.render(); await sleep(220);
     }
 

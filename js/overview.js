@@ -46,6 +46,10 @@ const Overview = {
         // 想法牆只在寬螢幕有意義（見 app.js 的 WALL_MIN_WIDTH），
         // 窄螢幕上這張卡跟著整個分頁一起收起來。
         { id: 'countdown',   name: '倒數' },
+        // 打工。**預設不打開**——沒排班的人看到的會是一張空卡，
+        // 而總覽只回答「現在需要我注意什麼」。排了第一次班之後
+        // 在排版裡自己加。
+        { id: 'shifts',      name: '打工' },
         { id: 'wall',        name: '想法牆', wide: false },
         // 小克那塊預設放最後：它不是待辦事項，不該排在
         // 「現在需要注意什麼」前面。展示模式時它自己不會出現。
@@ -240,6 +244,7 @@ const Overview = {
         if (id === 'spending') return this.renderSpending(box);
         if (id === 'subs') return this.renderSubs(box);
         if (id === 'countdown') return this.renderCountdown(box);
+        if (id === 'shifts') return this.renderShifts(box);
         if (id === 'wall') return this.renderWall(box);
         if (id === 'ke') return Ke.render(box);
     },
@@ -1180,6 +1185,97 @@ const Overview = {
         }
 
         grid.append(el('div', { class: 'card', 'data-hue': 'budget' }, [head, ...body]));
+    },
+
+    /* ── 打工 ──────────────────────────────────────────
+     *
+     * 她的原話：「按我的工時去算我今天賺了多少，然後還可以顯示我今天
+     * 花了多少」。
+     *
+     * **但主角不是「今天賺多少」。** 她沒有天天上班，那一行大部分日子
+     * 是 0——而她自己剛講過「今天沒用到的項目不要顯示」。
+     * 主角是**這個月排了幾天、幾小時、預估多少**，以及那顆「對一下薪水」。
+     * 「今天賺 800」看過就忘，「少了 760」她會去翻是哪一天。
+     *
+     * **預估一律寫「還沒入帳」。** 跟今天的支出擺在一起很容易讀成
+     * 「我今天淨賺 360」，但那 800 下個月才發，現在不在戶頭裡。
+     */
+    renderShifts(grid) {
+        const events = Cal.data.events || [];
+        const ym = thisMonth();
+        const month = Shifts.inMonth(events, ym);
+        const today = Shifts.onDay(events, todayStr());
+
+        const head = this.head('clock', '打工',
+            el('button', {
+                class: 'btn small ghost', text: '排班',
+                onclick: () => { Agenda.view = 'month'; showPanel('agenda');
+                                 MonthView.shiftMode = true; Agenda.render(); },
+            }));
+
+        if (!month.length && !today.length) {
+            grid.append(el('div', { class: 'card', 'data-hue': 'money' }, [
+                head,
+                el('div', { class: 'empty' }, [
+                    icon('clock', 26), '這個月還沒排班',
+                    el('div', { class: 'hint',
+                                text: '在月曆上開一個班別（填時薪和休息），點日期就排得上去' }),
+                ]),
+            ]));
+            return;
+        }
+
+        const m = Shifts.total(month);
+        const body = [];
+
+        /* 今天有班才寫今天。**沒班的日子整段不出現**，
+         * 不是寫一個「今天 0 小時」——那一行每天都在而且每天都一樣。 */
+        if (today.length) {
+            const t = Shifts.total(today);
+            body.push(el('div', { class: 'shift-today' }, [
+                el('div', {}, [
+                    el('div', { class: 'sub', text: '今天' }),
+                    el('div', { class: 'money-num today-num',
+                                text: Shifts.hoursText(t.hours) }),
+                ]),
+                t.pay ? el('div', {}, [
+                    // 「還沒入帳」不是客氣話，是這個數字唯一正確的讀法
+                    el('div', { class: 'sub', text: '賺了（還沒入帳）' }),
+                    el('div', { class: 'money-num today-num', text: money(t.pay) }),
+                ]) : null,
+            ]));
+        }
+
+        body.push(el('div', { class: 'shift-month' }, [
+            el('div', { class: 'shift-line' }, [
+                el('span', { class: 'sub', text: '這個月到現在' }),
+                el('span', { class: 'money-num',
+                             text: m.pay ? money(m.pay) : '—' }),
+            ]),
+            el('div', { class: 'sub',
+                        text: `排了 ${m.days} 天　${Shifts.hoursText(m.hours)}`
+                            + (m.pay ? '　還沒入帳' : '') }),
+        ]));
+
+        /* 算不出來的要講出來。**少算的錢不會有任何地方報錯**，
+         * 只會讓合計安靜地變小，而「我這個月怎麼才賺這麼少」查不出原因。 */
+        if (m.noRate || m.noTime) {
+            const parts = [];
+            if (m.noRate) parts.push(`${m.noRate} 筆還沒填時薪`);
+            if (m.noTime) parts.push(`${m.noTime} 筆沒填時間`);
+            body.push(el('div', { class: 'sub shift-warn',
+                text: parts.join('、') + '，沒算進去。到月曆上按班別的「改」補。' }));
+        }
+
+        if (m.pay) {
+            body.push(el('button', {
+                type: 'button', class: 'btn small', style: 'margin-top:12px',
+                text: '對一下薪水',
+                onclick: () => Shifts.openReconcile(ym),
+            }));
+        }
+
+        grid.append(el('div', { class: 'card', 'data-hue': 'money' }, [head, ...body]));
     },
 
     /** 總覽上的「接下來」：今天和明天，行程和待辦混在一起。 */

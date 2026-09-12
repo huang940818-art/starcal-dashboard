@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview', 'Countdown'];
+    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview', 'Countdown', 'Shifts'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
     // **沒定義的名字要給 undefined，不能直接丟出去。** names 是所有 load()
     // 共用的一份清單，只載其中一支檔案的時候，其他名字本來就不存在——
@@ -37,6 +37,9 @@ const { Charts, Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO, AutoCa
 
 // 倒數的算日子那幾支也是純函式，跟畫面無關。
 const { Countdown } = load('./js/util.js', './js/countdown.js');
+
+// 打工的工時與薪水。算錯了不會有任何地方報錯，只會給一個比較小的數字。
+const { Shifts } = load('./js/util.js', './js/shifts.js');
 
 // overview.js 只是宣告一個物件，載進來不會跑任何畫面的東西。
 // 這裡要的是卡片順序那段純算的邏輯。
@@ -682,6 +685,143 @@ test('一天的期間，只有那一天算在裡面', () => {
     assert.equal(Range.contains(r, '2026-09-12'), true);
     assert.equal(Range.contains(r, '2026-09-11'), false);
     assert.equal(Range.contains(r, '2026-09-13'), false);
+});
+
+/* ── 打工的工時與薪水 ──────────────────────────────── */
+
+test('工時就是結束減開始', () => {
+    assert.equal(Shifts.minutesBetween('18:00', '22:00'), 240);
+    assert.equal(Shifts.hours({ time: '18:00', endTime: '22:00' }), 4);
+});
+
+/** 大夜班 22:00–06:00 不處理的話會算出負八小時，而負的工時會讓
+ *  整個月的合計變小——畫面上只會顯示一個比較小的數字，看不出錯。 */
+test('跨夜班不會算出負的工時', () => {
+    assert.equal(Shifts.minutesBetween('22:00', '06:00'), 480);
+    assert.equal(Shifts.hours({ time: '22:00', endTime: '06:00' }), 8);
+});
+
+test('休息時間從工時裡扣掉', () => {
+    assert.equal(Shifts.hours({ time: '18:00', endTime: '22:00', breakMin: 30 }), 3.5);
+});
+
+test('休息比班還長是打錯字，扣到 0 為止不會變成負的', () => {
+    assert.equal(Shifts.hours({ time: '18:00', endTime: '19:00', breakMin: 999 }), 0);
+});
+
+/** 「這天沒工時」和「這天算不出工時」是兩件事。回 0 的話後者會安靜地
+ *  被當成沒上班，那幾筆就永遠不會被補上。 */
+test('沒填時間回 null，不是 0', () => {
+    assert.equal(Shifts.hours({ time: '', endTime: '' }), null);
+    assert.equal(Shifts.hours({ time: '18:00', endTime: '' }), null);
+});
+
+test('薪水是工時乘時薪', () => {
+    assert.equal(Shifts.pay({ time: '18:00', endTime: '22:00', rate: 200 }), 800);
+    assert.equal(Shifts.pay({ time: '18:00', endTime: '22:00', breakMin: 30, rate: 200 }), 700);
+});
+
+test('沒填時薪不算錢，回 null 不是 0', () => {
+    assert.equal(Shifts.pay({ time: '18:00', endTime: '22:00' }), null);
+    assert.equal(Shifts.pay({ time: '18:00', endTime: '22:00', rate: 0 }), null);
+});
+
+test('工時寫給人看，整數不拖 .0', () => {
+    assert.equal(Shifts.hoursText(4), '4 小時');
+    assert.equal(Shifts.hoursText(3.5), '3.5 小時');
+    assert.equal(Shifts.hoursText(null), '—');
+});
+
+test('只有排出來的班算，手動加的行程不算', () => {
+    const events = [
+        { id: 'a', date: '2026-09-01', shift: 's1', time: '18:00', endTime: '22:00', rate: 200 },
+        // 叫「打工」但不是排出來的：沒有時薪也沒有休息，算進去時數會對不起來
+        { id: 'b', date: '2026-09-02', title: '打工', time: '09:00', endTime: '17:00' },
+    ];
+    assert.equal(Shifts.inMonth(events, '2026-09').length, 1);
+});
+
+test('同一天排兩個班，天數只算一天', () => {
+    const events = [
+        { id: 'a', date: '2026-09-01', shift: 's1', time: '09:00', endTime: '12:00', rate: 200 },
+        { id: 'b', date: '2026-09-01', shift: 's2', time: '18:00', endTime: '22:00', rate: 200 },
+    ];
+    const t = Shifts.total(Shifts.inMonth(events, '2026-09'));
+    assert.equal(t.days, 1);
+    assert.equal(t.count, 2);
+    assert.equal(t.hours, 7);
+    assert.equal(t.pay, 1400);
+});
+
+/** 少算的錢不會有任何地方報錯，只會讓合計安靜地變小——
+ *  而「我這個月怎麼才賺這麼少」是查不出原因的。 */
+test('沒填時薪和沒填時間的筆數要回出去', () => {
+    const events = [
+        { id: 'a', date: '2026-09-01', shift: 's1', time: '18:00', endTime: '22:00', rate: 200 },
+        { id: 'b', date: '2026-09-02', shift: 's1', time: '18:00', endTime: '22:00' },
+        { id: 'c', date: '2026-09-03', shift: 's1' },
+    ];
+    const t = Shifts.total(Shifts.inMonth(events, '2026-09'));
+    assert.equal(t.noRate, 1);
+    assert.equal(t.noTime, 1);
+    assert.equal(t.pay, 800, '算不出來的不該混進合計');
+    assert.equal(t.hours, 8, '沒填時薪但有工時的，時數還是要算');
+});
+
+test('別的月份的班不會混進來', () => {
+    const events = [
+        { id: 'a', date: '2026-08-31', shift: 's1', time: '18:00', endTime: '22:00', rate: 200 },
+        { id: 'b', date: '2026-09-01', shift: 's1', time: '18:00', endTime: '22:00', rate: 200 },
+        { id: 'c', date: '2026-10-01', shift: 's1', time: '18:00', endTime: '22:00', rate: 200 },
+    ];
+    assert.equal(Shifts.inMonth(events, '2026-09').length, 1);
+});
+
+test('對帳：領到的比預估少，差額是負的', () => {
+    const events = [
+        { id: 'a', date: '2026-09-01', shift: 's1', time: '18:00', endTime: '22:00', rate: 200 },
+    ];
+    const r = Shifts.reconcile(Shifts.inMonth(events, '2026-09'), 700);
+    assert.equal(r.pay, 800);
+    assert.equal(r.actual, 700);
+    assert.equal(r.diff, -100);
+});
+
+test('對帳：還沒填實際領到，差額就是負的整份預估', () => {
+    const events = [
+        { id: 'a', date: '2026-09-01', shift: 's1', time: '18:00', endTime: '22:00', rate: 200 },
+    ];
+    const r = Shifts.reconcile(Shifts.inMonth(events, '2026-09'), null);
+    assert.equal(r.actual, 0);
+    assert.equal(r.diff, -800);
+});
+
+test('這一期算不出預估就回 null，不要給一個假的差額', () => {
+    const events = [
+        { id: 'a', date: '2026-09-01', shift: 's1', time: '18:00', endTime: '22:00' },
+    ];
+    assert.equal(Shifts.reconcile(Shifts.inMonth(events, '2026-09'), 5000), null);
+});
+
+test('有排過班的月份，新的在前', () => {
+    const events = [
+        { id: 'a', date: '2026-07-01', shift: 's1' },
+        { id: 'b', date: '2026-09-01', shift: 's1' },
+        { id: 'c', date: '2026-09-15', shift: 's1' },
+        { id: 'd', date: '2026-08-02', title: '不是班' },
+    ];
+    assert.deepEqual(Shifts.monthsWithShifts(events), ['2026-09', '2026-07']);
+});
+
+/** 調薪不能讓過去的預估跟著變。時薪是排班當下抄到那一筆上的，
+ *  所以同一個班別排出來的兩天可以有不同的時薪。 */
+test('同一個班別、不同時薪的兩天，各自用自己的算', () => {
+    const events = [
+        { id: 'a', date: '2026-09-01', shift: 's1', time: '18:00', endTime: '22:00', rate: 190 },
+        { id: 'b', date: '2026-09-20', shift: 's1', time: '18:00', endTime: '22:00', rate: 200 },
+    ];
+    const t = Shifts.total(Shifts.inMonth(events, '2026-09'));
+    assert.equal(t.pay, 190 * 4 + 200 * 4);
 });
 
 test('包不包含今天判斷得出來——不給看未來要靠它', () => {
