@@ -725,19 +725,44 @@ const guard = (p, what, ms = 5000) => Promise.race([
            !!card2 && !card2.textContent.includes('0 / '),
            card2 ? card2.textContent.slice(0, 120) : '');
 
-        // 全部的額度看「今天的預算」那張，那張整張都在講額度
+        /* 「今天的預算」2026-09-12 起也只列今天花過的那幾類
+         * （她的原話：「今天沒用到的項目不要顯示」）。
+         * 所以要驗那一類的長相，今天就得先有一筆。
+         *
+         * **金額不要用 10 的倍數。** 「10 / 3000」裡面含有「0 斜線空白」，
+         * 下面那條「沒花的不列出來」正是用那個判的，會自己打自己。
+         *
+         * 這一整支都在一個樣板字串裡（見檔頭 PROBE），所以註解裡
+         * 不能出現反引號——一個就把字串收掉了，後面整包變成亂碼。 */
+        const other1 = Money.data.categories.expense[1].name;
+        Money.data.transactions.push({ id: 'db-m1', date: today, kind: 'expense',
+          amount: 12, category: other1, account: '甲' });
+        Money.save(); Overview.render(); await sleep(280);
+
         const budgetCard = [...document.querySelectorAll('#overview-grid .card')]
           .find(c => c.textContent.includes('今天的預算'));
         ok('沒自己定的那幾類標成「照月預算」',
            !!budgetCard && budgetCard.textContent.includes('照月預算'),
            budgetCard ? budgetCard.textContent.slice(0, 110) : '');
-        ok('今天還沒花的額度在「今天的預算」上看得到',
-           !!budgetCard && budgetCard.textContent.includes('0 / '),
+        ok('今天還沒花的那幾類不列出來',
+           !!budgetCard && !budgetCard.textContent.includes('0 / '),
            budgetCard ? budgetCard.textContent.slice(0, 110) : '');
+
+        /* 藏起來不等於消失：要有一行說還有幾類。
+         * 上面那組兩類今天都花過了，所以這裡另外給一類「有預算、今天沒花」。 */
+        const quiet = Money.data.categories.expense[2].name;
+        Money.data.budgets = [...Money.data.budgets, { category: quiet, limit: 1200 }];
+        Money.save(); Overview.render(); await sleep(280);
+        const budgetCard2 = [...document.querySelectorAll('#overview-grid .card')]
+          .find(c => c.textContent.includes('今天的預算'));
+        ok('沒列出來的那幾類會說還有幾類',
+           !!budgetCard2 && budgetCard2.textContent.includes('還有 1 類今天還沒動')
+           && !budgetCard2.textContent.includes(quiet),
+           budgetCard2 ? budgetCard2.textContent.slice(0, 130) : '');
 
         // 「0 / 0」是壞掉的長相。那發生在這一類這個月已經超支、
         // 今天推算不出額度的時候——那是一句話不是一個分數。
-        const other = Money.data.categories.expense[1].name;
+        const other = other1;
         // **那筆要記在今天以前。** 記在今天的話它算「今天花的」，
         // 而今天的額度是拿「今天以前」算的——額度不會歸零，
         // 造不出要驗的情況。第一次寫這條就是這樣自己騙自己的。

@@ -1093,7 +1093,20 @@ const Overview = {
         const pace = Money.budgetPace(ym);
         // 自己定的每日額度優先，沒定的才拿月預算推——跟「今天的收支」
         // 那張同一套，兩張卡不該給出兩個不一樣的數字。
+        /* **只列今天真的花過的那幾類。**
+         *
+         * 她的原話：「今天沒用到的項目不要顯示」。跟「今天的收支」那張
+         * 同一個理由：沒動過的那幾類每天都長一樣，佔著位置卻不會變，
+         * 真正在動的那一行反而被擠到看不見。
+         *
+         * 代價講明白：**這張卡原本回答的是「站在超商前面，食物今天還能
+         * 花多少」，濾掉沒花過的之後，那句話要等到今天已經花過一筆才問得到。**
+         * 所以下面留一行「還有 N 類今天還沒動」——不列出來，但讓她知道
+         * 那幾類還在，不是被刪掉了。
+         */
         const quotas = Money.todayQuotas();
+        const used = quotas.filter(q => q.spent > 0);
+        const untouched = quotas.length - used.length;
         const totalQ = Money.todayTotalQuota();
 
         const head = this.head('budget', '今天的預算',
@@ -1143,8 +1156,8 @@ const Overview = {
             }
         }
 
-        if (quotas.length) {
-            const shown = quotas.slice(0, 6);
+        if (used.length) {
+            const shown = used.slice(0, 6);
             body.push(el('div', { class: 'quota' + (totalQ ? ' has-total' : '') },
                 shown.map(q => el('div', { class: 'quota-row' }, [
                     el('span', { class: 'dot', style: `background:${Money.colorOf(q.category)}` }),
@@ -1152,10 +1165,18 @@ const Overview = {
                     q.source === 'month' ? el('span', { class: 'sub tiny', text: '照月預算' }) : null,
                     this.quotaValue(q),
                 ]))));
-            if (quotas.length > shown.length) {
+            if (used.length > shown.length) {
                 body.push(el('div', { class: 'sub', style: 'margin-top:8px',
-                    text: `還有 ${quotas.length - shown.length} 類` }));
+                    text: `還有 ${used.length - shown.length} 類` }));
             }
+        }
+
+        if (untouched) {
+            // 一類都還沒花的時候，「還有 5 類今天還沒動」會是整張卡唯一的一行，
+            // 讀起來像句子講到一半。那種情況直接把話講完整。
+            body.push(el('div', { class: 'sub', style: 'margin-top:8px',
+                text: used.length ? `還有 ${untouched} 類今天還沒動`
+                                  : `今天還沒花到有預算的那 ${untouched} 類` }));
         }
 
         grid.append(el('div', { class: 'card', 'data-hue': 'budget' }, [head, ...body]));
