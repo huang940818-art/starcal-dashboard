@@ -1116,7 +1116,9 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
     margin-bottom: 2px;
 }
 
-.month-foot-line .money-num { font-size: 17px; font-weight: 600; }
+/* **比今天的支出小一號。** 這張卡講的是今天，月結是背景——
+   一樣大的話，眼睛會先看到那個跟今天無關的數字。 */
+.month-foot-line .money-num { font-size: 15px; font-weight: 600; }
 
 /* 遮起來的金額。點點要比數字疏一點，才看得出是「遮住了」
  * 而不是「壞掉了」。 */
@@ -2240,6 +2242,17 @@ h6.md-h, h7.md-h, h8.md-h, h9.md-h { font-size: 13.5px; color: var(--text-2); }
     .cls-dot { width: 4px; height: 4px; }
     .cal-dots { display: flex; }
     .cal-dots .label-dot { width: 6px; height: 6px; margin: 0; }
+
+    /* **沒有分類的行程也要看得見。**
+     *
+     * `.label-dot.none` 的底色是透明的（在分類選單那種地方是對的：
+     * 「不分類」本來就不該有顏色）。但在手機月曆上，點是那一天唯一的
+     * 線索——透明的話，一個只排了沒分類行程的日子會整格空白，
+     * 看起來就像那天什麼都沒有。排班排出來的班預設就沒有分類。 */
+    .cal-dots .label-dot.none {
+        background: var(--text-3);
+        opacity: .75;
+    }
 }
 
 /* ── 課表 ───────────────────────────────────────────

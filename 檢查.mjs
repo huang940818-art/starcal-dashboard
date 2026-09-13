@@ -332,7 +332,15 @@ const guard = (p, what, ms = 5000) => Promise.race([
       Agenda.view = 'month'; Agenda.render(); await sleep(300);
       ok('手機上月曆格子不會被撐爆', !wide(),
          document.documentElement.scrollWidth + ' > ' + innerWidth);
-      ok('手機上月曆用色點代替標題',
+      /* 沒有分類的行程也要看得見——點是手機上那一天唯一的線索。
+     * 透明的話，只排了沒分類行程的日子會整格空白。 */
+    {
+      const plain = [...document.querySelectorAll('#calendar .cal-dots .label-dot.none')][0];
+      ok('沒有分類的行程，點也看得見',
+         !plain || getComputedStyle(plain).backgroundColor !== 'rgba(0, 0, 0, 0)',
+         plain ? getComputedStyle(plain).backgroundColor : '（這輪沒有沒分類的行程）');
+    }
+    ok('手機上月曆用色點代替標題',
          getComputedStyle(q('#calendar .cal-dots')).display === 'flex');
     } catch (e) {
       out.push('✗ 手機那輪爆了: ' + e.message);
@@ -1102,6 +1110,21 @@ const guard = (p, what, ms = 5000) => Promise.race([
       press(q('#overview-grid > .card'), 'pointerdown');
       await sleep(750);
       ok('長按卡片就進排版', !!q('.arrange-bar'));
+
+      /* **長按之後手指不用放開，直接接著拖。**
+       *
+       * 她的原話：「所以還是不能長按順滑的拖動卡片下去調整嗎」。
+       * 本來長按只是進排版模式，要放開手指再重新抓那條把手才拖得動——
+       * 那一放一抓就是整個動作斷掉的地方。 */
+      ok('長按之後那張卡已經黏在手指上了',
+         !!q('#overview-grid .arrange.dragging'),
+         [...document.querySelectorAll('#overview-grid .arrange')]
+             .map(n => n.className).join('｜').slice(0, 60));
+      // 放開手指。**聽在 window 上**，所以放在哪裡都收得到
+      press(document.body, 'pointerup');
+      await sleep(200);
+      ok('放開手指就結束，不會一直掛著',
+         !q('#overview-grid .arrange.dragging') && !Overview.dragging);
       ok('進了排版才看得到按鈕', tools().hidden === false);
       ok('按鈕上寫的是「好了」', q('#arrange-cards').textContent === '好了',
          q('#arrange-cards').textContent);
@@ -2544,8 +2567,42 @@ const guard = (p, what, ms = 5000) => Promise.race([
     // 格子裡只剩那一類，量少了就有空間。
     {
       const before = document.querySelectorAll('#calendar .cal-item.cls').length;
-      ok('沒篩選的時候課只寫「N 堂課」', before === 0,
+      ok('沒篩選的時候課不寫字，只留日期旁邊那幾個點', before === 0,
          before + ' 個');
+      // 「N 堂課」那行拿掉了（跟上面那排點是同一個資訊講兩次），
+      // 但點一定要留著——那是「這天要不要出門」唯一的線索
+      ok('課不寫字了，格子裡沒有「堂課」兩個字',
+         !q('#calendar .cal-grid').textContent.includes('堂課'),
+         q('#calendar .cal-grid').textContent.slice(0, 40));
+      /* 點一定要留著——那是「這天要不要出門」唯一的線索。
+       *
+       * **自己塞一堂課進去驗，不靠前面的段落。** 課表那一段在這條的
+       * 後面，這裡的課表是空的；等它有課才驗的話，這條大部分時候會是
+       * 「找不到格子」的空綠燈，那比沒有這條更糟。 */
+      {
+        const keepTT = JSON.stringify(Timetable.data);
+        const set = { id: 'tt-dot', name: '驗點用', slots: [
+          { id: 'sl-dot', name: '驗點用的課', day: new Date().getDay(),
+            fromPeriod: Timetable.periods()[0]?.id || 'p1' },
+        ] };
+        Timetable.data.sets = [...(Timetable.data.sets || []), set];
+        Timetable.data.active = set.id;
+        Agenda.render(); await sleep(280);
+
+        const dots = document.querySelectorAll('#calendar .cal-cls-dots');
+        ok('有課的日子還是看得出來（日期旁邊有點）', dots.length > 0,
+           dots.length + ' 格');
+        ok('點的數量跟堂數對得上',
+           dots.length > 0 && dots[0].children.length === 1,
+           dots.length ? dots[0].children.length + ' 個點' : '沒有點');
+        // 滑過去還是看得到上什麼課——字拿掉了，資訊沒拿掉
+        ok('滑過去看得到是哪一堂',
+           dots.length > 0 && dots[0].title.includes('驗點用的課'),
+           dots.length ? dots[0].title : '');
+
+        Timetable.data = JSON.parse(keepTT);
+        Agenda.render(); await sleep(240);
+      }
       const label = Prefs.labels()[0];
       if (label) {
         Agenda.filter = label.id;

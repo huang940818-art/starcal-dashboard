@@ -143,6 +143,8 @@ const Overview = {
             if (this.arranging) {
                 grid.append(this.wrapForArrange(id, node));
             } else {
+                // 交接時要靠這個找回重畫之後的那一張（見 armLongPress）
+                node.dataset.cardId = id;
                 this.armLongPress(node);     // 長按這張卡就進排版
                 grid.append(node);
             }
@@ -193,13 +195,31 @@ const Overview = {
             if (e.target.closest('button, a, input, textarea, select, label')) return;
             if (e.button !== 0 && e.pointerType === 'mouse') return;
             x0 = e.clientX; y0 = e.clientY;
+            const id = node.dataset.cardId;
+            const pointerId = e.pointerId;
             timer = setTimeout(() => {
                 timer = null;
                 navigator.vibrate?.(15);      // 有震動的機器上給一下回饋
                 this.arranging = true;
                 this.render();
-                // 捲到剛剛按住的那張卡，不然重畫之後她會不知道自己在哪
-                node.scrollIntoView?.({ block: 'nearest' });
+
+                /* **手指不用放開，直接接著拖。**
+                 *
+                 * 她的原話：「所以還是不能長按順滑的拖動卡片下去調整嗎」。
+                 * 本來長按只是「進排版模式」，卡片上面才長出把手，
+                 * 要**放開手指再重新抓那條把手**才拖得動——中間那一放一抓
+                 * 就是整個動作斷掉的地方，而 iOS 主畫面從來不用放手。
+                 *
+                 * render() 會把手指底下那個節點整個換掉，所以這裡要去
+                 * 抓重畫之後的那一個，把還按著的那根手指交接過去。
+                 */
+                const wrap = $(`#overview-grid .arrange[data-card-id="${id}"]`);
+                if (wrap) {
+                    wrap.scrollIntoView?.({ block: 'nearest' });
+                    this.beginDrag(wrap, pointerId, y0);
+                } else {
+                    node.scrollIntoView?.({ block: 'nearest' });
+                }
             }, 500);
         });
 
@@ -322,26 +342,47 @@ const Overview = {
      *
      * 箭頭留著（桌機、精準、看得懂哪一顆在做什麼），拖曳是給手機的。
      *
-     * **不做「卡片跟著手指跑」的動畫。** 那要處理 transform 和 DOM
-     * 位置同時變動，很容易對不齊；而換位置本身即時看得到，
-     * 已經回答了「我現在會放到哪」。
+     * **卡片跟著手指跑。** 本來刻意不做，理由是「transform 和 DOM 位置
+     * 同時變動很容易對不齊」——那個顧慮是真的，但代價是整個動作看起來
+     * 像卡住的：手指在動，畫面上什麼都沒動，直到越過鄰居才「啪」一下跳。
+     *
+     * 對不齊的解法是：**每次換完位置就把基準點重設回現在的手指位置**。
+     * 換位置之後卡片的自然位置已經變了，位移要從 0 重新算起，
+     * 不然它會整個飛出去。
      */
-    makeSortable(wrap) {
-        const bar = wrap.querySelector('.arrange-bar');
 
-        bar.addEventListener('pointerdown', e => {
-            if (e.target.closest('button')) return;       // 箭頭和 ✕ 不算拖
-            if (e.button !== 0 && e.pointerType === 'mouse') return;
+    /**
+     * 開始拖。兩條路進來：
+     *   1. 在把手上按下去（桌機、精準）
+     *   2. 長按卡片進排版之後**手指不放**直接接手（見 armLongPress）
+     *
+     * @param startY 手指現在的 Y。第 2 條路傳的是長按開始時的位置，
+     *   因為 pointerdown 發生在重畫之前。
+     */
+    beginDrag(wrap, pointerId, startY) {
+        /* **只有「還在畫面上的那張」才算正在拖。**
+         *
+         * render() 會把整個 grid 換掉，被拖的那張就此離開文件——
+         * 它身上那次拖曳已經死了。只看 `this.dragging` 有沒有值的話，
+         * 一次沒收到 pointerup（瀏覽器接手捲動、跳出對話框）就會讓
+         * 之後每一次拖都被擋掉，而畫面上完全看不出為什麼拖不動了。
+         */
+        if (this.dragging && this.dragging.isConnected) return;
+        this.dragging = wrap;
 
-            wrap.classList.add('dragging');
-            // 沒有 capture 也拖得動（只是手指滑出 bar 之後會斷），
-            // 但沒有 capture 就丟例外會讓整個拖曳掛掉，所以包起來
-            try { bar.setPointerCapture(e.pointerId); } catch { /* 沒抓到就算了 */ }
+        // 位移的基準。每次換完位置會重設（見上面那段）。
+        let originY = startY;
+
+        wrap.classList.add('dragging');
+        // 沒有 capture 也拖得動（只是手指滑出去之後會斷），
+        // 但沒有 capture 就丟例外會讓整個拖曳掛掉，所以包起來
+        try { wrap.setPointerCapture(pointerId); } catch { /* 沒抓到就算了 */ }
+
+        const move = e => {
+            if (e.pointerId !== pointerId) return;
             e.preventDefault();
-        });
 
-        bar.addEventListener('pointermove', e => {
-            if (!wrap.classList.contains('dragging')) return;
+            wrap.style.transform = `translateY(${e.clientY - originY}px)`;
 
             // 手指底下是哪一張卡。被拖的那張自己不算（它就在手指下面），
             // 所以先讓它不吃 hit-test。
@@ -351,19 +392,32 @@ const Overview = {
             wrap.style.pointerEvents = '';
 
             if (under && under !== wrap && under.parentNode === wrap.parentNode) {
-                // 往上拖就插在它前面，往下拖就插在它後面
                 const rect = under.getBoundingClientRect();
                 const after = e.clientY > rect.top + rect.height / 2;
-                under.parentNode.insertBefore(wrap, after ? under.nextSibling : under);
+                this.reorderWithSlide(wrap, under, after);
+                // 位置換好了，位移從這裡重新算
+                originY = e.clientY;
+                wrap.style.transform = '';
             }
 
             this.edgeScroll(e.clientY);
-        });
+        };
 
         const end = e => {
-            if (!wrap.classList.contains('dragging')) return;
+            if (e.pointerId !== pointerId) return;
+            removeEventListener('pointermove', move, true);
+            removeEventListener('pointerup', end, true);
+            removeEventListener('pointercancel', end, true);
             wrap.classList.remove('dragging');
-            bar.releasePointerCapture?.(e.pointerId);
+            wrap.style.transform = '';
+            this.dragging = null;
+            /* **releasePointerCapture 會丟例外。** 上面 setPointerCapture
+             * 是包在 try 裡的（沒抓到就算了），沒抓到的時候這裡放掉會
+             * NotFoundError——`?.` 只擋 null，擋不了丟出來的東西。
+             * 而它一丟，後面的收尾全部不會跑：`dragging` 留著沒清，
+             * 之後每一次拖都被擋掉，畫面上完全看不出為什麼。
+             * 所以清狀態要排在它前面，而且它自己要包起來。 */
+            try { wrap.releasePointerCapture?.(pointerId); } catch { /* 本來就沒抓到 */ }
             this.stopEdgeScroll();
             this.saveDomOrder();
             /* **拖完要重畫。** DOM 順序是拖出來的，但箭頭的「按不按得動」
@@ -372,9 +426,98 @@ const Overview = {
             this.render();
         };
 
-        bar.addEventListener('pointerup', end);
-        bar.addEventListener('pointercancel', end);
+        /* **聽在 window 上，不是聽在卡片上。**
+         *
+         * 長按交接進來的時候，手指按下去的那個節點已經被 render() 換掉了，
+         * 放開的時候很可能不在這張卡上面（捲動過、或就是滑出去了）。
+         * 聽在卡片上的話那個 pointerup 收不到，拖曳永遠不結束——
+         * 接下來每一次拖都會被 `if (this.dragging) return` 擋掉，
+         * 而畫面上完全看不出來為什麼突然拖不動了。
+         */
+        addEventListener('pointermove', move, true);
+        addEventListener('pointerup', end, true);
+        addEventListener('pointercancel', end, true);
     },
+
+    /**
+     * 換位置，而且讓被擠開的那幾張**滑過去**，不是瞬間跳。
+     *
+     * 作法是 FLIP：搬之前先記下每一張現在在哪，搬完之後把它們用
+     * transform 拉回原位，再放掉——瀏覽器就會自己把那段補成動畫。
+     *
+     * **只算被拖的那張的兄弟，而且只在位置真的變了的時候動。**
+     * 每次 pointermove 都重算全部的話，手指一直動就會一直重設動畫，
+     * 看起來反而是抖的。
+     */
+    reorderWithSlide(wrap, under, after) {
+        const parent = wrap.parentNode;
+        const kids = [...parent.children].filter(n => n !== wrap);
+        const before = new Map(kids.map(n => [n, n.getBoundingClientRect()]));
+
+        parent.insertBefore(wrap, after ? under.nextSibling : under);
+
+        for (const n of kids) {
+            const a = before.get(n);
+            const b = n.getBoundingClientRect();
+            const dx = a.left - b.left, dy = a.top - b.top;
+            if (!dx && !dy) continue;
+
+            n.style.transition = 'none';
+            n.style.transform = `translate(${dx}px, ${dy}px)`;
+            // 讀一次版面把上面那行沖掉，不然瀏覽器會把兩次改動合併，
+            // 動畫整段不會發生
+            void n.offsetWidth;
+            n.style.transition = 'transform .18s ease';
+            n.style.transform = '';
+        }
+    },
+
+    makeSortable(wrap) {
+        const bar = wrap.querySelector('.arrange-bar');
+
+        bar.addEventListener('pointerdown', e => {
+            if (e.target.closest('button')) return;       // 箭頭和 ✕ 不算拖
+            if (e.button !== 0 && e.pointerType === 'mouse') return;
+            e.preventDefault();
+            this.beginDrag(wrap, e.pointerId, e.clientY);
+        });
+
+        /* 排版模式裡**長按卡片本體**也拖得動，不是只有那條把手。
+         *
+         * 她要的是「長按卡片拖動」，而那條把手只有幾十像素高。
+         * 這裡要長按不能立刻拖：卡片整個高度都算的話，排版模式裡
+         * 就捲不動頁面了（手指一定會壓在某一張卡上）。 */
+        this.armDragOnHold(wrap);
+    },
+
+    /** 按住卡片本體 400ms 就接手拖曳。動超過 10px 就取消，那是在捲頁面。 */
+    armDragOnHold(wrap) {
+        let timer = null, x0 = 0, y0 = 0;
+        const cancel = () => { clearTimeout(timer); timer = null; };
+
+        wrap.addEventListener('pointerdown', e => {
+            if (e.target.closest('.arrange-bar')) return;     // 把手走上面那條
+            if (e.target.closest('button, a, input, textarea, select, label')) return;
+            if (e.button !== 0 && e.pointerType === 'mouse') return;
+            x0 = e.clientX; y0 = e.clientY;
+            const pointerId = e.pointerId;
+            timer = setTimeout(() => {
+                timer = null;
+                navigator.vibrate?.(15);
+                this.beginDrag(wrap, pointerId, y0);
+            }, 400);
+        });
+
+        wrap.addEventListener('pointermove', e => {
+            if (timer && Math.hypot(e.clientX - x0, e.clientY - y0) > 10) cancel();
+        });
+        wrap.addEventListener('pointerup', cancel);
+        wrap.addEventListener('pointercancel', cancel);
+        wrap.addEventListener('scroll', cancel, true);
+    },
+
+    /** 現在正在拖的那一張（null＝沒有在拖）。同時只能拖一張。 */
+    dragging: null,
 
     /**
      * 拖到畫面上下緣就自己捲。
@@ -1060,14 +1203,28 @@ const Overview = {
         const m = Money.monthSummary(thisMonth());
         const top = Money.byCategory(thisMonth())[0];
 
+        /* **這裡不寫月淨額。**
+         *
+         * 她的原話：「這個總金額怪怪的，不要放這裡」。
+         *
+         * 併進來的時候我把「這個月 +12,778」放在最下面，那是整張卡上
+         * 最大最亮的數字——而這張卡講的是「今天花了 64」。一個跟今天
+         * 無關的月結放在那個位置，第一眼會被當成今天的結論。
+         *
+         * 而且淨額本身對她沒有用：收入那一邊有薪水和家裡給的，
+         * 「這個月 +12,778」不會讓她做任何決定。**同一個尺度才比得下去**，
+         * 所以留下來的是「這個月支出」——跟今天的支出是同一種東西。
+         *
+         * 淨額沒有消失，它在記帳那頁「這個月」那張卡上當主角。
+         */
         body.push(el('div', { class: 'month-foot' }, [
             el('div', { class: 'month-foot-line' }, [
-                el('span', { class: 'sub', text: '這個月' }),
-                el('span', { class: 'money-num' + (m.net < 0 ? ' negative' : ''),
-                             text: money(m.net, true) }),
+                el('span', { class: 'sub', text: '這個月支出' }),
+                el('span', { class: 'money-num', text: money(m.expense) }),
             ]),
-            el('div', { class: 'sub', text: `收 ${money(m.income)}　支 ${money(m.expense)}`
-                + (top ? `　花最多的是${top.category} ${money(top.amount)}` : '') }),
+            top ? el('div', { class: 'sub',
+                              text: `花最多的是${top.category} ${money(top.amount)}` })
+                : null,
         ]));
 
         grid.append(el('div', { class: 'card', 'data-hue': 'money' }, [
