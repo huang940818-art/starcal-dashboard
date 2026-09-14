@@ -91,7 +91,7 @@ EMPTY = {
     "倒數": {"items": []},
     "設定": {"accent": None, "labels": [], "labelsSeeded": False,
              "overviewOrder": [], "overviewOff": None, "weatherPlace": None},
-    # 小克的額度。這份**不是使用者寫的**，是 ~/.star-bridge/小克額度.sh 產的，
+    # 小克的額度。這份**不是使用者寫的**，是本機的背景腳本產的，
     # 前端唯讀。空的形狀要有 limits，不然畫面每個地方都得寫 `?? []`。
     "小克": {"limits": [], "fetchedAt": None, "problem": None},
 }
