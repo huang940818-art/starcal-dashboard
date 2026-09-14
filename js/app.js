@@ -77,6 +77,23 @@ async function main() {
     if (mode === 'local') {
         badge.textContent = '本機資料';
         badge.title = `存在 ${Store.dir}`;
+        // 註冊離線快取。**只在本機模式註冊**——公開的展示站不需要，
+        // 給陌生人裝一個 service worker 沒有好處。
+        // 策略是網路優先（見 sw.js），所以不會有「改了程式卻看到舊版」。
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(() => {});
+        }
+    } else if (mode === 'offline') {
+        // Mac 沒開，但這台裝置上有上次的快照。
+        // **一定要標時間**，不然她會以為看到的是現在的數字。
+        const at = Store.snapshotAt ? new Date(Store.snapshotAt) : null;
+        const when = at
+            ? `${at.getMonth() + 1}/${at.getDate()} ${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`
+            : '上次';
+        badge.textContent = `離線・${when} 的資料`;
+        badge.title = 'Mac 沒有開，所以連不到真正的資料。'
+                    + '這是這台裝置上次成功載入時留下的快照，只能看不能改。'
+                    + 'Mac 開機之後重新整理就會拿到最新的。';
     } else {
         // **這個一定要講清楚。** 沒講的話，在作品集上看到的人
         // 會以為自己在看別人的私人帳目。

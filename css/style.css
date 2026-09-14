@@ -180,6 +180,8 @@ header {
 }
 
 .mode.local { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
+/* 離線：跟展示模式一樣要一眼看出來「這不是現在的資料」 */
+.mode.offline { color: var(--warn, #d08a2c); border-color: color-mix(in srgb, var(--warn, #d08a2c) 45%, transparent); }
 
 /* ── 分頁 ───────────────────────────────────────────── */
 

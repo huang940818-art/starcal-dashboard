@@ -4,6 +4,9 @@
  *
  *   本機模式　開 localhost，資料在 ~/星歷資料/*.json，經過 server.py 讀寫。
  *             這是自己用的那份，真實資料。
+ *   離線模式　Mac 關著、連不到 server，但這台裝置上有上次成功載入的快照。
+ *             顯示那份快照（**唯讀**），並且標明是什麼時候的。
+ *             沒有快照才會落到展示模式。
  *   展示模式　放在 GitHub Pages 上，沒有 server 可以連。改用內建的示範資料，
  *             存在瀏覽器的 localStorage。**別人在作品集上怎麼點都不影響任何人**，
  *             也永遠碰不到私人資料——那些檔案根本不在這個 repo 裡。
@@ -12,8 +15,13 @@
  * 不用網址判斷（localhost 也可能是別人在跑靜態檔），問後端最準。
  */
 
+/** 離線快照的 localStorage 前綴。**跟展示模式的 `星歷:` 分開**——
+ *  共用的話，在作品集上點過示範資料就會污染真實資料的快照。 */
+const SNAP = '星歷離線:';
+const SNAP_AT = '星歷離線時間';
+
 const Store = {
-    mode: null,          // 'local' | 'demo'
+    mode: null,          // 'local' | 'offline' | 'demo'
     cache: {},
     /** 每一份資料「我手上這份是哪一版」。存檔時帶上去，對不上就不給存。 */
     versions: {},
@@ -30,14 +38,41 @@ const Store = {
             this.mode = 'local';
             this.dir = info.dir || '';
         } catch {
-            this.mode = 'demo';
+            // 連不到 server。這台裝置上有上次的快照就顯示快照，沒有才當展示模式。
+            this.mode = this._hasSnapshot() ? 'offline' : 'demo';
+            if (this.mode === 'offline') this.snapshotAt = localStorage.getItem(SNAP_AT) || '';
         }
         return this.mode;
+    },
+
+    _hasSnapshot() {
+        try {
+            for (let i = 0; i < localStorage.length; i++) {
+                if ((localStorage.key(i) || '').startsWith(SNAP)) return true;
+            }
+        } catch { /* 無痕視窗會丟例外，當成沒有 */ }
+        return false;
+    },
+
+    /** 成功讀到真實資料時留一份，給 Mac 關著的時候看。 */
+    _snapshot(name, data) {
+        try {
+            localStorage.setItem(SNAP + name, JSON.stringify(data));
+            localStorage.setItem(SNAP_AT, new Date().toISOString());
+        } catch { /* 容量滿了就算了，快照是加值不是必要 */ }
     },
 
     /** 讀一份資料。讀過的留在記憶體，之後都直接用。 */
     async load(name) {
         if (this.cache[name]) return this.cache[name];
+
+        if (this.mode === 'offline') {
+            const raw = localStorage.getItem(SNAP + name);
+            // **沒有快照的那一份不要當成空的。** 空的會讓畫面說「你沒有任何帳目」。
+            if (!raw) throw new Error(`離線中，這台裝置沒有「${name}」的快照`);
+            this.cache[name] = JSON.parse(raw);
+            return this.cache[name];
+        }
 
         if (this.mode === 'local') {
             const res = await fetch(`api/${encodeURIComponent(name)}`, { cache: 'no-store' });
@@ -49,6 +84,7 @@ const Store = {
                 throw new Error(data.error || `讀取失敗（${res.status}）`);
             }
             this.cache[name] = data;
+            this._snapshot(name, data);
         } else {
             const raw = localStorage.getItem(`星歷:${name}`);
             if (raw) {
@@ -80,6 +116,13 @@ const Store = {
         delete this._pending[name];
         const data = this.cache[name];
         if (!data) return;
+
+        if (this.mode === 'offline') {
+            // **不要偷偷存在本機。** 存了之後 Mac 開機同步回來會對不起來，
+            // 而且她會以為改好了。離線就是唯讀，講清楚。
+            toast('離線中（Mac 沒開），改的東西不會被記住', true);
+            return;
+        }
 
         if (this.mode !== 'local') {
             try {
