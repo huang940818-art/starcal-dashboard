@@ -19,7 +19,7 @@
 
 /** GoatCounter 的站台代號（網址 https://<代號>.goatcounter.com 中間那段）。
  *  **留空＝整個功能關掉**，一個位元組都不會送出去。 */
-const GC_SITE = '';
+const GC_SITE = 'starcal';
 
 /** 會回報的網域。只有公開的那個。 */
 const GC_HOSTS = ['huang940818-art.github.io'];
