@@ -3330,6 +3330,22 @@ const guard = (p, what, ms = 5000) => Promise.race([
     ok('本機模式沒有清空鈕', !q('#data-body').textContent.includes('清空'));
     q('#dlg-data button[value="close"]').click(); await sleep(150);
     ok('資料視窗關得掉', !q('#dlg-data').open);
+
+    /* ── 訪客統計 ──
+     *
+     * 這一輪是跑在 127.0.0.1 上，也就是「自己在家開」。
+     * 要驗的不是「有沒有統計到」，是**沒有把自己算進去**：
+     * 頁面上不可以出現任何 goatcounter 的 script。
+     *
+     * 白名單那一層（js/analytics.js 的 GC_HOSTS）在這裡驗不到正面，
+     * 只驗得到反面——但反面才是會出事的那一面。
+     * 統計少算幾個人沒關係，把自己每天開的十幾次算進去，整份數字就廢了。 */
+    ok('analytics.js 有被載進來',
+       !!document.querySelector('script[src*="analytics.js"]'));
+    ok('自己在本機開，不送任何統計',
+       !document.querySelector('script[src*="goatcounter"], script[data-goatcounter]')
+       && !document.querySelector('script[src*="gc.zgo.at"]'),
+       location.hostname);
   } catch (e) {
     out.push('✗ 中途爆了: ' + e.message);
   }
