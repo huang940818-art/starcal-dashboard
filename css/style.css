@@ -440,7 +440,7 @@ main {
     min-width: 0;
     font-size: 12.5px;
     color: var(--text-3);
-    overflow: hidden;
+    overflow: clip;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -522,7 +522,11 @@ main {
 
 .hero {
     position: relative;
-    overflow: hidden;
+    /* **clip 不是 hidden。** 右上角那顆星 `right: -44px`，超出去的 44px
+       視覺上兩者都裁掉，但 `hidden` 仍然留著一塊捲動區——手指或觸控板
+       的慣性捲動滑得動它，整張卡會左右晃。`clip` 不建立捲動容器，
+       設 scrollLeft 也不動。（2026-09-16 她回報「今天的頁面可以左右滑」） */
+    overflow: clip;
     background:
         radial-gradient(120% 140% at 88% -10%,
             color-mix(in srgb, var(--raised) 85%, transparent) 0%,
@@ -917,8 +921,11 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 
 .grow { flex: 1; min-width: 0; }
 
+/* 單行省略。**overflow 用 clip**：hidden 會讓這一行變成捲得動的容器，
+   在觸控裝置上被省略的那截可以用手指滑出來（見 .hero 那條）。
+   clip 一樣裁、省略號一樣在，但滑不動。 */
 .ellipsis {
-    overflow: hidden;
+    overflow: clip;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -1761,7 +1768,9 @@ h6.md-h, h7.md-h, h8.md-h, h9.md-h { font-size: 13.5px; color: var(--text-2); }
     display: grid;
     place-items: center;
     cursor: pointer;
-    overflow: hidden;
+    /* 裡面那顆 input 是 34px，框只有 21px。用 clip 不用 hidden，
+       同樣的道理：hidden 會讓這顆小方塊自己變成捲得動的容器。 */
+    overflow: clip;
 }
 
 .sticky .pick:hover { background: color-mix(in srgb, var(--ink, #23231C) 26%, transparent); }
