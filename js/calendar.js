@@ -414,12 +414,27 @@ const MonthView = {
             const saved = s ? Cal.updateShift(s.id, patch) : Cal.addShift(patch);
             if (!saved) return toast('這個班叫什麼？', true);
 
+            /* 改完**順手補上那些從來沒有時薪的班**。
+             *
+             * 2026-09-16 她回報「填時薪這件事藏太深了，我的時薪是 196，
+             * 填了還是沒算」——她在這裡填了，但已經排出去的 21 筆班是
+             * 排班當下抄過去的，那時候樣板還沒有時薪。「改樣板不動已排的班」
+             * 是為了保護加薪前那幾期實際領的數字，可是**沒填過的沒有東西
+             * 要保護**，留著只會讓她的預估安靜地少一截。
+             *
+             * 只補空的，已經有時薪的一筆都不動——所以六月加薪的情境沒有變。 */
+            const filled = s ? Cal.fillMissingRates(saved.id) : 0;
+
             this.pickedShift = saved.id;
             this.shiftMode = true;
             dlg.close();
             this.render();
             Overview.render();
-            if (s) toast(`「${saved.name}」改好了。已經排出去的班還是用原本的時薪`);
+            if (s) {
+                toast(filled
+                    ? `「${saved.name}」改好了，順便補上 ${filled} 筆還沒有時薪的班`
+                    : `「${saved.name}」改好了。已經排出去的班還是用原本的時薪`);
+            }
         };
     },
 

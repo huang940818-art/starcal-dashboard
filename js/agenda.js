@@ -83,6 +83,52 @@ const Cal = {
         return s;
     },
 
+    /**
+     * 有幾筆班補得上時薪：**自己沒有時薪、但它的班別樣板上有**。
+     *
+     * @param shiftId 只算某一個班別；不給就全部。
+     */
+    missingRateCount(shiftId = null) {
+        return (this.data.events || []).filter(e => this.canFillRate(e, shiftId)).length;
+    },
+
+    canFillRate(e, shiftId = null) {
+        if (!e || !e.shift) return false;
+        if (shiftId && e.shift !== shiftId) return false;
+        if (Number(e.rate) > 0) return false;          // 已經有了，不動
+        const s = this.shift(e.shift);
+        return !!(s && Number(s.rate) > 0);            // 樣板也沒填就補不了
+    },
+
+    /**
+     * 把「從來沒填過時薪」的班補上它的班別樣板現在的時薪。回傳補了幾筆。
+     *
+     * **只補空的，已經有時薪的一筆都不動。**
+     *
+     * updateShift 刻意不碰已排的班，是為了保護「當時實際領的那個時薪」
+     * ——但那是**加薪**的情境。第一次填時薪的時候沒有任何舊值要保護，
+     * 而她看到的是「我填了 196，它還是沒算」（2026-09-16 回報：
+     * 21 筆班全都沒有 rate，樣板上有 196）。
+     *
+     * 兩件事的差別就在「有沒有舊值」，所以這裡用它當界線。
+     */
+    fillMissingRates(shiftId = null) {
+        let n = 0;
+        for (const e of this.data.events || []) {
+            if (!this.canFillRate(e, shiftId)) continue;
+            const s = this.shift(e.shift);
+            e.rate = Number(s.rate) || 0;
+            // 休息時間跟著補，但**只在它根本沒有的時候**——
+            // 已經填 0 的可能是她自己填的（有的店吃飯照算薪水）。
+            if (e.breakMin === undefined || e.breakMin === null) {
+                e.breakMin = Number(s.breakMin) || 0;
+            }
+            n++;
+        }
+        if (n) this.save();
+        return n;
+    },
+
     removeShift(id) {
         // **排出去的班留著。** 刪掉一個班別是「以後不用這個樣板了」，
         // 不是「我上個月沒去上班」。連著刪掉的話，過去的紀錄會憑空消失。

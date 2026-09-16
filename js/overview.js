@@ -1420,8 +1420,30 @@ const Overview = {
             const parts = [];
             if (m.noRate) parts.push(`${m.noRate} 筆還沒填時薪`);
             if (m.noTime) parts.push(`${m.noTime} 筆沒填時間`);
+
+            /* 補得起來的話，**這裡就要能補**。
+             *
+             * 2026-09-16 她回報「填時薪這件事藏太深了，我的時薪是 196，
+             * 填了還是沒算」——她在班別樣板上填了，但已經排出去的班是
+             * 排班當下抄過去的，那時候樣板還沒有時薪。原本這行字叫她
+             * 「到月曆上按班別的改」，而那裡改的是樣板，改完還是沒算，
+             * 等於把她送進一個回不來的地方。 */
+            const fixable = Cal.missingRateCount();
             body.push(el('div', { class: 'sub shift-warn',
-                text: parts.join('、') + '，沒算進去。到月曆上按班別的「改」補。' }));
+                text: parts.join('、') + '，沒算進去。'
+                    + (fixable ? '' : '到月曆上按班別的「改」填時薪。') }));
+
+            if (fixable) {
+                body.push(el('button', {
+                    type: 'button', class: 'btn small', style: 'margin-top:8px',
+                    text: `用班別的時薪補上這 ${fixable} 筆`,
+                    onclick: () => {
+                        const n = Cal.fillMissingRates();
+                        toast(n ? `補好了 ${n} 筆` : '沒有可以補的');
+                        this.render();
+                    },
+                }));
+            }
         }
 
         if (m.pay) {

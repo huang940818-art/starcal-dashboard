@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview', 'Countdown', 'Shifts'];
+    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview', 'Countdown', 'Shifts', 'Cal'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
     // **沒定義的名字要給 undefined，不能直接丟出去。** names 是所有 load()
     // 共用的一份清單，只載其中一支檔案的時候，其他名字本來就不存在——
@@ -1734,4 +1734,87 @@ test('每張卡都畫得出來，沒有漏接的 id', () => {
     for (const c of Overview.CARDS) {
         assert.ok(src.includes(`'${c.id}'`), `renderCard 沒有接 ${c.id}`);
     }
+});
+
+
+/* ── 補時薪 ──────────────────────────────────────────────
+ *
+ * 2026-09-16 她回報「填時薪這件事藏太深了，我的時薪是 196，填了還是沒算」。
+ * 查出來：21 筆已排的班一個都沒有 rate，班別樣板上才有 196——排班是在
+ * 填時薪之前做的，而「改樣板不動已排的班」是為了保護加薪前實際領的數字。
+ *
+ * 界線在**有沒有舊值**：沒填過的沒有東西要保護，補上去；已經有的不准動。
+ */
+
+const { Cal } = load('./js/util.js', './js/agenda.js');
+
+/** 造一份乾淨的 Cal 資料，save 換成不做事（測試不寫檔）。 */
+function calWith(events, shifts) {
+    Cal.data = { events, shifts };
+    Cal.save = () => {};
+    return Cal;
+}
+
+test('沒填過時薪的班，補得上班別樣板的時薪', () => {
+    const cal = calWith(
+        [{ id: 'e1', date: '2026-09-09', shift: 's1', time: '06:00', endTime: '12:00' },
+         { id: 'e2', date: '2026-09-10', shift: 's1', time: '06:00', endTime: '12:00' }],
+        [{ id: 's1', name: '早班', rate: 196, breakMin: 0 }]);
+
+    assert.equal(cal.missingRateCount(), 2);
+    assert.equal(cal.fillMissingRates(), 2);
+    assert.equal(cal.data.events[0].rate, 196);
+    assert.equal(cal.data.events[1].rate, 196);
+    assert.equal(cal.missingRateCount(), 0, '補完就沒有可補的了');
+});
+
+test('已經有時薪的班一筆都不動——加薪不能讓過去的預估跟著跳', () => {
+    const cal = calWith(
+        [{ id: 'e1', date: '2026-03-01', shift: 's1', time: '06:00', endTime: '12:00', rate: 176 },
+         { id: 'e2', date: '2026-09-10', shift: 's1', time: '06:00', endTime: '12:00' }],
+        [{ id: 's1', name: '早班', rate: 196, breakMin: 0 }]);
+
+    assert.equal(cal.fillMissingRates(), 1, '只補那一筆空的');
+    assert.equal(cal.data.events[0].rate, 176, '三月那筆還是當時的時薪');
+    assert.equal(cal.data.events[1].rate, 196);
+});
+
+test('班別樣板自己也沒填時薪的話，補不了也不要假裝補了', () => {
+    const cal = calWith(
+        [{ id: 'e1', date: '2026-09-09', shift: 's1', time: '06:00', endTime: '12:00' }],
+        [{ id: 's1', name: '早班', rate: 0 }]);
+
+    assert.equal(cal.missingRateCount(), 0);
+    assert.equal(cal.fillMissingRates(), 0);
+    assert.equal(cal.data.events[0].rate, undefined);
+});
+
+test('只補指定的那個班別', () => {
+    const cal = calWith(
+        [{ id: 'e1', date: '2026-09-09', shift: 's1', time: '06:00', endTime: '12:00' },
+         { id: 'e2', date: '2026-09-09', shift: 's2', time: '18:00', endTime: '22:00' }],
+        [{ id: 's1', name: '早班', rate: 196 }, { id: 's2', name: '晚班', rate: 210 }]);
+
+    assert.equal(cal.fillMissingRates('s1'), 1);
+    assert.equal(cal.data.events[0].rate, 196);
+    assert.equal(cal.data.events[1].rate, undefined, '沒點名的班別不要動');
+});
+
+test('補完之後算得出錢來——這才是她要的結果', () => {
+    const cal = calWith(
+        [{ id: 'e1', date: '2026-09-09', shift: 's1', time: '06:00', endTime: '12:00' }],
+        [{ id: 's1', name: '早班', rate: 196, breakMin: 0 }]);
+
+    assert.equal(Shifts.pay(cal.data.events[0]), null, '補之前算不出錢');
+    cal.fillMissingRates();
+    assert.equal(Shifts.pay(cal.data.events[0]), 196 * 6);
+});
+
+test('不是班的行程不要被碰到', () => {
+    const cal = calWith(
+        [{ id: 'e1', date: '2026-09-09', title: '看牙醫', time: '14:00', endTime: '15:00' }],
+        [{ id: 's1', name: '早班', rate: 196 }]);
+
+    assert.equal(cal.fillMissingRates(), 0);
+    assert.equal(cal.data.events[0].rate, undefined);
 });
