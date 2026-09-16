@@ -17,15 +17,22 @@
  *
  * 固定＝非花不可（房租、交通、訂閱、醫療），彈性＝可以省的。
  */
+/* **2026-09-16 換掉三個名字**：餐飲→飲食、日用品→日用、衣服→服飾。
+ *
+ * 原本這份跟更早的 App enum（飲食／日用／服飾）對不起來，於是同一件事
+ * 有了兩個名字：她的預算設在「飲食」，手機上記一筆按到「餐飲」，
+ * 那筆錢就永遠不進預算——她回報的「今天花 502，預算只算到 265」。
+ * App 的 SpendCategory.defaultExpense 同一輪改成一字不差的同一組，
+ * 同步腳本 ~/.star-bridge/記帳同步.sh 也有一張別名表擋在進門的地方。 */
 const DEFAULT_CATEGORIES = {
     expense: [
-        { name: '餐飲', nature: 'flexible' },
+        { name: '飲食', nature: 'flexible' },
         { name: '交通', nature: 'fixed' },
-        { name: '日用品', nature: 'flexible' },
+        { name: '日用', nature: 'flexible' },
         { name: '娛樂', nature: 'flexible' },
         { name: '學習', nature: 'flexible' },
         { name: '醫療', nature: 'fixed' },
-        { name: '衣服', nature: 'flexible' },
+        { name: '服飾', nature: 'flexible' },
         { name: '房租', nature: 'fixed' },
         { name: '訂閱', nature: 'fixed' },
         { name: '其他', nature: 'flexible' },

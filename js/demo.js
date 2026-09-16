@@ -34,25 +34,25 @@ function demoMoney() {
     const between = (a, b) => Math.round(a + rand() * (b - a));
 
     const expense = [
-        { name: '餐飲', nature: 'flexible' },
+        { name: '飲食', nature: 'flexible' },
         { name: '交通', nature: 'fixed' },
         { name: '房租', nature: 'fixed' },
         { name: '訂閱', nature: 'fixed' },
-        { name: '日用品', nature: 'flexible' },
+        { name: '日用', nature: 'flexible' },
         { name: '醫療', nature: 'fixed' },
         { name: '娛樂', nature: 'flexible' },
         { name: '書籍課程', nature: 'flexible' },
-        { name: '衣服', nature: 'flexible' },
+        { name: '服飾', nature: 'flexible' },
         { name: '禮物', nature: 'flexible' },
     ];
 
     const notes = {
-        餐飲: ['早餐店', '便當', '超商', '火鍋', '咖啡', '學餐'],
+        飲食: ['早餐店', '便當', '超商', '火鍋', '咖啡', '學餐'],
         交通: ['悠遊卡加值', '高鐵', '計程車', '加油'],
-        日用品: ['洗髮精', '衛生紙', '藥妝店'],
+        日用: ['洗髮精', '衛生紙', '藥妝店'],
         娛樂: ['電影', '展覽', 'KTV'],
         書籍課程: ['原文書', '線上課程'],
-        衣服: ['外套', '鞋子'],
+        服飾: ['外套', '鞋子'],
         禮物: ['生日禮物', '伴手禮'],
         醫療: ['看診', '藥局'],
         房租: ['月租'],
@@ -148,7 +148,7 @@ function demoMoney() {
             const day = between(1, lastDay);
             const cat = pick(expense.filter(c => !['房租', '訂閱'].includes(c.name)));
             const amount = cat.name === '交通' ? between(30, 500)
-                         : cat.name === '餐飲' ? between(45, 320)
+                         : cat.name === '飲食' ? between(45, 320)
                          : between(80, 1800);
             transactions.push({
                 id: uid(), date: ymd(new Date(y, m, day)), kind: 'expense',
@@ -187,10 +187,10 @@ function demoMoney() {
             },
         ],
         budgets: [
-            { category: '餐飲', limit: 6000 },
+            { category: '飲食', limit: 6000 },
             { category: '娛樂', limit: 1500 },
-            { category: '日用品', limit: 1200 },
-            { category: '衣服', limit: 1000 },
+            { category: '日用', limit: 1200 },
+            { category: '服飾', limit: 1000 },
         ],
         /* 總預算。兩個條件都要滿足，不然示範資料看起來像壞的：
          * 比分類加起來（9,700）大——不然一打開就掛著一句
@@ -201,7 +201,7 @@ function demoMoney() {
         // 示範一組自己定的每日額度。**不是每一類都給**——留幾類空的，
         // 才看得到「照月預算算的」那個標記長什麼樣。
         dailyBudgets: [
-            { category: '餐飲', limit: 300 },
+            { category: '飲食', limit: 300 },
             { category: '交通', limit: 100 },
         ],
         dailyTotal: 700,
