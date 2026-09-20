@@ -28,6 +28,10 @@ const Overview = {
      */
     CARDS: [
         { id: 'attention',   name: '要注意的', wide: true },
+        // 2026-09-20 起這張不再是格子裡的卡——內容併進 hero 那句話了
+        // （見 Overview.weatherLine）。id 留著只是借用同一組開關：
+        // 這裡的 on/off 現在管的是 hero 裡那句話要不要出現，
+        // renderCard 對它沒有 case，所以永遠不會真的佔一格。
         { id: 'weather',     name: '今天的天氣' },
         { id: 'classes',     name: '今天的課' },
         // 「這個月」原本是自己一張卡。她說「今天的收支跟這個月的卡片合併」——
@@ -254,7 +258,9 @@ const Overview = {
 
     renderCard(id, box) {
         if (id === 'attention') return this.renderAttention(box);
-        if (id === 'weather') return this.renderWeather(box);
+        // 'weather' 沒有 case——它 2026-09-20 起併進 hero 那句話了
+        // （見 weatherLine），這裡什麼都不畫，box 空著，
+        // 上面的迴圈看 box.firstChild 就會自動跳過，不會留一個空格。
         if (id === 'today') return this.renderToday(box);
         if (id === 'todaybudget') return this.renderTodayBudget(box);
         if (id === 'upcoming') return this.renderUpcoming(box);
@@ -696,12 +702,60 @@ const Overview = {
         box.append(el('div', { class: 'hero' + (tone === 'alert' ? ' has-alert' : '') }, [
             el('div', { class: 'glow' }, [icon('star', 190)]),
             el('div', { class: 'date', text: dateText }),
+            this.isOn('weather') ? this.weatherLine() : null,
             el('div', {
                 class: 'headline' + (headline.length === 1 && !note ? ' calm' : ''),
             }, headline),
             note ? el('div', { class: 'note ' + tone, text: note }) : null,
             this.heroStats(open.length, todayAll.length),
         ]));
+    },
+
+    /**
+     * 天氣濃縮成一句話，跟表格擠進同一張卡——2026-09-20 小春說
+     * 原本那張獨立的天氣卡佔位太大、多一格看得太累。
+     *
+     * **不是每天都開口。** 平常只講「幾度・什麼天氣」；只有真的
+     * 偏熱、偏冷，或很可能下雨，才換成一句提醒。跟 hero 上面那句
+     * 一樣的邏輯：沒事不佔位置，有事才講。
+     *
+     * 門檻不是氣象局的警報線，是「今天要不要多想一步」：
+     * 降雨機率 ≥50% 才值得帶傘（低於這個台灣常常雲飄過去就沒事）；
+     * 體感 ≥34° 或 ≤15° 才算「有感」，抓太緊會變成天天講、跟沒講一樣。
+     *
+     * 整條還是原本「改地點」的入口——**不能因為濃縮就把入口濃縮掉**，
+     * 不然時區猜不出城市的人以後永遠找不到路再設一次。
+     *
+     * **地名不再天天印出來。** 原本那張卡「地名一定要寫出來」是怕
+     * 看的人以為那是自己所在地的天氣——這條線現在濃縮到只剩一句話，
+     * 天天重複地名反而是她沒要的那種囉唆。地名還在，退到 `title`
+     * 跟點下去之後的挑地點視窗（那邊本來就會講「現在看的是哪裡」）。
+     */
+    weatherLine() {
+        if (!Weather.place) {
+            return el('button', {
+                type: 'button', class: 'weather-line',
+                onclick: () => Weather.openPicker(),
+            }, [icon('cloud', 14), '設定地點才看得到天氣']);
+        }
+
+        const w = Weather.data;
+        if (!w) return null;   // 抓不到就跟原本一樣，整條不要出現
+
+        const feels = w.feels !== null ? w.feels : w.now;
+        let hint = null;
+        if (w.rain !== null && w.rain >= 50) hint = '記得帶雨具';
+        else if (feels >= 34) hint = '今天比較熱，多喝水';
+        else if (feels <= 15) hint = '今天比較涼，多穿一件';
+
+        const d = Weather.describe(w.code);
+        const text = hint ? `${w.now}°　${hint}` : `${w.now}°　${d.text}`;
+
+        return el('button', {
+            type: 'button', class: 'weather-line',
+            title: `改地點・目前：${Weather.place.name}`,
+            onclick: () => Weather.openPicker(),
+        }, [icon(d.ico, 14), text]);
     },
 
     /** 切到「接下來」的某一個檢視。網址和分頁鈕都交給 showPanel 處理。 */
@@ -908,72 +962,9 @@ const Overview = {
         ]));
     },
 
-    /* ── 今天的天氣 ────────────────────────────────────
-     *
-     * **抓不到就整張不畫。** 天氣是附加的東西，沒有網路的時候
-     * 不該在畫面上留一塊「載入失敗」——那一格會變成每天都要看一次的雜訊。
-     */
-    renderWeather(grid) {
-        const w = Weather.data;
-
-        /* **「不知道你在哪裡」跟「抓不到天氣」是兩件事。**
-         *
-         * 抓不到天氣就整張不畫，那是刻意的：一塊常駐的「載入失敗」
-         * 會變成每天都要看一次的雜訊，而它什麼忙也幫不上。
-         *
-         * 但不知道地點需要一個動作，**而唯一的入口就在這張卡上**——
-         * 不畫的話，時區猜不出城市的人（UTC、Etc/GMT+8、把時區設成
-         * UTC 的隱私瀏覽器）就永遠沒有天氣，而且不知道為什麼。 */
-        if (!Weather.place) {
-            grid.append(el('div', { class: 'card', 'data-hue': 'calendar' }, [
-                this.head('cloud', '今天的天氣',
-                    el('button', {
-                        class: 'btn small', text: '選地點',
-                        onclick: () => Weather.openPicker(),
-                    })),
-                el('div', { class: 'empty' }, [
-                    icon('cloud', 26), '還不知道你在哪裡',
-                    el('div', { class: 'hint',
-                                text: '從你的時區猜不出來。按右上角挑一個地方。' }),
-                ]),
-            ]));
-            return;
-        }
-
-        if (!w) return;
-
-        const d = Weather.describe(w.code);
-        const stamp = Weather.stampText();
-
-        // 下半排的細節。缺的欄位就不寫，不要印「--」。
-        const bits = [];
-        if (w.high !== null && w.low !== null) bits.push(`${w.high}° / ${w.low}°`);
-        if (w.rain !== null) bits.push(`降雨 ${w.rain}%`);
-        if (w.feels !== null && w.feels !== w.now) bits.push(`體感 ${w.feels}°`);
-
-        grid.append(el('div', { class: 'card', 'data-hue': 'calendar' }, [
-            // **一顆按鈕，兩條路。** 本來這裡是「用我的位置」，但那個在
-            // http 的網址上（手機看本機那份就是）根本不會動，按了沒反應。
-            // 改成開一個視窗：裡面可以用打的，也可以用定位。
-            this.head(d.ico, '今天的天氣',
-                el('button', {
-                    class: 'btn small' + (Weather.usingDefault() ? '' : ' ghost'),
-                    text: Weather.asking ? '定位中…' : '改地點',
-                    disabled: Weather.asking,
-                    onclick: () => Weather.openPicker(),
-                })),
-            el('div', { class: 'weather-now' }, [
-                el('div', { class: 'weather-temp', text: `${w.now}°` }),
-                el('div', { class: 'weather-word', text: d.text }),
-            ]),
-            bits.length ? el('div', { class: 'weather-bits', text: bits.join('　') }) : null,
-            // **地名一定要寫出來。** 不寫的話，看的人會以為那是他自己所在地的天氣。
-            el('div', { class: 'sub' }, [
-                Weather.place.name,
-                stamp ? el('span', { class: 'weather-stale', text: '　' + stamp }) : null,
-            ]),
-        ]));
-    },
+    // 「今天的天氣」原本是這裡一張獨立的卡（renderWeather），
+    // 2026-09-20 併進 hero 的 weatherLine 了——內容、改地點的入口、
+    // 抓不到就不講話的邏輯都搬過去了，這裡不用再留一份。
 
     /* ── 卡片 ──────────────────────────────────────── */
 
@@ -1351,8 +1342,14 @@ const Overview = {
      *
      * **但主角不是「今天賺多少」。** 她沒有天天上班，那一行大部分日子
      * 是 0——而她自己剛講過「今天沒用到的項目不要顯示」。
-     * 主角是**這個月排了幾天、幾小時、預估多少**，以及那顆「對一下薪水」。
-     * 「今天賺 800」看過就忘，「少了 760」她會去翻是哪一天。
+     * 主角是**這個月已經賺了多少、整個月排出去預計多少**，
+     * 以及那顆「對一下薪水」。「今天賺 800」看過就忘，「少了 760」
+     * 她會去翻是哪一天。
+     *
+     * **已賺跟預計要分開講。** 2026-09-16 這裡只有一個「這個月到現在」，
+     * 其實撈的是整個月（含還沒發生的班），名字卻在講「現在」——
+     * 已經發生、不會再變的錢，跟排出去、還可能改班取消的錢，
+     * 是兩種不同的確定性，混在一起就是她說的「邏輯怪怪的」。
      *
      * **預估一律寫「還沒入帳」。** 跟今天的支出擺在一起很容易讀成
      * 「我今天淨賺 360」，但那 800 下個月才發，現在不在戶頭裡。
@@ -1403,15 +1400,34 @@ const Overview = {
             ]));
         }
 
+        /* 2026-09-20 小春說「邏輯怪怪的」——原本這裡只有一個數字，
+         * 標「這個月到現在」，但 Shifts.inMonth 撈的是**整個月**，
+         * 沒有排除還沒發生的班。9 月排到 27 號，20 號看到的那個數字
+         * 卻已經把 21～27 號還沒上的班算進去了——「到現在」在騙人。
+         *
+         * 拆成兩個才對得起來：**已賺**只算今天以前（含今天）真的排了、
+         * 已經在發生的班；**預計**是整個月排出去的，跟原本那個數字
+         * 算法一樣，只是名字誠實了。兩個都還沒入帳，但「已賺」是
+         * 已經沒有變數的過去，「預計」還可能因為改班、取消而變動——
+         * 這是兩種不同的確定性，混在一個名字底下才是真正奇怪的地方。 */
+        const earned = Shifts.total(month.filter(e => e.date <= todayStr()));
+
         body.push(el('div', { class: 'shift-month' }, [
             el('div', { class: 'shift-line' }, [
-                el('span', { class: 'sub', text: '這個月到現在' }),
+                el('span', { class: 'sub', text: '本月已賺' }),
+                el('span', { class: 'money-num',
+                             text: earned.pay ? money(earned.pay) : '—' }),
+            ]),
+            el('div', { class: 'sub',
+                        text: `排了 ${earned.days} 天　${Shifts.hoursText(earned.hours)}`
+                            + (earned.pay ? '　還沒入帳' : '') }),
+            el('div', { class: 'shift-line', style: 'margin-top:10px' }, [
+                el('span', { class: 'sub', text: '這個月預計' }),
                 el('span', { class: 'money-num',
                              text: m.pay ? money(m.pay) : '—' }),
             ]),
             el('div', { class: 'sub',
-                        text: `排了 ${m.days} 天　${Shifts.hoursText(m.hours)}`
-                            + (m.pay ? '　還沒入帳' : '') }),
+                        text: `排了 ${m.days} 天　${Shifts.hoursText(m.hours)}` }),
         ]));
 
         /* 算不出來的要講出來。**少算的錢不會有任何地方報錯**，

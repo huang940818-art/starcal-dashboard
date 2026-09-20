@@ -332,16 +332,32 @@ const guard = (p, what, ms = 5000) => Promise.race([
       Agenda.view = 'month'; Agenda.render(); await sleep(300);
       ok('手機上月曆格子不會被撐爆', !wide(),
          document.documentElement.scrollWidth + ' > ' + innerWidth);
-      /* 沒有分類的行程也要看得見——點是手機上那一天唯一的線索。
-     * 透明的話，只排了沒分類行程的日子會整格空白。 */
+      // 2026-09-20 小春說格子太小、要像原生行事曆一樣看得到字。
+      // 格子從 52px 拉高到接近桌機，這裡量真的高起來了，不是只改了註解。
+      ok('手機上月曆格子夠高，不是擠成一條',
+         document.querySelector('#calendar .cal-cell').getBoundingClientRect().height >= 80,
+         Math.round(document.querySelector('#calendar .cal-cell').getBoundingClientRect().height) + 'px');
+      /* 手機上格子曾經只留色點、標題整個藏起來（見 git 歷史）。
+       * 現在改回跟桌機一樣顯示標題文字，這裡量的是真的看得到字，
+       * 不是只有 CSS 寫了但被別的規則蓋掉。 */
     {
-      const plain = [...document.querySelectorAll('#calendar .cal-dots .label-dot.none')][0];
-      ok('沒有分類的行程，點也看得見',
-         !plain || getComputedStyle(plain).backgroundColor !== 'rgba(0, 0, 0, 0)',
-         plain ? getComputedStyle(plain).backgroundColor : '（這輪沒有沒分類的行程）');
+      const item = q('#calendar .cal-item:not(.cls)');
+      ok('手機上月曆格子裡看得到行程標題文字',
+         !!item && getComputedStyle(item).display !== 'none'
+                && getComputedStyle(item).visibility !== 'hidden',
+         item ? '' : '（這輪沒有可比對的行程）');
+      // 沒有分類的行程也要看得見——左邊那條線是它唯一的分類線索，
+      // 透明的話，沒分類的那件事會跟格子背景融在一起，看起來像沒東西。
+      const plain = [...document.querySelectorAll('#calendar .cal-item:not(.cls)')]
+          .find(x => !x.style.getPropertyValue('--line'));
+      ok('沒有分類的行程，那條線也看得見',
+         !plain || getComputedStyle(plain).borderLeftColor !== 'rgba(0, 0, 0, 0)',
+         plain ? getComputedStyle(plain).borderLeftColor : '（這輪沒有沒分類的行程）');
     }
-    ok('手機上月曆用色點代替標題',
-         getComputedStyle(q('#calendar .cal-dots')).display === 'flex');
+    // 色點行（.cal-dots）改回關掉——標題文字回來之後，色點只是同一件事
+    // 講第二遍，還會把已經緊繃的格子撐更高。
+    ok('手機上不再疊一排重複的色點',
+         getComputedStyle(q('#calendar .cal-dots')).display === 'none');
     } catch (e) {
       out.push('✗ 手機那輪爆了: ' + e.message);
     }
@@ -894,15 +910,17 @@ const guard = (p, what, ms = 5000) => Promise.race([
       Weather.at = Date.now();
       Overview.render(); await sleep(250);
 
-      const wcard = [...document.querySelectorAll('#overview-grid .card')]
-        .find(c => c.textContent.includes('今天的天氣'));
-      ok('天氣卡畫得出來', !!wcard, '沒有那張卡');
-      ok('地名有寫出來', !!wcard && wcard.textContent.includes('測試地點'),
-         '不寫地名的話，看的人會以為那是自己所在地的天氣');
-
-      const btn = wcard && [...wcard.querySelectorAll('button')]
-        .find(b => b.textContent.includes('改地點'));
-      ok('天氣卡上有「改地點」', !!btn);
+      // 2026-09-20 起天氣不再是格子裡的卡，併進 hero 那句話了
+      // （見 Overview.weatherLine）。地名不再天天印在畫面上——
+      // 退到 title 屬性跟點下去的挑地點視窗，下面驗的是那兩個地方。
+      const btn = q('#hero .weather-line');
+      ok('hero 裡看得到天氣那一行', !!btn, '沒有 .weather-line');
+      ok('天氣不再佔總覽格子裡的一張卡',
+         ![...document.querySelectorAll('#overview-grid .card')]
+             .some(c => c.textContent.includes('今天的天氣')));
+      ok('溫度有印出來', !!btn && btn.textContent.includes('26°'), btn?.textContent);
+      ok('地名退到 title 裡，還在，只是不天天印在畫面上',
+         !!btn && btn.title.includes('測試地點'), btn?.title);
 
       if (btn) {
         btn.click(); await sleep(220);
@@ -2631,6 +2649,11 @@ const guard = (p, what, ms = 5000) => Promise.race([
         ok('月曆上有排班鈕', !!shiftBtn());
         shiftBtn().click(); await sleep(240);
         ok('進得了排班模式', MonthView.shiftMode && !!q('.shift-bar'));
+        // 2026-09-20 小春：排班連續點格子時容易點到「在這天加」的 ＋，
+        // 誤開成加行程而不是排上班——排班模式時整顆不畫，點格子只會排班。
+        ok('排班模式時格子上沒有「在這天加」',
+           document.querySelectorAll('#calendar .cal-add').length === 0,
+           document.querySelectorAll('#calendar .cal-add').length + ' 顆');
         ok('還沒有班別時會說先開一個',
            q('.shift-hint').textContent.includes('先開一個'), q('.shift-hint').textContent);
 
@@ -2675,8 +2698,13 @@ const guard = (p, what, ms = 5000) => Promise.race([
         ok('再點一次是取消', !Cal.hasShift(day, MonthView.pickedShift));
         ok('取消之後剩兩天', Cal.data.events.filter(e => e.shift).length === 2);
 
+        // 排完了要按得回去——不是永遠關掉那顆 ＋，只是排班的那幾秒不畫
+        shiftBtn().click(); await sleep(240);
+        ok('排完了退出排班模式', !MonthView.shiftMode);
+        ok('退出排班模式後「在這天加」回來了',
+           document.querySelectorAll('#calendar .cal-add').length > 0);
+
         // 排出去的班要出現在時間線上
-        MonthView.shiftMode = false;
         Agenda.view = 'timeline'; Agenda.render(); await sleep(260);
         ok('排出去的班出現在時間線上',
            q('#agenda-list').textContent.includes('打工晚班'));
@@ -2908,6 +2936,51 @@ const guard = (p, what, ms = 5000) => Promise.race([
                JSON.stringify(Cal.data.payslips));
 
             q('#dlg-payslip').close();
+
+            /* ── 已賺／預計要拆開 ──
+             *
+             * 2026-09-20 小春說「邏輯怪怪的」：原本這裡只有一個數字
+             * 標「這個月到現在」，但撈的是整個月，含還沒發生的班。
+             * 這裡直接塞一筆過去的、一筆未來的，驗兩個數字真的分得開。 */
+            {
+                const y = parseYmd(todayStr()).getFullYear();
+                const m = parseYmd(todayStr()).getMonth();
+                const lastDay = new Date(y, m + 1, 0).getDate();
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+                const future = new Date(y, m, lastDay);
+                if (future > today) {
+                    Cal.data.events = Cal.data.events.filter(e => e.shift !== made.id);
+                    const shiftId = Cal.shifts()[0].id;
+                    Cal.data.events.push(
+                        { id: 'past-earn', date: todayStr(), title: '打工晚班',
+                          time: '18:00', endTime: '22:00', shift: shiftId,
+                          rate: 200, breakMin: 0 },
+                        { id: 'future-earn', date: ymd(future), title: '打工晚班',
+                          time: '18:00', endTime: '22:00', shift: shiftId,
+                          rate: 200, breakMin: 0 },
+                    );
+                    Cal.save(); Overview.render(); await sleep(260);
+
+                    const c2 = card();
+                    const shiftLine = label => {
+                        const line = [...c2.querySelectorAll('.shift-line')]
+                            .find(l => l.querySelector('.sub')?.textContent.trim() === label);
+                        return line ? line.querySelector('.money-num').textContent : null;
+                    };
+                    // 4 小時 × 200、沒填休息 → 一班 800（money() 沒有貨幣符號，
+                    // 跟前面「填了休息」那組（3.5 小時）是不同的兩筆資料，數字不一樣）
+                    ok('本月已賺只算到今天，不含還沒發生的班',
+                       shiftLine('本月已賺') === '800', shiftLine('本月已賺'));
+                    ok('這個月預計含還沒發生的班，兩筆都算',
+                       shiftLine('這個月預計') === '1,600', shiftLine('這個月預計'));
+                    ok('已賺跟預計不是同一個數字',
+                       shiftLine('本月已賺') !== shiftLine('這個月預計'),
+                       shiftLine('本月已賺') + ' vs ' + shiftLine('這個月預計'));
+                } else {
+                    out.push('（今天剛好是這個月最後一天，跳過已賺／預計的分界測試）');
+                }
+            }
+
             Prefs.data.overviewOff = keepOff;
             await tab('agenda');
             Agenda.view = 'month'; Agenda.render(); await sleep(240);

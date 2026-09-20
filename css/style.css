@@ -555,6 +555,26 @@ main {
     margin-bottom: 10px;
 }
 
+/* 天氣濃縮成一句話，擠在日期跟大標題之間——不是自己一張卡了，
+ * 見 js/overview.js 的 weatherLine。整條還是一顆按鈕（改地點）。 */
+.hero .weather-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 10px;
+    padding: 0;
+    background: none;
+    border: 0;
+    font-size: 13px;
+    color: var(--text-2);
+    cursor: pointer;
+    text-align: left;
+}
+
+.hero .weather-line svg { color: var(--text-3); flex: 0 0 auto; }
+.hero .weather-line:hover { color: var(--text); }
+.hero .weather-line:hover svg { color: var(--calendar); }
+
 .hero .headline {
     font-size: 27px;
     font-weight: 650;
@@ -2250,27 +2270,31 @@ h6.md-h, h7.md-h, h8.md-h, h9.md-h { font-size: 13.5px; color: var(--text-2); }
 .cal-day .day-head { margin-bottom: 8px; }
 
 @media (max-width: 620px) {
-    .cal-grid { gap: 3px; }
-    .cal-cell { min-height: 52px; padding: 4px; }
-    .cal-items, .cal-more { display: none; }
-    /* 手機格子只有五十幾像素寬，篩選了也塞不下課名 */
+    .cal-grid { gap: 4px; }
+    /* 2026-09-20 小春說太小、要像原生行事曆一樣看得到字。
+     * 格子從 52px 拉高到接近桌機（104px），行程改回顯示標題文字。
+     *
+     * **只留兩則，不畫「＋N 件」。** JS 那顆「＋N 件」是照桌機的門檻
+     * （超過 3 則才畫）算出來的數字，這裡只留兩則會對不上——
+     * 三則的日子會少講一件，看起來像漏掉。原生行事曆的做法也是這樣：
+     * 擠不下就默默截斷，點那天才看完整清單（底下那塊本來就有）。
+     * .cal-more 維持原本 display:none，這顆按鈕本來就是共用的
+     * （課表篩選那半也用同一個 class），連著關掉才不會漏講半句。 */
+    .cal-cell { min-height: 92px; padding: 6px 6px; }
+    .cal-n { font-size: 13.5px; }
+    .cal-item { font-size: 10.5px; padding: 2px 4px; }
+    .cal-item:nth-child(n+3) { display: none; }
+    .cal-more { display: none; }
+    /* 手機格子窄，篩選了也塞不下課名 */
     .cal-item.cls { display: none; }
-    /* 課的點在手機上也留著——那是「這天要不要出門」唯一的線索 */
+    /* 課的點在手機上也留著——那是「這天要不要出門」唯一的線索
+     * （課本來就不管螢幕大小都只畫點，不寫課名，見上面那段長註解）。 */
     .cal-cls-dots { margin-left: 4px; }
     .cls-dot { width: 4px; height: 4px; }
-    .cal-dots { display: flex; }
-    .cal-dots .label-dot { width: 6px; height: 6px; margin: 0; }
-
-    /* **沒有分類的行程也要看得見。**
-     *
-     * `.label-dot.none` 的底色是透明的（在分類選單那種地方是對的：
-     * 「不分類」本來就不該有顏色）。但在手機月曆上，點是那一天唯一的
-     * 線索——透明的話，一個只排了沒分類行程的日子會整格空白，
-     * 看起來就像那天什麼都沒有。排班排出來的班預設就沒有分類。 */
-    .cal-dots .label-dot.none {
-        background: var(--text-3);
-        opacity: .75;
-    }
+    /* .cal-dots（行程／待辦那排色點）維持 display:none。
+     * 它本來是手機版文字被藏起來時的替代品——「格子裡有東西發生」
+     * 唯一的線索。現在 .cal-item 文字放回來了，跟它講的是同一件事，
+     * 兩個一起畫只是同一份資訊重複兩次，還會把本來就緊的格子撐更高。 */
 }
 
 /* ── 課表 ───────────────────────────────────────────
@@ -3114,33 +3138,9 @@ body::before {
     outline-offset: 1px;
 }
 
-/* ── 今天的天氣 ────────────────────────────────────── */
-.weather-now {
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-    margin-top: 2px;
-}
-
-.weather-temp {
-    font-size: 34px;
-    font-weight: 600;
-    letter-spacing: -.02em;
-    font-variant-numeric: tabular-nums;
-    line-height: 1.15;
-}
-
-.weather-word { font-size: 15px; color: var(--text-2); }
-
-.weather-bits {
-    margin-top: 6px;
-    font-size: 13px;
-    color: var(--text-2);
-    font-variant-numeric: tabular-nums;
-}
-
-/* 過期的時間戳要看得出來是註記，不是資料本身 */
-.weather-stale { color: var(--text-3); }
+/* 「今天的天氣」原本自己一張卡的樣式（.weather-now/.weather-temp/
+ * .weather-word/.weather-bits/.weather-stale）2026-09-20 拿掉了——
+ * 併進 hero 的 .weather-line，見上面那段。 */
 
 /* ── 對話框太高的時候自己捲 ────────────────────────────
  *
