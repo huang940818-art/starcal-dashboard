@@ -960,6 +960,84 @@ const guard = (p, what, ms = 5000) => Promise.race([
       Overview.render(); await sleep(180);
     }
 
+    /* ── 每次打開重新對一次位置 ──
+     *
+     * 她的原話：「可以每次打開的時候就抓一次定位嗎」。
+     *
+     * **第一條要守住的是訪客。** 這份要放作品集，整份程式第一個
+     * 刻意的決定就是「不主動要定位權限」。自動抓只能在已經授權過的
+     * 裝置上做，沒給過權限的人連一次詢問都不該多看到。
+     */
+    {
+      const geo = navigator.geolocation;
+      const perms = navigator.permissions;
+      const realGet = geo.getCurrentPosition;
+      const realQuery = perms && perms.query;
+
+      let asked = 0, permState = 'prompt';
+      let coords = { latitude: 24.123, longitude: 120.456 };
+      let fetched = 0;
+      const realFetch = Weather.fetchNow;
+
+      const mock = () => {
+        Object.defineProperty(geo, 'getCurrentPosition', {
+          configurable: true,
+          value: (ok2) => { asked++; ok2({ coords }); },
+        });
+        if (perms) Object.defineProperty(perms, 'query', {
+          configurable: true,
+          value: async () => ({ state: permState }),
+        });
+        Weather.fetchNow = async function () { fetched++; };
+      };
+      const unmock = () => {
+        Object.defineProperty(geo, 'getCurrentPosition',
+                              { configurable: true, value: realGet });
+        if (perms) Object.defineProperty(perms, 'query',
+                                         { configurable: true, value: realQuery });
+        Weather.fetchNow = realFetch;
+      };
+
+      mock();
+      Weather.place = { lat: 25.053, lon: 121.526, name: '測試地點' };
+      localStorage.removeItem(Weather.LOCATED_KEY);
+
+      // A. 沒授權過 → 一次都不該問
+      permState = 'prompt';
+      await Weather.refreshLocation(); await sleep(120);
+      ok('沒授權過就不抓定位，連問都不問', asked === 0, asked + ' 次');
+      ok('沒授權時地點不會被動到', Weather.place.name === '測試地點');
+
+      // B. 明確拒絕過 → 也不該問
+      permState = 'denied';
+      await Weather.refreshLocation(); await sleep(120);
+      ok('拒絕過就不再騷擾', asked === 0, asked + ' 次');
+
+      // C. 授權過 → 自己抓，換地方就更新
+      permState = 'granted';
+      await Weather.refreshLocation(); await sleep(200);
+      ok('授權過就每次打開自己抓', asked === 1, asked + ' 次');
+      ok('抓到新位置就換過去',
+         Weather.place.lat === 24.123 && Weather.place.lon === 120.456,
+         JSON.stringify(Weather.place));
+      ok('換了地方才重抓天氣', fetched === 1, fetched + ' 次');
+
+      // D. 十分鐘內不重複抓——切分頁、鎖屏回來都會重跑 init
+      await Weather.refreshLocation(); await sleep(120);
+      ok('十分鐘內不重複抓', asked === 1, asked + ' 次');
+
+      // E. 沒移動就什麼都不做
+      localStorage.removeItem(Weather.LOCATED_KEY);
+      await Weather.refreshLocation(); await sleep(200);
+      ok('同一個地方會再問一次定位', asked === 2, asked + ' 次');
+      ok('但沒移動就不重抓天氣', fetched === 1, fetched + ' 次');
+
+      unmock();
+      localStorage.removeItem(Weather.LOCATED_KEY);
+      Weather.data = null; Weather.place = null;
+      Overview.render(); await sleep(150);
+    }
+
     // ── 存錢罐是「從既有的戶頭裡挑」──
     //
     // 本來它是「加帳戶」表單裡的一個勾選框。要改一個已經建好的戶頭，

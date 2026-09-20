@@ -267,9 +267,88 @@ const Weather = {
         if (cached && cached.key === this.keyOf(this.place)) {
             this.data = cached.data;
             this.at = cached.at;
-            if (Date.now() - cached.at < this.FRESH_MS) return;   // 還新鮮，不用再抓
+            if (Date.now() - cached.at < this.FRESH_MS) {
+                this.refreshLocation();      // 背景的，不 await
+                return;                       // 還新鮮，不用再抓
+            }
         }
         await this.fetchNow();
+        this.refreshLocation();               // 背景的，不 await
+    },
+
+    /**
+     * 每次打開重新對一次位置。她的原話：「可以每次打開的時候就抓一次定位嗎」。
+     *
+     * **但不能因此去敲權限。** 這整份程式第一條刻意的決定就是
+     * 「不主動要定位權限」——它要放作品集，一打開就跳「要不要給位置」
+     * 的頁面很討厭，而且訪客根本沒理由給。
+     *
+     * 所以這裡只在**已經授權過**的裝置上動作：先用 Permissions API 問
+     * 現在的狀態，只有 `granted` 才抓。`prompt`（沒給過）跟 `denied`
+     * 一律不碰，訪客的體驗跟以前一模一樣，連一次詢問都不會多。
+     * 問不到狀態的瀏覽器（沒有 Permissions API）也不抓——
+     * **寧可不做，也不要在別人的頁面上亂跳權限視窗。**
+     *
+     * 幾個刻意的選擇：
+     *
+     * - **背景做，不擋畫面。** 不設 `asking`、不 await。卡片先用舊地點
+     *   畫出來，位置回來了再換。定位有時候要好幾秒，讓她等於是
+     *   把「每次打開都更新」變成「每次打開都卡一下」。
+     * - **失敗安靜跳過。** 這跟 `useMyLocation()` 不一樣：那個是她按的，
+     *   按了沒反應是最難查的壞掉，所以一定要講。這個沒有人按，
+     *   失敗的時候畫面上還是有舊地點的天氣，沒有任何東西壞掉——
+     *   為它跳一個 toast 只是噪音。
+     * - **同一個地方就什麼都不做。** 用 keyOf（小數點後三位，約 100 公尺）
+     *   比對，沒移動就不重寫 localStorage、不重抓天氣、不重畫。
+     * - **十分鐘內不重複抓。** 切分頁、鎖屏回來都會重跑 init，
+     *   沒有節流的話一個下午會抓幾十次。換地方的時間尺度是小時，
+     *   十分鐘已經遠比它細了。
+     */
+    LOCATED_KEY: '星歷.天氣.上次定位',
+    LOCATE_GAP_MS: 10 * 60 * 1000,
+
+    async refreshLocation() {
+        if (!this.canLocate() || this.asking) return;
+
+        // 十分鐘內抓過就跳過
+        try {
+            const last = Number(localStorage.getItem(this.LOCATED_KEY) || 0);
+            if (last && Date.now() - last < this.LOCATE_GAP_MS) return;
+        } catch { /* 無痕模式：當作沒抓過，照樣往下走 */ }
+
+        // **只在已經授權過的裝置上抓。** 問不到狀態就不抓。
+        try {
+            if (!navigator.permissions?.query) return;
+            const st = await navigator.permissions.query({ name: 'geolocation' });
+            if (st.state !== 'granted') return;
+        } catch { return; }
+
+        navigator.geolocation.getCurrentPosition(async pos => {
+            try { localStorage.setItem(this.LOCATED_KEY, String(Date.now())); } catch {}
+
+            const next = {
+                lat: Number(pos.coords.latitude.toFixed(3)),
+                lon: Number(pos.coords.longitude.toFixed(3)),
+                name: '我的位置',
+            };
+            // 沒移動就不要動任何東西
+            if (this.place && this.keyOf(next) === this.keyOf(this.place)) return;
+
+            this.place = next;
+            /* 兩個都寫，跟 useMyLocation() 一樣的理由：
+             * localStorage 是「這台裝置現在在哪」，設定是「平常看哪裡」。
+             * 手機開的是 http、定位永遠抓不到，只有這裡寫進設定，
+             * 手機那邊才跟得到同一個地方。 */
+            this.savePlace(next);
+            this.savePicked(next);
+            this.data = null;
+            await this.fetchNow();
+            Overview.render();
+        }, () => {
+            // 背景刷新失敗不吭聲，理由見上面。但時間戳還是要寫，
+            // 不然每次打開都會再試一次，一直失敗一直試。
+            try { localStorage.setItem(this.LOCATED_KEY, String(Date.now())); } catch {}
+        }, { timeout: 8000, maximumAge: this.LOCATE_GAP_MS });
     },
 
     async fetchNow() {
