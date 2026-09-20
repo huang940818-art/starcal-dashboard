@@ -19,6 +19,7 @@ self.addEventListener('install', (e) => {
         './js/money.js', './js/todo.js', './js/memo.js', './js/wall.js',
         './js/calendar.js', './js/timetable.js', './js/overview.js',
         './js/charts.js', './js/agenda.js', './js/countdown.js',
+        './js/holidays.js', './holidays.json',
         './js/prefs.js', './js/themes.js', './js/icons.js', './js/md.js',
         './js/csv.js', './js/autocat.js', './js/shifts.js', './js/ke.js',
         './js/update.js', './js/weather.js', './js/demo.js',

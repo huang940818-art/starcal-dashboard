@@ -336,6 +336,25 @@ main {
 
 /* 過完的還留在清單裡（要讓她自己決定刪掉還是改日期），但要看得出來已經過了 */
 .countdown-row.past { opacity: .5; }
+
+/* 國定假日那幾列。**看得出來跟她自己填的不一樣**——那幾列點不下去
+ * （不在她的資料裡，開起來沒東西可存），所以要先看得出來，
+ * 不然會變成「有些列點得動有些點不動」的謎。
+ * 左邊一條 --heart 的線，跟月曆那邊同一個顏色語彙。 */
+.countdown-row.holiday .title {
+    color: var(--text-2);
+}
+
+.countdown-row.holiday .title::before {
+    content: '';
+    display: inline-block;
+    width: 3px;
+    height: 11px;
+    margin-right: 6px;
+    vertical-align: -1px;
+    border-radius: 2px;
+    background: var(--heart);
+}
 .countdown-row.past .countdown-days { font-weight: 500; }
 
 /* ── 排順序 ─────────────────────────────────────────
@@ -2117,6 +2136,37 @@ h6.md-h, h7.md-h, h8.md-h, h9.md-h { font-size: 13.5px; color: var(--text-2); }
 
 .cal-cell:hover { border-color: var(--separator); }
 
+/* ── 國定假日 ──────────────────────────────────────
+ *
+ * **連假整段給底色，不是一天一天各自變色。** 她要的是「看出哪幾天
+ * 連在一起」——三格各自亮一下看起來像三件不相干的事，一整片底色
+ * 才是一段假。
+ *
+ * 顏色用 --heart 不用 --alert：台灣月曆上國定假日是紅字，但 --alert
+ * 在這份程式裡專門講「過期了、超支了」。同一個紅色兩種意思，
+ * 她會分不出哪個是壞消息。
+ *
+ * 這兩條要**擺在 .today / .picked 前面**——那兩個是「現在選的」，
+ * 比「那天放假」更該贏，而同樣特異性下後寫的贏。 */
+.cal-cell.in-break {
+    background: color-mix(in srgb, var(--heart) 11%, transparent);
+    border-color: color-mix(in srgb, var(--heart) 28%, transparent);
+}
+
+.cal-cell.is-holiday .cal-n { color: var(--heart); font-weight: 650; }
+
+/* 假日名字。**手機上收起來**（見下面的 media query）：一格不到 50px，
+ * 塞「中秋節」會把日期數字擠掉，而日期才是月曆的主角。
+ * 手機那邊靠底色和日期顏色講同一件事，名字留在 title 裡。 */
+.cal-holiday {
+    font-size: 10px;
+    color: color-mix(in srgb, var(--heart) 85%, var(--text-3));
+    margin-left: 5px;
+    margin-right: auto;
+    min-width: 0;
+    cursor: help;
+}
+
 /* 這個月以外的日子留著（那一週才是完整的），但要退到後面去 */
 .cal-cell.outside { opacity: .38; }
 
@@ -2287,6 +2337,9 @@ h6.md-h, h7.md-h, h8.md-h, h9.md-h { font-size: 13.5px; color: var(--text-2); }
     .cal-more { display: none; }
     /* 手機格子窄，篩選了也塞不下課名 */
     .cal-item.cls { display: none; }
+    /* 假日名字同理——一格不到 50px，塞三個字會把日期擠掉。
+     * 底色跟日期顏色照留，那兩個不佔位置。 */
+    .cal-holiday { display: none; }
     /* 課的點在手機上也留著——那是「這天要不要出門」唯一的線索
      * （課本來就不管螢幕大小都只畫點，不寫課名，見上面那段長註解）。 */
     .cal-cls-dots { margin-left: 4px; }

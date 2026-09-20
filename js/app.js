@@ -169,6 +169,10 @@ async function main() {
     // 「資料讀不出來」的分支——那個分支是為了保護檔案存在的。
     Weather.init().then(() => Overview.render());
 
+    // 假日同理：附加資訊，抓不到就整個不出現（見 js/holidays.js）。
+    // 月曆也要重畫——連假的底色是畫在格子上的。
+    Holidays.init().then(() => { Overview.render(); Agenda.render(); });
+
     // 程式換了就自己更新。展示模式沒有 /api，這支會早退。
     Update.init();
 

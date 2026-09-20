@@ -147,9 +147,34 @@ const Countdown = {
                          || a.item.title.localeCompare(b.item.title, 'zh-TW'));
     },
 
-    /** 總覽卡片上要出現的：過完的不算。 */
-    upcoming(today = todayStr()) {
-        return this.sorted(today).filter(r => r.st.phase !== 'past');
+    /**
+     * 總覽卡片上要出現的：過完的不算。
+     *
+     * `holidays` 是**最多塞幾個連假進來**（見 js/holidays.js 開頭第 2 點：
+     * 接下來十二個月有十二個連假，不限量的話那張卡就只剩假日，
+     * 她自己填的寒假、期中考一個都看不到）。
+     * 管理清單那邊給 Infinity，那裡有空間慢慢看。
+     */
+    upcoming(today = todayStr(), holidays = null) {
+        /* **不要把 Holidays.CARD_MAX 寫成參數預設值。**
+         * 預設值是呼叫時求值的，而 測試.mjs 那個純算術環境只載
+         * countdown.js、沒有 holidays.js——那樣會在還沒進函式之前
+         * 就 ReferenceError，而且錯的是兩條跟假日完全無關的測試。 */
+        const max = holidays !== null ? holidays
+                  : (typeof Holidays === 'undefined' ? 0 : Holidays.CARD_MAX);
+        const mine = this.sorted(today).filter(r => r.st.phase !== 'past');
+        const theirs = (typeof Holidays === 'undefined' ? [] :
+                        Holidays.asCountdownItems(today, max))
+            .map(item => ({ item, st: this.statusOf(item, today) }))
+            .filter(r => r.st.phase !== 'past');
+
+        // 混排。進行中的排前面，其餘照還有幾天——跟 sorted() 同一套規則，
+        // 不然假日會整批擠在清單頭或尾，看起來像兩份清單黏在一起。
+        const rank = { during: 0, today: 0, before: 1, past: 2 };
+        return [...mine, ...theirs].sort((a, b) =>
+            (rank[a.st.phase] - rank[b.st.phase])
+            || (a.st.days - b.st.days)
+            || a.item.title.localeCompare(b.item.title, 'zh-TW'));
     },
 
     /* ── 畫面 ──────────────────────────────────────── */
@@ -171,9 +196,14 @@ const Countdown = {
     /** 一列：名字 ＋ 那句話。卡片和管理清單長得一樣，只差點下去做什麼。 */
     row(r, onclick) {
         const { item, st } = r;
+        /* **假日那幾列點不進編輯。** 它們不在她的資料裡，開起來也沒有
+         * 東西可以存——一個點得下去卻做不了事的列，比不能點更糟。 */
+        const tap = item.holiday ? null : onclick;
         return el('div', {
-            class: 'countdown-row' + (st.phase === 'past' ? ' past' : ''),
-            ...(onclick ? { style: 'cursor:pointer', onclick } : {}),
+            class: 'countdown-row' + (st.phase === 'past' ? ' past' : '')
+                 + (item.holiday ? ' holiday' : ''),
+            ...(item.holiday ? { title: '國定假日，跟著政府行事曆走' } : {}),
+            ...(tap ? { style: 'cursor:pointer', onclick: tap } : {}),
         }, [
             el('div', { class: 'grow' }, [
                 el('div', { class: 'title ellipsis', text: item.title }),

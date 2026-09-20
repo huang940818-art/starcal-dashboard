@@ -57,6 +57,8 @@ const MonthView = {
                 events: Agenda.eventsOnWithDone(day),
                 todos: Agenda.todosOn(day),
                 classes: Timetable.on(day).filter(c => Agenda.match(c)),
+                // 國定假日與連假。查表，不是每格掃一次陣列（見 js/holidays.js）
+                holiday: typeof Holidays === 'undefined' ? null : Holidays.on(day),
             });
         }
         return out;
@@ -119,6 +121,10 @@ const MonthView = {
             const cls = ['cal-cell'];
             if (c.outside) cls.push('outside');
             if (c.day === todayStr()) cls.push('today');
+            /* 假日。**連假整段給底色**——她要的就是「看出哪幾天連在一起」，
+             * 一天一天各自變色看不出那是一段。單日的假只有日期變色。 */
+            if (c.holiday) cls.push('is-holiday');
+            if (c.holiday?.breakName) cls.push('in-break');
             if (c.day === this.picked) cls.push('picked');
             if (this.shiftMode && this.pickedShift
                 && Cal.hasShift(c.day, this.pickedShift)) cls.push('shift-on');
@@ -129,7 +135,9 @@ const MonthView = {
                 tabindex: '0',
                 // 唸出來的件數只算還沒收起來的——收起來的那幾件
                 // 在畫面上是空心點，講成「還有 3 件事」會對不上。
-                'aria-label': `${c.n} 日，${items.filter(x => !x.it.done).length} 件事`,
+                'aria-label': `${c.n} 日，${items.filter(x => !x.it.done).length} 件事`
+                    // 放假這件事要唸出來——螢幕報讀器讀不到底色
+                    + (c.holiday ? `，${c.holiday.name || c.holiday.breakName}` : ''),
                 onclick: () => {
                     if (this.shiftMode) return this.tapShift(c.day);
                     this.picked = c.day;
@@ -146,6 +154,23 @@ const MonthView = {
             }, [
                 el('div', { class: 'cal-head-row' }, [
                     el('div', { class: 'cal-n', text: String(c.n) }),
+                    /* 假日的名字。**只在桌機寫得出來**（手機一格不到 50px，
+                     * 塞「中秋節」會把日期擠掉），手機那邊靠底色和日期顏色，
+                     * 名字留在 title 裡。
+                     *
+                     * 擺在這一排、不另外開一行，是因為她前一輪才要求
+                     * 月曆要看得到行程標題——再多一行字就是把剛放回去的
+                     * 東西再擠掉一次。 */
+                    c.holiday
+                        ? el('div', {
+                            class: 'cal-holiday ellipsis',
+                            text: c.holiday.name || c.holiday.breakName || '',
+                            title: [c.holiday.name,
+                                    c.holiday.breakDays
+                                        ? `${c.holiday.breakName} ${c.holiday.breakDays} 天連假`
+                                        : ''].filter(Boolean).join('　'),
+                          })
+                        : null,
                     // 有課的日子在日期旁邊點幾個點，一堂一個。
                     //
                     // **課是每週固定的，寫成文字會在整張月曆上重複三十次。**

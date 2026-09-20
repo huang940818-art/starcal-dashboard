@@ -2097,12 +2097,83 @@ const guard = (p, what, ms = 5000) => Promise.race([
       Countdown.save(); Overview.render(); await sleep(250);
       const card2 = [...document.querySelectorAll('#overview-grid .card')]
         .find(c => c.textContent.includes('倒數'));
-      ok('過完的不上總覽（整張卡就不畫）', !card2, card2 ? card2.textContent.slice(0, 60) : '');
+      /* 2026-09-20 起這張卡上還會有國定假日（見 js/holidays.js），
+       * 所以「整張卡不畫」只在連假也沒有的時候成立。
+       * 真正要守住的是**她自己過完的項目不上總覽**。 */
+      ok('過完的那筆不上總覽',
+         !card2 || !card2.textContent.includes('去年的期末考'),
+         card2 ? card2.textContent.slice(0, 60) : '（整張卡沒畫）');
 
       await tab('agenda'); await sleep(250);
       ok('但過完的還留在清單上',
          q('#countdown-list').textContent.includes('去年的期末考'),
          q('#countdown-list').textContent.slice(0, 80));
+
+      /* ── 國定假日 ──
+       *
+       * 她的原話：「我覺得國定假日都可以標起來放倒數，比如哪些連假
+       * 之類的」＋「還有我的行事曆那邊」。
+       *
+       * **第一條要守住的是不准碰她的資料。** 假日是「本來就會發生的事」，
+       * 不是她記下來的事——寫進倒數.json 的話，她手填的寒假期中考會被
+       * 十幾個假日淹掉，刪掉一個明年又冒出來，每年更新還要跟她改過的打架。
+       */
+      {
+        ok('假日資料載得進來', !!Holidays.data && Holidays.data.連假.length > 0,
+           Holidays.data ? Holidays.data.連假.length + ' 個連假' : '沒載到');
+
+        const next = Holidays.upcomingBreaks()[0];
+        ok('算得出下一個連假', !!next, JSON.stringify(next || null));
+
+        // 1. 不准寫進她的資料
+        const before = JSON.stringify(Countdown.data.items);
+        Countdown.data.items = [];
+        Countdown.save();
+        Overview.render(); await sleep(250);
+        const hCard = [...document.querySelectorAll('#overview-grid .card')]
+          .find(c => c.querySelector('h2 .label')
+                  && c.querySelector('h2 .label').textContent.trim() === '倒數');
+        ok('她一筆都沒填的時候，連假自己會出現', !!hCard,
+           '沒有那張卡');
+        ok('**但一筆都沒寫進她的資料**', Countdown.data.items.length === 0,
+           JSON.stringify(Countdown.data.items));
+
+        // 2. 卡片上最多兩個，不然她自己填的會被淹掉
+        const hRows = hCard ? [...hCard.querySelectorAll('.countdown-row.holiday')] : [];
+        ok('卡片上的連假有上限', hRows.length <= Holidays.CARD_MAX,
+           hRows.length + ' 列（上限 ' + Holidays.CARD_MAX + '）');
+        ok('連假寫得出名字跟天數',
+           hRows.length > 0 && hRows[0].textContent.includes(next.name),
+           hRows.length ? hRows[0].textContent.slice(0, 40) : '沒有連假列');
+
+        // 3. 點不下去——不在她的資料裡，開起來沒東西可存
+        ok('假日那幾列點不下去',
+           hRows.every(r => !r.style.cursor || r.style.cursor !== 'pointer'),
+           hRows.map(r => r.style.cursor || '（沒設）').join('、'));
+
+        // 4. 月曆上要標起來
+        Agenda.view = 'month'; MonthView.ym = next.start.slice(0, 7);
+        Agenda.render(); await tab('agenda'); await sleep(300);
+        const cells = [...document.querySelectorAll('#calendar .cal-cell')];
+        const inBreak = cells.filter(c => c.classList.contains('in-break'));
+        ok('月曆上連假整段標出來', inBreak.length >= next.days,
+           inBreak.length + ' 格（連假 ' + next.days + ' 天）');
+        const holidayCells = cells.filter(c => c.classList.contains('is-holiday'));
+        ok('放假的日子日期會變色', holidayCells.length > 0,
+           holidayCells.length + ' 格');
+        // 螢幕報讀器讀不到底色，一定要唸得出來
+        const spoken = cells.find(c => (c.getAttribute('aria-label') || '')
+                                        .includes(next.name.split('・')[0]));
+        ok('報讀器也唸得出那天放假', !!spoken,
+           spoken ? spoken.getAttribute('aria-label') : '沒有一格唸得出假日');
+
+        // 還原並**重畫**——只還原資料不重畫的話，下面那幾條會對著
+        // 一份空清單找列，然後在 click(null) 上爆掉
+        Countdown.data.items = JSON.parse(before);
+        Countdown.save(); Countdown.render();
+        Agenda.view = 'timeline'; MonthView.today();
+        Agenda.render(); await tab('agenda'); await sleep(260);
+      }
 
       // 刪掉要給得回來——跟總覽的 ✕ 同一個道理
       q('#countdown-list .countdown-row').click(); await sleep(220);
