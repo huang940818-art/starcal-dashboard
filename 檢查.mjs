@@ -332,7 +332,7 @@ const guard = (p, what, ms = 5000) => Promise.race([
       Agenda.view = 'month'; Agenda.render(); await sleep(300);
       ok('手機上月曆格子不會被撐爆', !wide(),
          document.documentElement.scrollWidth + ' > ' + innerWidth);
-      // 2026-09-20 小春說格子太小、要像原生行事曆一樣看得到字。
+      // 2026-09-20 她說格子太小、要像原生行事曆一樣看得到字。
       // 格子從 52px 拉高到接近桌機，這裡量真的高起來了，不是只改了註解。
       ok('手機上月曆格子夠高，不是擠成一條',
          document.querySelector('#calendar .cal-cell').getBoundingClientRect().height >= 80,
@@ -2649,7 +2649,7 @@ const guard = (p, what, ms = 5000) => Promise.race([
         ok('月曆上有排班鈕', !!shiftBtn());
         shiftBtn().click(); await sleep(240);
         ok('進得了排班模式', MonthView.shiftMode && !!q('.shift-bar'));
-        // 2026-09-20 小春：排班連續點格子時容易點到「在這天加」的 ＋，
+        // 2026-09-20 她回報：排班連續點格子時容易點到「在這天加」的 ＋，
         // 誤開成加行程而不是排上班——排班模式時整顆不畫，點格子只會排班。
         ok('排班模式時格子上沒有「在這天加」',
            document.querySelectorAll('#calendar .cal-add').length === 0,
@@ -2939,7 +2939,7 @@ const guard = (p, what, ms = 5000) => Promise.race([
 
             /* ── 已賺／預計要拆開 ──
              *
-             * 2026-09-20 小春說「邏輯怪怪的」：原本這裡只有一個數字
+             * 2026-09-20 她說「邏輯怪怪的」：原本這裡只有一個數字
              * 標「這個月到現在」，但撈的是整個月，含還沒發生的班。
              * 這裡直接塞一筆過去的、一筆未來的，驗兩個數字真的分得開。 */
             {
