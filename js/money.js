@@ -45,6 +45,9 @@ const DEFAULT_CATEGORIES = {
 /** 「存款遮起來」記在瀏覽器自己身上，不進資料。 */
 const HIDE_KEY = '星歷:遮住存款';
 
+/** 分類排序只看最近這麼多筆。習慣會變，太舊的不算數。 */
+const RECENT_TXNS = 200;
+
 /* ── 期間 ──────────────────────────────────────────────
  *
  * 她要「可以看月或週或是年，可以自訂」。
@@ -623,6 +626,50 @@ const Money = {
 
     natureOf(category) {
         return this.data.categories.expense.find(c => c.name === category)?.nature || 'flexible';
+    },
+
+    /**
+     * 記一筆的時候，分類下拉要照她的習慣排。
+     *
+     * 她的原話：「填寫分類的時候能不能按照上次按的次數或循序去排分類」。
+     * 她的帳裡支出有 16 個分類、只用過 7 個；收入的「家裡給的」用過兩次
+     * 卻排在第 10 個——要選它得先滑過八個從來沒用過的。
+     *
+     * **次數為主，最近用過的只在平手時當裁判。** 純照「最近用過的排最前面」
+     * 的話，偶爾記一筆交通，下一次交通就跳到第一個，位置每記一筆動一次。
+     * 照次數排，最常用的那個永遠在同一格，手記得住。
+     *
+     * **沒用過的照原本清單的順序排在後面**，位置一樣不會動。
+     *
+     * 只看最近 RECENT_TXNS 筆：習慣會變，半年前天天喝的不代表現在還在喝。
+     *
+     * **這支只改下拉的顯示順序，清單本身不動。** 圓餅圖的顏色（colorOf）、
+     * 預算那幾列都是照分類在清單裡的第幾個來的，真的重排一次顏色就全換人。
+     */
+    categoryOrder(kind, excludeId) {
+        const list = kind === 'income' ? this.data.categories.income : this.data.categories.expense;
+        const names = list.map(c => c.name);
+        const rank = new Map(names.map((n, i) => [n, i]));
+
+        // 日期排序，不靠陣列順序——補記昨天的一筆會被 push 到最後面，
+        // 但它不是「最近用的」。
+        // 正在改的那一筆不算數（excludeId），不然它會替自己現在的分類加一票。
+        const used = (this.data.transactions ?? [])
+            .filter(t => !(excludeId !== undefined && t.id === excludeId)
+                         && t.kind === kind && t.category && rank.has(t.category))
+            .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')))
+            .slice(-RECENT_TXNS);
+
+        const count = new Map(), last = new Map();
+        used.forEach((t, i) => {
+            count.set(t.category, (count.get(t.category) || 0) + 1);
+            last.set(t.category, i);            // 越後面＝越近
+        });
+
+        return names.slice().sort((a, b) =>
+            (count.get(b) || 0) - (count.get(a) || 0)
+            || (last.get(b) ?? -1) - (last.get(a) ?? -1)
+            || rank.get(a) - rank.get(b));
     },
 
     /* ── 畫面 ──────────────────────────────────────── */
@@ -1586,10 +1633,12 @@ const Money = {
             $('#t-category-field').hidden = transfer;
             $('#t-to-field').hidden = !transfer;
             $('#t-account-label').textContent = transfer ? '從' : '帳戶';
-            const list = kind === 'income' ? this.data.categories.income : this.data.categories.expense;
+            // 常用的排前面（categoryOrder）。清單本身的順序不動——
+            // 那個順序管的是顏色跟預算列。
+            const names = this.categoryOrder(kind, t.id);
             // 新的一筆沒有分類，`value = ''` 對不到任何選項，下拉會顯示一片空白——
-            // 看起來像壞掉的，而且存下去會變成「未分類」。**預設選第一個。**
-            const names = list.map(c => c.name);
+            // 看起來像壞掉的，而且存下去會變成「未分類」。**預設選第一個**，
+            // 現在那一個就是她最常記的那類。
             const want = names.includes(t.category) ? t.category : names[0];
             fillSelect($('#t-category'), names, want);
         };

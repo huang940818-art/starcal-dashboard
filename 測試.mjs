@@ -453,6 +453,111 @@ test('新的記錄排前面就贏——同一家店改記到別的分類，之�
     assert.equal(AutoCat.guess('全家', 改過, 她的分類).category, '日用');
 });
 
+/* ── 分類下拉的順序 ────────────────────────────────────
+ *
+ * 她的原話：「填寫分類的時候能不能按照上次按的次數或循序去排分類」。
+ * 排錯了不會報錯，只會讓她每記一筆多滑幾下——安靜的成本。
+ *
+ * **這支只排下拉，不排清單。** 清單的順序管顏色和預算列，
+ * 真的重排一次圓餅圖的顏色就全換人，所以要有測試釘住這件事。
+ */
+
+function 有帳的(cats, txns) {
+    const m = setup({
+        categories: {
+            expense: cats.map(n => ({ name: n, nature: 'flexible' })),
+            income: [{ name: '薪水' }, { name: '獎金' }, { name: '家裡給的' }],
+        },
+        transactions: txns,
+    });
+    return m;
+}
+
+test('常用的排前面，沒用過的照原本的順序跟在後面', () => {
+    const m = 有帳的(['飲食', '交通', '居家', '日用', '醫療'], [
+        { kind: 'expense', category: '日用', date: day(1), amount: 10 },
+        { kind: 'expense', category: '日用', date: day(2), amount: 10 },
+        { kind: 'expense', category: '日用', date: day(3), amount: 10 },
+        { kind: 'expense', category: '交通', date: day(4), amount: 10 },
+    ]);
+    assert.deepEqual(m.categoryOrder('expense'),
+        ['日用', '交通', '飲食', '居家', '醫療']);
+});
+
+test('次數一樣的時候，最近用過的在前面', () => {
+    const m = 有帳的(['飲食', '交通', '居家'], [
+        { kind: 'expense', category: '居家', date: day(1), amount: 10 },
+        { kind: 'expense', category: '交通', date: day(5), amount: 10 },
+    ]);
+    assert.deepEqual(m.categoryOrder('expense'), ['交通', '居家', '飲食']);
+});
+
+test('補記昨天的一筆不算「最近用的」——看日期不看記的先後', () => {
+    const m = 有帳的(['飲食', '交通', '居家'], [
+        { kind: 'expense', category: '交通', date: day(5), amount: 10 },
+        // 後記進來的，但日期是更早的那天
+        { kind: 'expense', category: '居家', date: day(1), amount: 10 },
+    ]);
+    assert.deepEqual(m.categoryOrder('expense'), ['交通', '居家', '飲食']);
+});
+
+test('收入和支出各排各的', () => {
+    const m = 有帳的(['飲食', '交通'], [
+        { kind: 'expense', category: '交通', date: day(1), amount: 10 },
+        { kind: 'income', category: '家裡給的', date: day(2), amount: 10 },
+        { kind: 'income', category: '家裡給的', date: day(3), amount: 10 },
+    ]);
+    assert.deepEqual(m.categoryOrder('expense'), ['交通', '飲食']);
+    assert.deepEqual(m.categoryOrder('income'), ['家裡給的', '薪水', '獎金']);
+});
+
+test('已經刪掉的分類不會被排進來', () => {
+    const m = 有帳的(['飲食', '交通'], [
+        { kind: 'expense', category: '教練課', date: day(1), amount: 10 },
+        { kind: 'expense', category: '', date: day(2), amount: 10 },
+    ]);
+    assert.deepEqual(m.categoryOrder('expense'), ['飲食', '交通']);
+});
+
+test('一筆都沒有的時候就照原本的順序', () => {
+    const m = 有帳的(['飲食', '交通', '居家'], []);
+    assert.deepEqual(m.categoryOrder('expense'), ['飲食', '交通', '居家']);
+});
+
+test('排下拉不能動到清單本身——顏色是照清單位置給的', () => {
+    const m = 有帳的(['飲食', '交通', '居家'], [
+        { kind: 'expense', category: '居家', date: day(1), amount: 10 },
+        { kind: 'expense', category: '居家', date: day(2), amount: 10 },
+    ]);
+    const 原本 = m.data.categories.expense.map(c => c.name);
+    const 顏色 = 原本.map(n => m.colorOf(n));
+    m.categoryOrder('expense');
+    assert.deepEqual(m.data.categories.expense.map(c => c.name), 原本);
+    assert.deepEqual(原本.map(n => m.colorOf(n)), 顏色);
+});
+
+test('正在改的那一筆不替自己加一票', () => {
+    const m = 有帳的(['飲食', '交通', '居家'], [
+        { id: 'x', kind: 'expense', category: '居家', date: day(3), amount: 10 },
+        { kind: 'expense', category: '交通', date: day(1), amount: 10 },
+    ]);
+    // 算進去的話居家會贏（比較近）；把正在改的那筆排掉，只剩交通有票
+    assert.deepEqual(m.categoryOrder('expense', 'x'), ['交通', '飲食', '居家']);
+});
+
+test('只看最近 200 筆——半年前的習慣不算數', () => {
+    const 舊的 = Array.from({ length: 200 }, (_, i) => ({
+        kind: 'expense', category: '居家', date: `2025-01-${String(i % 28 + 1).padStart(2, '0')}`, amount: 10,
+    }));
+    const m = 有帳的(['飲食', '交通', '居家'], [
+        ...舊的,
+        { kind: 'expense', category: '交通', date: day(1), amount: 10 },
+    ]);
+    // 舊的 200 筆被窗口推掉一筆，居家只剩 199，但仍然比交通多——
+    // 這裡要的是「窗口真的有在裁」，不是「舊的完全消失」
+    assert.deepEqual(m.categoryOrder('expense'), ['居家', '交通', '飲食']);
+});
+
 /* ── 對帳 ─────────────────────────────────────────────
  *
  * 「為什麼會有差價」沒辦法真的知道——漏記的那筆已經不在資料裡了。
