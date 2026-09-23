@@ -1576,17 +1576,32 @@ const Overview = {
         const rows = Countdown.upcoming();
         if (!rows.length) return;
 
-        const shown = rows.slice(0, 5);
+        /* **「還有 N 個」點得開，直接在卡片裡攤開全部。**
+         * 以前那行只是字，要看其他的得按「管理」跳去「接下來」那頁最底下找
+         * （她的原話：「倒數卡片可以直接點看看所有倒數」）。
+         * 攤開時連假不再限量——她要的是「所有」，收起來才照 CARD_MAX 省位置。
+         * 開合只記在這一次打開的頁面裡，重整回到收起來：總覽平常要短。 */
+        const all = Countdown.upcoming(todayStr(), Infinity);
+        const open = !!this.countdownOpen;
+        const shown = open ? all : rows.slice(0, 5);
+        const more = all.length - shown.length;
+        const toggle = (open || more > 0)
+            ? el('button', {
+                class: 'btn small ghost countdown-more',
+                style: 'margin-top:10px',
+                'aria-expanded': String(open),
+                text: open ? '收起來' : `看全部（還有 ${more} 個）`,
+                onclick: () => { this.countdownOpen = !open; this.render(); },
+            })
+            : null;
+
         grid.append(el('div', { class: 'card', 'data-hue': 'countdown' }, [
             this.head('calendar', '倒數',
                 el('button', { class: 'btn small ghost', text: '管理',
                                onclick: () => showPanel('agenda') })),
             el('div', {}, shown.map(r => Countdown.row(r,
                 () => { showPanel('agenda'); Countdown.edit(r.item); }))),
-            rows.length > shown.length
-                ? el('div', { class: 'sub', style: 'margin-top:10px',
-                              text: `還有 ${rows.length - shown.length} 個` })
-                : null,
+            toggle,
         ]));
     },
 

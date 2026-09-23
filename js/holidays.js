@@ -91,13 +91,32 @@ const Holidays = {
     },
 
     /**
+     * **比較不常見的節日不進倒數。**（她的原話：「非國定假日或是比較不常見的節假日別放」）
+     *
+     * 這幾個都是 2025 年才恢復放假的，政府日曆表上是真的放假日，
+     * 所以**月曆照樣標**（那天確實不用上班）——只是不上倒數卡。
+     * 跟常見節日連在一起的（「中秋節・教師節」）留下常見的那個名字，
+     * 整段都是不常見的（光復節、行憲紀念日）就整個不出現。
+     */
+    UNFAMILIAR: ['教師節', '孔子誕辰紀念日', '臺灣光復暨金門古寧頭大捷紀念日', '行憲紀念日'],
+
+    /** 拿掉不常見的那幾個名字；剩下空字串＝這段連假不進倒數 */
+    familiarName(name) {
+        return String(name || '').split('・')
+            .filter(n => n && !this.UNFAMILIAR.includes(n)).join('・');
+    },
+
+    /**
      * 連假變成倒數用的項目，形狀跟她自己填的一樣，多一個 `holiday: true`。
      *
      * **`id` 要穩定**（用日期，不是 uid）：每次重畫都生新 id 的話，
      * 畫面上的 key 每次都變，而且之後要記「這個她按過了」也沒有把手。
      */
     asCountdownItems(today = todayStr(), limit = Infinity) {
-        return this.upcomingBreaks(today).slice(0, limit).map(b => ({
+        return this.upcomingBreaks(today)
+            .map(b => ({ ...b, name: this.familiarName(b.name) }))
+            .filter(b => b.name)
+            .slice(0, limit).map(b => ({
             id: `holiday:${b.start}`,
             title: `${b.name}　${b.days} 天`,
             date: b.start,

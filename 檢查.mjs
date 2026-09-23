@@ -2142,9 +2142,21 @@ const guard = (p, what, ms = 5000) => Promise.race([
         const hRows = hCard ? [...hCard.querySelectorAll('.countdown-row.holiday')] : [];
         ok('卡片上的連假有上限', hRows.length <= Holidays.CARD_MAX,
            hRows.length + ' 列（上限 ' + Holidays.CARD_MAX + '）');
+        // 卡片上是「常見的那個名字」：中秋節・教師節 → 中秋節（見 Holidays.familiarName）
+        const firstShown = Holidays.asCountdownItems()[0];
         ok('連假寫得出名字跟天數',
-           hRows.length > 0 && hRows[0].textContent.includes(next.name),
+           hRows.length > 0 && !!firstShown && hRows[0].textContent.includes(firstShown.title.split('　')[0]),
            hRows.length ? hRows[0].textContent.slice(0, 40) : '沒有連假列');
+
+        // 比較不常見的節日不上倒數（她：「非國定假日或是比較不常見的節假日別放」）
+        const allShown = Holidays.asCountdownItems(todayStr(), Infinity).map(i => i.title).join('／');
+        ok('教師節、光復節、行憲紀念日不進倒數',
+           !Holidays.UNFAMILIAR.some(n => allShown.includes(n)), allShown.slice(0, 120));
+        ok('常見的照樣在（國慶日、春節）',
+           allShown.includes('國慶日') && allShown.includes('春節'), allShown.slice(0, 120));
+        ok('跟常見節日連在一起的留下常見那個名字',
+           Holidays.familiarName('中秋節・教師節') === '中秋節'
+             && Holidays.familiarName('行憲紀念日') === '');
 
         // 3. 點不下去——不在她的資料裡，開起來沒東西可存
         ok('假日那幾列點不下去',
@@ -2173,6 +2185,43 @@ const guard = (p, what, ms = 5000) => Promise.race([
         Countdown.save(); Countdown.render();
         Agenda.view = 'timeline'; MonthView.today();
         Agenda.render(); await tab('agenda'); await sleep(260);
+      }
+
+      // 總覽的倒數卡：超過 5 個時「還有 N 個」點得開，直接在卡片裡看全部
+      {
+        const before = JSON.stringify(Countdown.data.items);
+        const base = new Date(); base.setDate(base.getDate() + 3);
+        Countdown.data.items = Array.from({ length: 8 }, (_, i) => {
+          const d = new Date(base); d.setDate(d.getDate() + i * 5);
+          return { id: 'cdall' + i, title: '測試倒數' + i, date: ymd(d),
+                   endDate: '', yearly: false, updatedAt: stamp() };
+        });
+        Countdown.save(); Overview.countdownOpen = false;
+        await tab('overview'); Overview.render(); await sleep(250);
+        const card = () => [...document.querySelectorAll('#overview-grid .card')]
+          .find(c => c.querySelector('h2 .label')
+                  && c.querySelector('h2 .label').textContent.trim() === '倒數');
+        const mine = () => [...card().querySelectorAll('.countdown-row')]
+          .filter(r => r.textContent.includes('測試倒數')).length;
+        const btn = () => card() && card().querySelector('.countdown-more');
+        ok('倒數超過 5 個時有「看全部」可以按', !!btn() && btn().textContent.includes('看全部'),
+           btn() ? btn().textContent : '沒有那顆');
+        ok('收起來時卡片最多 5 列', card().querySelectorAll('.countdown-row').length <= 5,
+           card().querySelectorAll('.countdown-row').length + ' 列');
+        btn().click(); await sleep(250);
+        ok('按了就在卡片裡攤開，自己填的 8 個全部看得到', mine() === 8, mine() + ' 個');
+        ok('攤開的列數跟全部的倒數一樣多',
+           card().querySelectorAll('.countdown-row').length
+             === Countdown.upcoming(todayStr(), Infinity).length,
+           card().querySelectorAll('.countdown-row').length + ' vs '
+             + Countdown.upcoming(todayStr(), Infinity).length);
+        ok('攤開之後那顆變成「收起來」', btn().textContent === '收起來'
+           && btn().getAttribute('aria-expanded') === 'true', btn().textContent);
+        btn().click(); await sleep(250);
+        ok('再按一次收回 5 列', card().querySelectorAll('.countdown-row').length <= 5);
+        Countdown.data.items = JSON.parse(before);
+        Countdown.save(); Countdown.render(); Overview.render();
+        await tab('agenda'); await sleep(250);
       }
 
       // 刪掉要給得回來——跟總覽的 ✕ 同一個道理
