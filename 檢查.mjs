@@ -3492,6 +3492,48 @@ const guard = (p, what, ms = 5000) => Promise.race([
         Timetable.setMark(slot.id, today, { off: false, text: '   ' });
         ok('沒有內容就不留一筆空的', Timetable.marks().length === 0);
     }
+
+    // ── 上課期間：寒暑假日曆上不要冒出課 ──
+    //
+    // 課表是每週重複的，不設期間的話暑假也一週一週排滿課。
+    // 兩端都含當天；沒設就跟以前一樣。
+    {
+        const today = todayStr();
+        const set = Timetable.active();
+        const shift = n => ymd(new Date(parseYmd(today).getTime() + n * 86400000));
+        const had = Timetable.on(today).length;
+        ok('沒設期間時跟以前一樣有課', had > 0 && Timetable.inTerm(today));
+        ok('沒設期間時課表上面會提醒可以設',
+           q('#timetable .tt-term')?.textContent.includes('沒設上課期間') ?? true);
+
+        // 用對話框設：今天到七天後
+        Timetable.editSet(set); await sleep(200);
+        ok('改課表的視窗有上課期間欄位', !!q('#p-from') && !!q('#p-until'));
+        q('#p-from').value = today; q('#p-until').value = shift(6);
+        q('#p-save').click(); await sleep(300);
+        ok('期間存進這份課表', set.from === today && set.until === shift(6),
+           set.from + '～' + set.until);
+        ok('開始那天含在裡面', Timetable.on(today).length === had);
+        ok('結束那天也含在裡面', Timetable.inTerm(shift(6)));
+        ok('結束的隔天就沒有課', Timetable.on(shift(7)).length === 0);
+        ok('開始的前一天也沒有課', Timetable.on(shift(-1)).length === 0);
+
+        // 開始比結束晚 → 不存
+        Timetable.editSet(set); await sleep(200);
+        q('#p-from').value = shift(10); q('#p-until').value = shift(1);
+        q('#p-save').click(); await sleep(250);
+        ok('開始比結束晚的不給存', set.from === today);
+        q('#dlg-set').close();
+
+        // 只設開始也要能用
+        set.until = '';
+        ok('只設開始：之後都有', Timetable.inTerm(shift(400)) && !Timetable.inTerm(shift(-1)));
+
+        // 還原，不影響後面的測試
+        set.from = ''; set.until = '';
+        Timetable.save(); Timetable.render();
+        ok('清掉期間之後二十週後同一天也有課', Timetable.on(shift(7 * 20)).length === had);
+    }
     await tab('overview'); await sleep(200);
 
     // 想法牆需要空間才有意義，寬螢幕上它必須在

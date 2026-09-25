@@ -167,9 +167,36 @@ const Timetable = {
             .sort((a, b) => this.sortKey(a) - this.sortKey(b));
     },
 
-    /** 某一天（"2026-09-04"）有哪些課 */
+    /**
+     * 這一天在不在這份課表的上課期間裡。
+     *
+     * 課表是每週重複的，不設期間的話寒暑假也一週一週排滿課
+     * （2026-09-25 她：「不是寒暑假都有課，可以設定一個日期嗎」）。
+     * 兩端都是選填、都含當天；沒設就跟以前一樣每週都有。
+     * 日期是 "YYYY-MM-DD" 字串，直接比大小就是比先後。
+     */
+    inTerm(day, set = this.active()) {
+        if (!set || !day) return true;
+        if (set.from && day < set.from) return false;
+        if (set.until && day > set.until) return false;
+        return true;
+    },
+
+    /** 某一天（"2026-09-04"）有哪些課。上課期間以外一堂都沒有。 */
     on(day) {
+        if (!this.inTerm(day)) return [];
         return this.onWeekday(parseYmd(day).getDay());
+    },
+
+    /** 「9/14–2027/1/15」這種給人看的期間。沒設回空字串。 */
+    termText(set = this.active()) {
+        if (!set || (!set.from && !set.until)) return '';
+        const f = d => {
+            const [y, m, dd] = d.split('-').map(Number);
+            return (y === new Date().getFullYear() ? '' : y + '/') + m + '/' + dd;
+        };
+        if (set.from && set.until) return `${f(set.from)}–${f(set.until)}`;
+        return set.from ? `${f(set.from)} 起` : `到 ${f(set.until)}`;
     },
 
     /** 網格要畫哪幾個星期。沒課的話給一到五。 */
@@ -229,6 +256,17 @@ const Timetable = {
             ]));
             return;
         }
+
+        // 上課期間寫在表的上面：設了就讓她看得到是哪一段，
+        // 沒設就提醒一句——不然寒暑假日曆上還是整排課，她不會知道原因。
+        const term = this.termText();
+        box.append(el('div', { class: 'hint tt-term' }, term
+            ? [`上課期間 ${term}，這段以外日曆上不會出現這份課表。`]
+            : ['沒設上課期間：寒暑假也會每週出現在日曆上。',
+               el('button', {
+                   type: 'button', class: 'btn small ghost', text: '設定上課期間',
+                   onclick: () => this.editSet(this.active()),
+               })]));
 
         box.append(this.mode() === 'period' ? this.periodGrid() : this.timeGrid());
         box.append(this.list());
@@ -641,6 +679,8 @@ const Timetable = {
         $('#dlg-set-title').textContent = isNew ? '新的課表' : '改課表';
         $('#p-name').value = set?.name || '';
         $('#p-mode').value = set ? this.mode(set) : 'period';
+        $('#p-from').value = set?.from || '';
+        $('#p-until').value = set?.until || '';
         $('#p-copy-field').hidden = !isNew || !this.data.sets.length;
         if (!$('#p-copy-field').hidden) {
             fillSelect($('#p-copy'), [
@@ -655,6 +695,11 @@ const Timetable = {
             const name = $('#p-name').value.trim();
             if (!name) return toast('這份課表叫什麼？', true);
             const mode = $('#p-mode').value;
+            // termFrom 不叫 from：下面複製課表那段已經有一個 from（複製來源的 id），
+            // 撞名的話複製出來的課表會拿別份課表的 id 當開始日期，整份課消失。
+            const termFrom = $('#p-from').value || '';
+            const termUntil = $('#p-until').value || '';
+            if (termFrom && termUntil && termFrom > termUntil) return toast('開始的日子比結束晚了', true);
 
             if (isNew) {
                 // 複製的話要換掉每一堂的 id，不然兩份課表共用同一個 id，
@@ -662,7 +707,7 @@ const Timetable = {
                 const from = $('#p-copy-field').hidden ? '' : $('#p-copy').value;
                 const src = from ? this.set(from)?.slots || [] : [];
                 const fresh = {
-                    id: uid(), name, mode, updatedAt: stamp(),
+                    id: uid(), name, mode, from: termFrom, until: termUntil, updatedAt: stamp(),
                     // 複製的話每一堂都要換 id 和時間戳，不然兩份課表
                     // 共用同一個 id，改其中一份會連另一份一起改掉
                     slots: src.map(s => ({ ...s, id: uid(), updatedAt: stamp() })),
@@ -672,6 +717,8 @@ const Timetable = {
             } else {
                 set.name = name;
                 set.mode = mode;
+                set.from = termFrom;
+                set.until = termUntil;
                 set.updatedAt = stamp();
             }
             this.save();

@@ -3396,3 +3396,6 @@ dialog.editor { width: min(680px, calc(100vw - 24px)); }
 .cal-cell.shift-on .cal-item {
     background: color-mix(in srgb, var(--card) 88%, transparent);
 }
+
+/* 課表上方那句「上課期間 9/14–1/15」／「沒設上課期間」 */
+.tt-term { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 2px 10px; }

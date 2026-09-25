@@ -673,6 +673,14 @@
                 <option value="time">照時間（打工班表）</option>
             </select>
         </label>
+        <div class="field"><span>上課期間（選填）</span>
+            <div class="row" style="gap:8px;align-items:center">
+                <input type="date" id="p-from" aria-label="上課期間從哪天開始">
+                <span class="sub shrink">到</span>
+                <input type="date" id="p-until" aria-label="上課期間到哪天結束">
+            </div>
+            <div class="sub" style="margin-top:4px">設了之後，這段以外（寒暑假）日曆上就不會出現這份課表。留白就是每週都有。</div>
+        </div>
         <label class="field" id="p-copy-field" hidden><span>要不要照現有的複製一份</span>
             <select id="p-copy"></select></label>
         <div class="dialog-actions">
