@@ -197,6 +197,36 @@ const guard = (p, what, ms = 5000) => Promise.race([
            cut.map(b => b.textContent).join('、'));
       }
 
+      // 備忘裡的表格。有一則筆記有好幾張對照表，而她是在平板／手機上讀的。
+      // 表格一旦把整頁撐寬，整個備忘分頁都會跟著能左右捲——
+      // 桌機那輪永遠是綠的（1512px 放得下五欄），只有這裡驗得到。
+      {
+        await tab('memo');
+        Memo.data.items.push({
+          id: 'md-phone-table', pinned: false,
+          createdAt: Date.now(), updatedAt: Date.now(),
+          text: ['手機表格檢查', '',
+                 '| 受測者 | 站立期佔週期（原 → 定稿） | 雙支撐期 | 步數 左/右 | 規則判定 |',
+                 '|---|---|---|---|---|',
+                 '| S1 | 69.8/69.5 → 61.7/58.4 | 29.2 → 18.5 | 28/29 → 24/22 | R03 → R03＋R07 |',
+                 '| S2 | 70.2/72.3 → 57.5/56.1 | 31.5 → 14.0 | 30/31 → 25/25 | R06+R01 → 無 |',
+                ].join('\\n'),
+        });
+        Memo.render(); await sleep(240);
+        const trow = [...document.querySelectorAll('.memo-item .memo-row')]
+            .find(r => r.textContent.includes('手機表格檢查'));
+        if (trow) { trow.click(); await sleep(280); }
+        const twrap = q('.md-table-wrap');
+        ok('手機上備忘的表格畫得出來', !!twrap);
+        ok('手機上表格不會把頁面撐寬', !wide(),
+           document.documentElement.scrollWidth + ' > ' + innerWidth);
+        ok('手機上表格自己橫捲得動',
+           !!twrap && twrap.scrollWidth > twrap.clientWidth,
+           twrap ? twrap.scrollWidth + ' vs ' + twrap.clientWidth : '沒有捲動層');
+        Memo.data.items = Memo.data.items.filter(x => x.id !== 'md-phone-table');
+        Memo.render(); await sleep(160);
+      }
+
       // 手指比游標粗。並排的小按鈕摸不準的話等於沒有。
       await tab('agenda'); await sleep(260);
       {
@@ -445,6 +475,11 @@ const guard = (p, what, ms = 5000) => Promise.race([
           '',
           '---',
           '裸網址 https://example.com/x',
+          '',
+          '| 項目 | 修正前 | 修正後 |',
+          '|---|---:|:--:|',
+          '| 站立期 | 69.8 | **61.7** |',
+          '| 步數 | 28 | 24 |',
         ].join('\\n'),
       });
       Memo.render(); await sleep(220);
@@ -474,6 +509,27 @@ const guard = (p, what, ms = 5000) => Promise.race([
       ok('引用變成 blockquote', !!body.querySelector('.md-quote'));
       ok('分隔線畫出來', !!body.querySelector('.md-hr'));
       ok('行內程式碼有底', !!body.querySelector('code'));
+
+      // ── 表格。有一則筆記整理了好幾張對照表，攤成一行行的 | 根本讀不了 ──
+      const table = body.querySelector('.md-table');
+      ok('表格變成 table', !!table);
+      ok('表頭有三欄', table && table.querySelectorAll('thead th').length === 3,
+         table ? table.querySelectorAll('thead th').length + ' 欄' : '沒表格');
+      ok('內容有兩列', table && table.querySelectorAll('tbody tr').length === 2);
+      ok('儲存格裡的粗體也渲染得出來',
+         !!(table && table.querySelector('tbody strong')));
+      const th = table && [...table.querySelectorAll('thead th')];
+      ok('靠右對齊吃得到', th && th[1].style.textAlign === 'right', th ? th[1].style.textAlign : '');
+      ok('置中對齊吃得到', th && th[2].style.textAlign === 'center', th ? th[2].style.textAlign : '');
+      ok('分隔列沒有被印出來', !body.textContent.includes('|---'));
+
+      // 手機寬度下表格一定放不下，要由外面那層自己橫向捲，
+      // 不是把整頁撐寬——撐寬了整個備忘分頁都會歪掉。
+      const wrap = body.querySelector('.md-table-wrap');
+      ok('表格外面有捲動層', !!wrap);
+      ok('表格不會把頁面撐寬',
+         document.documentElement.scrollWidth <= window.innerWidth,
+         document.documentElement.scrollWidth + ' > ' + window.innerWidth);
       const links = [...body.querySelectorAll('a')];
       ok('連結點得出去', links.length === 2, links.length + ' 個');
       ok('連結是外開的', links.every(a => a.target === '_blank'

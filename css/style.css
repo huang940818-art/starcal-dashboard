@@ -1655,6 +1655,51 @@ h6.md-h, h7.md-h, h8.md-h, h9.md-h { font-size: 13.5px; color: var(--text-2); }
     margin: 14px 0;
 }
 
+/* 表格。備忘裡的對照表（修正前後、版本比較）用的。
+   窄螢幕放不下，所以由 .md-table-wrap 自己橫向捲，不要把整頁撐寬。 */
+.md-table-wrap {
+    margin: 0 0 12px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border: 1px solid var(--separator);
+    border-radius: 10px;
+}
+
+.md-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.md-table th,
+.md-table td {
+    padding: 7px 10px;
+    text-align: left;
+    vertical-align: top;
+    border-bottom: 1px solid var(--separator);
+    white-space: normal;
+}
+
+.md-table thead th {
+    background: var(--raised);
+    color: var(--text-2);
+    font-weight: 600;
+    white-space: nowrap;
+    position: sticky;
+    top: 0;
+}
+
+.md-table tbody tr:last-child td { border-bottom: 0; }
+
+/* 第一欄通常是項目名稱，讓它不要被折成一個字一行 */
+.md-table td:first-child { white-space: nowrap; }
+
+@media (max-width: 600px) {
+    .md-table { font-size: 12.5px; }
+    .md-table th, .md-table td { padding: 6px 8px; }
+}
+
 .memo-body code {
     font-size: 12.5px;
     padding: 1px 5px;
