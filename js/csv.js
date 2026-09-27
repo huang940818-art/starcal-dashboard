@@ -163,6 +163,7 @@ const Csv = {
                 // 她的「悠遊卡」和那邊的「悠遊卡儲值」不是同一個東西。
                 account: accounts.includes(account) ? account : defaultAccount,
                 note: (r[map.note] || '').trim(),
+                createdAt: stamp(),
                 updatedAt: stamp(),
             });
         });

@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview', 'Countdown', 'Shifts', 'Cal'];
+    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview', 'Countdown', 'Shifts', 'Cal', 'newestFirst'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
     // **沒定義的名字要給 undefined，不能直接丟出去。** names 是所有 load()
     // 共用的一份清單，只載其中一支檔案的時候，其他名字本來就不存在——
@@ -31,7 +31,7 @@ function load(...files) {
     `)();
 }
 
-const { Charts, Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO, AutoCat, Range, Csv } =
+const { Charts, Money, money, ymd, parseYmd, monthOf, recentMonths, DEMO, AutoCat, Range, Csv, newestFirst } =
     load('./js/util.js', './js/demo.js', './js/money.js', './js/autocat.js', './js/csv.js',
          './js/charts.js');
 
@@ -1922,4 +1922,18 @@ test('不是班的行程不要被碰到', () => {
 
     assert.equal(cal.fillMissingRates(), 0);
     assert.equal(cal.data.events[0].rate, undefined);
+});
+
+test('同一天的帳照記的時間排，不是照 id 或金額', () => {
+    // 2026-09-26 的真實形狀：手機記的是 UUID、網頁記的是 base36，
+    // 以前照 id 排，順序跟記帳先後對不起來。
+    const rows = [
+        { id: 'C1511018-7499', date: '2026-09-26', amount: 1568, createdAt: '2026-09-26T05:24:58.276Z' },
+        { id: '0E62816A-A66B', date: '2026-09-26', amount: 100,  createdAt: '2026-09-26T05:24:29.054Z' },
+        { id: 'zzzz',          date: '2026-09-25', amount: 9999, createdAt: '2026-09-27T00:00:00.000Z' },
+        { id: 'mujak930',      date: '2026-09-26', amount: 40,   createdAt: '2026-09-26T13:00:00.000Z' },
+        // 舊資料沒有 createdAt，退回 updatedAt
+        { id: 'AAAA',          date: '2026-09-26', amount: 60,   updatedAt: '2026-09-26T01:00:00.000Z' },
+    ];
+    assert.deepEqual(rows.slice().sort(newestFirst).map(t => t.amount), [40, 1568, 100, 60, 9999]);
 });

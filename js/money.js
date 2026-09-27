@@ -59,6 +59,19 @@ const RECENT_TXNS = 200;
  * 時區和日光節約會讓 Date 的比較在跨月那幾天出錯，字串不會。
  */
 
+/** 帳目是什麼時候記的。舊資料沒有 createdAt，退回 updatedAt。 */
+const recordedAt = t => String(t.createdAt || t.updatedAt || '');
+
+/**
+ * 日期新的在前；**同一天照記的時間，後記的在上面。**
+ * 以前同一天是照 id 排，手機記的 id 是亂數 UUID，等於沒排——
+ * 她看到的順序跟記帳順序對不起來（2026-09-27）。
+ */
+const newestFirst = (a, b) =>
+    String(b.date || '').localeCompare(String(a.date || ''))
+    || recordedAt(b).localeCompare(recordedAt(a))
+    || (b.id > a.id ? 1 : b.id < a.id ? -1 : 0);
+
 const Range = {
     /** 這個粒度、包含某一天的那一段 */
     make(kind, day = todayStr()) {
@@ -1443,7 +1456,7 @@ const Money = {
                       && Range.contains(this.range, t.date)
                       && (t.category || '未分類') === category
                       && (!this.reportAccount || t.account === this.reportAccount))
-            .sort((a, b) => (a.date === b.date ? 0 : a.date < b.date ? 1 : -1));
+            .sort(newestFirst);
 
         const SHOWN = 20;
         const box = el('div', { class: 'cat-detail' });
@@ -1559,7 +1572,7 @@ const Money = {
                 if (!hay.includes(q)) return false;
             }
             return true;
-        }).sort((a, b) => b.date.localeCompare(a.date) || (b.id > a.id ? 1 : -1));
+        }).sort(newestFirst);
     },
 
     renderTxns() {
@@ -1782,7 +1795,13 @@ const Money = {
                 delete t.toAccount;
             }
 
-            if (isNew) this.data.transactions.push(t);
+            // 兩個時間戳都要蓋。updatedAt 沒蓋的話，網頁上改的帳同步時永遠輸給
+            // 手機那份（同步比的就是它）；createdAt 是同一天裡排先後用的。
+            t.updatedAt = stamp();
+            if (isNew) {
+                t.createdAt = t.updatedAt;
+                this.data.transactions.push(t);
+            }
             this.save();
             dlg.close();
             this.render();
@@ -2011,6 +2030,7 @@ const Money = {
                     category: '其他',
                     account: a.name,
                     note: `對帳補的差額（${r.since ? r.since + ' 之後' : '第一次對帳'}）`,
+                    createdAt: stamp(),
                     updatedAt: stamp(),
                 });
             }
