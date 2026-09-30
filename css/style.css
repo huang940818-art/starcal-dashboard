@@ -2380,9 +2380,17 @@ h6.md-h, h7.md-h, h8.md-h, h9.md-h { font-size: 13.5px; color: var(--text-2); }
      * 擠不下就默默截斷，點那天才看完整清單（底下那塊本來就有）。
      * .cal-more 維持原本 display:none，這顆按鈕本來就是共用的
      * （課表篩選那半也用同一個 class），連著關掉才不會漏講半句。 */
-    .cal-cell { min-height: 92px; padding: 6px 6px; }
-    .cal-n { font-size: 13.5px; }
-    .cal-item { font-size: 10.5px; padding: 2px 4px; }
+    /* 2026-09-30 她：「有點太擁擠了」。截圖上每格都是一顆「06:00」，
+     * 時間把整格寬度吃光，標題一個字都擠不出來，還會凸出格子。
+     * **手機上格子裡只寫標題**（「早班」兩個字剛好放得下），
+     * 幾點幾分留給點那天之後底下的清單——那裡本來就寫得完整。
+     * **高度不要動**：9/20 她才說格子太小、要像原生行事曆看得到字，
+     * 擠的是那顆時間，不是格子太高。 */
+    .cal-grid { gap: 3px; }
+    .cal-cell { min-height: 92px; padding: 5px 3px; border-radius: 8px; }
+    .cal-n { font-size: 13px; }
+    .cal-item { font-size: 10px; padding: 1px 3px; border-left-width: 2px; line-height: 1.5; }
+    .cal-item .cal-t { display: none; }
     .cal-item:nth-child(n+3) { display: none; }
     .cal-more { display: none; }
     /* 手機格子窄，篩選了也塞不下課名 */
@@ -2814,7 +2822,8 @@ footer {
     .grid { gap: 12px; }
     .card.wide > .empty { padding: 18px 4px; }
     .month-nav { gap: 6px; margin-bottom: 12px; }
-    .month-nav .month-label { min-width: 0; font-size: 15px; }
+    .month-nav .month-label { min-width: 0; font-size: 15px; white-space: nowrap; }
+    .month-nav .month-label svg { display: none; }
     .range-kinds { margin-bottom: 8px; }
     .custom-range { margin-left: 0; width: 100%; }
     .custom-range input { flex: 1; min-width: 0; }

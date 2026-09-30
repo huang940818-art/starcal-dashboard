@@ -86,8 +86,10 @@ const MonthView = {
             ]),
             el('button', { type: 'button', class: 'btn icon', text: '›',
                 'aria-label': '下個月', onclick: () => this.shift(1) }),
+            // 字只留兩個：手機上這一排要塞五樣東西，「回到這個月」
+            // 會把月份擠成兩行（她 2026-09-30 截圖說「有點太擁擠」）
             isNow ? null : el('button', { type: 'button', class: 'btn small ghost',
-                text: '回到這個月', onclick: () => this.today() }),
+                text: '本月', title: '回到這個月', onclick: () => this.today() }),
             el('button', {
                 type: 'button',
                 class: 'btn small' + (this.shiftMode ? ' primary' : ' ghost'),
