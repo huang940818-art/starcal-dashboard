@@ -28,6 +28,10 @@ const Overview = {
      */
     CARDS: [
         { id: 'attention',   name: '要注意的', wide: true },
+        // 月底回顧。**只在月底前後出現**（見 js/review.js），平常整張不畫。
+        // after：用過排序的人存的順序裡沒有它，新卡本來一律接在最後——
+        // 但這張只活十天，排在「小克」後面等於沒看到就過期了。
+        { id: 'review',      name: '月底回顧', wide: true, after: 'attention' },
         // 2026-09-20 起這張不再是格子裡的卡——內容併進 hero 那句話了
         // （見 Overview.weatherLine）。id 留著只是借用同一組開關：
         // 這裡的 on/off 現在管的是 hero 裡那句話要不要出現，
@@ -66,7 +70,7 @@ const Overview = {
      * 而這一頁只回答一件事：現在需要我注意什麼。所以預設是一組
      * 「大部分人每天都會看」的，其他的在排版裡自己開。
      */
-    DEFAULT_ON: ['attention', 'weather', 'today',
+    DEFAULT_ON: ['attention', 'review', 'weather', 'today',
                  'upcoming', 'countdown', 'memo', 'ke'],
 
     /** 現在排順序中 */
@@ -84,7 +88,15 @@ const Overview = {
     orderedIds(saved) {
         const all = this.CARDS.map(c => c.id);
         const kept = (saved || []).filter(id => all.includes(id));
-        return [...kept, ...all.filter(id => !kept.includes(id))];
+        const out = [...kept];
+        for (const c of this.CARDS) {
+            if (kept.includes(c.id)) continue;
+            // 有指定要跟在誰後面、而那一張還在的話插在它後面；其他的接在最後
+            const i = c.after ? out.indexOf(c.after) : -1;
+            if (i >= 0) out.splice(i + 1, 0, c.id);
+            else out.push(c.id);
+        }
+        return out;
     },
 
     savedOrder() { return this.orderedIds(Prefs.data?.overviewOrder); },
@@ -261,6 +273,7 @@ const Overview = {
         // 'weather' 沒有 case——它 2026-09-20 起併進 hero 那句話了
         // （見 weatherLine），這裡什麼都不畫，box 空著，
         // 上面的迴圈看 box.firstChild 就會自動跳過，不會留一個空格。
+        if (id === 'review') return this.renderReview(box);
         if (id === 'today') return this.renderToday(box);
         if (id === 'todaybudget') return this.renderTodayBudget(box);
         if (id === 'upcoming') return this.renderUpcoming(box);
@@ -912,6 +925,122 @@ const Overview = {
                 ? el('div', { class: 'sub', style: 'margin-top:8px',
                               text: `還有 ${rows.length - shown.length} 類` })
                 : null,
+        ]));
+    },
+
+    /**
+     * 月底回顧。三欄：錢、時間、待辦。
+     *
+     * **每一個數字都要查得到從哪來。** 回顧最容易變成一句
+     * 「這個月辛苦了」——那是空安慰。這裡只放算得出來的東西，
+     * 算不出來的（沒記完成日期的待辦）講出來少算了幾件，不猜。
+     */
+    renderReview(grid, day = todayStr()) {
+        const ym = Review.monthFor(day);
+        if (!ym) return;
+
+        const ongoing = ym === monthOf(day);
+        const m = Review.money(ym, Money);
+        const sh = Review.shifts(ym, Cal.data?.events || [], Shifts);
+        const cl = Review.classes(ym, Timetable, day);
+        const td = Review.todos(ym, Todo.data?.items || [], day);
+
+        const line = (label, value, cls = '') => el('div', { class: 'review-line' }, [
+            el('span', { class: 'sub', text: label }),
+            el('span', { class: 'money-num ' + cls, text: value }),
+        ]);
+
+        /* ── 錢 ── */
+        const moneyCol = [el('div', { class: 'review-title', text: '錢' })];
+        if (!m.income && !m.expense) {
+            moneyCol.push(el('div', { class: 'sub', text: '這個月沒有記帳' }));
+        } else {
+            moneyCol.push(
+                el('div', { class: 'big money-num' + (m.net < 0 ? ' negative' : ''),
+                            text: money(m.net, true) }),
+                el('div', { class: 'sub', text: '收支相抵' }),
+                line('收入', money(m.income), 'income'),
+                line('支出', money(m.expense)));
+
+            if (m.change !== null) {
+                const pct = Math.round(Math.abs(m.change) * 100);
+                moneyCol.push(el('div', { class: 'sub review-note',
+                    text: pct === 0
+                        ? `支出跟${monthLabel(Review.prevMonth(ym))}差不多`
+                        : `支出比${monthLabel(Review.prevMonth(ym))}${m.change > 0 ? '多' : '少'} ${pct}%`
+                          + `（${monthLabel(Review.prevMonth(ym))} ${money(m.prevExpense)}）` }));
+            }
+            if (m.top.length) {
+                moneyCol.push(el('div', { class: 'sub review-note',
+                    text: '花最多：' + m.top.map(c => `${c.category} ${money(c.amount)}`).join('、') }));
+            }
+            if (m.total) {
+                const left = m.total.limit - m.total.used;
+                moneyCol.push(el('div', { class: 'sub review-note' + (left < 0 ? ' review-bad' : ''),
+                    text: left < 0
+                        ? `總預算 ${money(m.total.limit)}，超過 ${money(-left)}`
+                        : `總預算 ${money(m.total.limit)}，還剩 ${money(left)}` }));
+            }
+            if (m.budgets.length) {
+                moneyCol.push(m.over.length
+                    ? el('div', { class: 'sub review-note review-bad',
+                        text: `超過預算：` + m.over.map(b =>
+                            `${b.category} ${money(b.used)}／${money(b.limit)}`).join('、') })
+                    : el('div', { class: 'sub review-note',
+                        text: `${m.budgets.length} 類預算都守住了` }));
+            }
+        }
+
+        /* ── 時間 ── */
+        const timeCol = [el('div', { class: 'review-title', text: '時間' })];
+        if (sh.count) {
+            timeCol.push(
+                line('打工', `${sh.days} 天　${Shifts.hoursText(sh.hours)}`),
+                sh.pay ? line(ongoing ? '這個月預計' : '賺了（照排班算）', money(sh.pay)) : null);
+            if (sh.noRate || sh.noTime) {
+                timeCol.push(el('div', { class: 'sub review-note review-bad',
+                    text: [sh.noRate ? `${sh.noRate} 筆沒填時薪` : '',
+                           sh.noTime ? `${sh.noTime} 筆沒填時間` : '']
+                          .filter(Boolean).join('、') + '，沒算進去' }));
+            }
+        }
+        if (cl.held || cl.off) {
+            timeCol.push(line(ongoing ? '上了（到今天）' : '上了', `${cl.held} 堂課`));
+            if (cl.off) timeCol.push(el('div', { class: 'sub review-note',
+                text: `另外 ${cl.off} 堂標了不用上` }));
+        }
+        if (timeCol.length === 1) {
+            timeCol.push(el('div', { class: 'sub', text: '這個月沒有排班也沒有課' }));
+        }
+
+        /* ── 待辦 ── */
+        const todoCol = [el('div', { class: 'review-title', text: '待辦' }),
+                         line('做完', `${td.done.length} 件`, 'income')];
+        if (td.undated) {
+            todoCol.push(el('div', { class: 'sub review-note',
+                text: `另外 ${td.undated} 件做完了，但沒記到是哪天，沒算進來` }));
+        }
+        todoCol.push(line('還沒做完', `${td.open} 件`));
+        if (td.overdue.length) {
+            todoCol.push(el('div', { class: 'sub review-note review-bad',
+                text: `過期的 ${td.overdue.length} 件` }));
+            for (const t of td.overdue.slice(0, 4)) {
+                todoCol.push(el('div', { class: 'review-todo' }, [
+                    el('span', { class: 'ellipsis', text: t.title }),
+                    el('span', { class: 'sub', text: relativeDay(t.due) }),
+                ]));
+            }
+            if (td.overdue.length > 4) todoCol.push(el('div', { class: 'sub',
+                text: `還有 ${td.overdue.length - 4} 件` }));
+        }
+
+        grid.append(el('div', { class: 'card wide', 'data-hue': 'trend' }, [
+            this.head('star', `${monthLabel(ym)}回顧` + (ongoing ? '（到今天）' : ''),
+                el('button', { class: 'btn small ghost', text: '看報表',
+                               onclick: () => { Money.setRange('month', `${ym}-01`); showPanel('money'); } })),
+            el('div', { class: 'review-grid' }, [
+                el('div', {}, moneyCol), el('div', {}, timeCol), el('div', {}, todoCol),
+            ]),
         ]));
     },
 

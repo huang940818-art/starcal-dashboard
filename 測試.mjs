@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview', 'Countdown', 'Shifts', 'Cal', 'newestFirst'];
+    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview', 'Countdown', 'Shifts', 'Cal', 'newestFirst', 'Review'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
     // **沒定義的名字要給 undefined，不能直接丟出去。** names 是所有 load()
     // 共用的一份清單，只載其中一支檔案的時候，其他名字本來就不存在——
@@ -1936,4 +1936,112 @@ test('同一天的帳照記的時間排，不是照 id 或金額', () => {
         { id: 'AAAA',          date: '2026-09-26', amount: 60,   updatedAt: '2026-09-26T01:00:00.000Z' },
     ];
     assert.deepEqual(rows.slice().sort(newestFirst).map(t => t.amount), [40, 1568, 100, 60, 9999]);
+});
+
+
+/* ── 月底回顧 ────────────────────────────────────────
+ *
+ * 她的原話：「做一個月底總回顧」。只在月底前後出現，
+ * 數字全部照記帳、排班、課表、待辦算——算錯了畫面上就是一個很像對的數字。
+ */
+
+const R = load('./js/util.js', './js/demo.js', './js/money.js', './js/shifts.js', './js/review.js');
+
+test('回顧只在月底三天和月初七天出現', () => {
+    const f = d => R.Review.monthFor(d);
+    assert.equal(f('2026-09-30'), '2026-09');
+    assert.equal(f('2026-09-28'), '2026-09', '倒數第三天就該出現');
+    assert.equal(f('2026-09-27'), null);
+    assert.equal(f('2026-10-01'), '2026-09', '月初回顧的是上個月');
+    assert.equal(f('2026-10-07'), '2026-09');
+    assert.equal(f('2026-10-08'), null);
+    assert.equal(f('2027-01-03'), '2026-12', '跨年要退回去年十二月');
+    assert.equal(f('2026-02-26'), '2026-02', '二月只有 28 天，26 號就是倒數第三天');
+    assert.equal(f('2026-02-25'), null);
+});
+
+test('回顧的錢：跟上個月比的是支出，超過的預算排前面', () => {
+    const M = R.Money;
+    M.data = {
+        accounts: [{ id: 'a', name: '甲', opening: 0, includeInTotal: true }],
+        transactions: [
+            { id: 1, date: '2026-08-10', kind: 'expense', amount: 1000, category: '餐飲', account: '甲' },
+            { id: 2, date: '2026-09-02', kind: 'expense', amount: 900, category: '餐飲', account: '甲' },
+            { id: 3, date: '2026-09-03', kind: 'expense', amount: 600, category: '交通', account: '甲' },
+            { id: 4, date: '2026-09-10', kind: 'income', amount: 5000, category: '打工', account: '甲' },
+            // 轉帳兩邊都不算
+            { id: 5, date: '2026-09-11', kind: 'transfer', amount: 3000, account: '甲', to: '乙' },
+        ],
+        subscriptions: [],
+        budgets: [{ category: '餐飲', limit: 1000 }, { category: '交通', limit: 500 }],
+        totalBudgets: [],
+        categories: { expense: [{ name: '餐飲' }, { name: '交通' }], income: [{ name: '打工' }] },
+    };
+    const m = R.Review.money('2026-09', M);
+    assert.equal(m.income, 5000);
+    assert.equal(m.expense, 1500);
+    assert.equal(m.net, 3500);
+    assert.equal(m.prevExpense, 1000);
+    assert.equal(Math.round(m.change * 100), 50, '1500 比 1000 多 50%');
+    assert.deepEqual(m.top.map(c => c.category), ['餐飲', '交通']);
+    assert.deepEqual(m.over.map(b => b.category), ['交通'], '只有交通超過');
+    assert.equal(m.budgets[0].category, '交通', '超過的排最前面');
+    assert.equal(m.total, null, '沒設總預算就是沒有，不是 0');
+});
+
+test('上個月沒記帳就不比，不給一個無限大的百分比', () => {
+    const M = R.Money;
+    M.data.transactions = [{ id: 1, date: '2026-09-02', kind: 'expense', amount: 900,
+                             category: '餐飲', account: '甲' }];
+    assert.equal(R.Review.money('2026-09', M).change, null);
+});
+
+test('回顧的課只算到今天，停掉的另外數', () => {
+    // 假的課表：每個週三一堂（2026-09 的週三是 2、9、16、23、30）
+    const T = {
+        on: d => (R.parseYmd(d).getDay() === 3 ? [{ id: 'k' }] : []),
+        isOff: (id, d) => d === '2026-09-09',
+    };
+    assert.deepEqual(R.Review.classes('2026-09', T, '2026-09-30'), { held: 4, off: 1 });
+    assert.deepEqual(R.Review.classes('2026-09', T, '2026-09-20'), { held: 2, off: 1 },
+                     '還沒上的不能算成上了');
+    assert.deepEqual(R.Review.classes('2026-09', T, '2026-10-03'), { held: 4, off: 1 },
+                     '月初回顧上個月時整個月都算');
+});
+
+test('回顧的待辦：沒記完成日期的不猜', () => {
+    const at = s => new Date(s + 'T12:00:00').getTime();
+    const items = [
+        { title: '九月做完', done: true, completedAt: at('2026-09-15') },
+        { title: '八月做完', done: true, completedAt: at('2026-08-30') },
+        { title: '舊的做完', done: true, updatedAt: '2026-09-20T00:00:00Z' },
+        { title: '過期', done: false, due: '2026-09-20' },
+        { title: '八月就過期', done: false, due: '2026-08-01' },
+        { title: '還沒到', done: false, due: '2026-10-05' },
+        { title: '沒期限', done: false },
+    ];
+    const t = R.Review.todos('2026-09', items, '2026-09-30');
+    assert.deepEqual(t.done.map(i => i.title), ['九月做完']);
+    assert.equal(t.undated, 1, '沒有 completedAt 的另外數，不拿 updatedAt 猜');
+    assert.deepEqual(t.overdue.map(i => i.title), ['八月就過期', '過期'], '拖最久的在前面');
+    assert.equal(t.open, 4);
+});
+
+test('月底回顧的卡在舊的排序裡會插在「要注意的」後面', () => {
+    const saved = Overview.CARDS.map(c => c.id).filter(id => id !== 'review');
+    const out = Overview.orderedIds(saved);
+    assert.equal(out[out.indexOf('attention') + 1], 'review');
+});
+
+test('國定假日雙倍：存在那一筆班上，薪水乘二', () => {
+    const row = { time: '06:00', endTime: '12:00', rate: 196, breakMin: 0 };
+    assert.equal(Shifts.pay(row), 1176);
+    assert.equal(Shifts.pay({ ...row, mult: 2 }), 2352);
+    // 沒設、亂填、小於 1 都當 1——倍率打錯不能讓薪水變少或變 0
+    assert.equal(Shifts.mult({}), 1);
+    assert.equal(Shifts.mult({ mult: 0 }), 1);
+    assert.equal(Shifts.mult({ mult: 'x' }), 1);
+    const t = Shifts.total([{ ...row, date: '2026-09-27' }, { ...row, date: '2026-09-28', mult: 2 }]);
+    assert.equal(t.pay, 1176 + 2352);
+    assert.equal(t.hours, 12, '雙倍是錢加倍，工時不變');
 });

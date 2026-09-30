@@ -195,6 +195,20 @@ const Cal = {
         Prefs.fillSelect($('#e-label'), e.label);
         $('#e-delete').hidden = isNew;
 
+        /* 班才有「這天雙倍」。**只在國定假日出現**（或已經設了雙倍）——
+         * 平常日掛一個雙倍的勾勾只是多一個會按錯的東西。
+         * 日期是可以在這裡改的，所以換日期要重新判斷一次。 */
+        $('#e-double').checked = Shifts.mult(e) > 1;
+        const syncDouble = () => {
+            const h = Holidays.on($('#e-date').value);
+            const show = Shifts.isShift(e) && (!!h?.name || $('#e-double').checked);
+            $('#e-double-row').hidden = !show;
+            $('#e-double-text').textContent = h?.name
+                ? `${h.name}，這天雙倍` : '這天雙倍';
+        };
+        $('#e-date').oninput = syncDouble;
+        syncDouble();
+
         const dlg = openDialog('#dlg-event');
 
         $('#e-save').onclick = () => {
@@ -212,6 +226,10 @@ const Cal = {
                 note: $('#e-note').value.trim(),
                 label: $('#e-label').value || null,
             });
+            if (Shifts.isShift(e)) {
+                if ($('#e-double').checked) e.mult = 2;
+                else delete e.mult;
+            }
             if (isNew) this.data.events.push(e);
             this.save();
             dlg.close();

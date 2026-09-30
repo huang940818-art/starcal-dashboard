@@ -80,7 +80,19 @@ const Shifts = {
         const h = this.hours(row);
         const rate = Number(row.rate) || 0;
         if (h === null || rate <= 0) return null;
-        return h * rate;
+        return h * rate * this.mult(row);
+    },
+
+    /**
+     * 這一筆的倍率。沒設就是 1。
+     *
+     * 她的原話：「遇到國定假日可以設置一下這天是否有雙倍，我教師節有上到就有雙倍」。
+     * **存在那一筆班上，不是看日曆自動加倍**——國定假日上班給不給雙倍
+     * 是老闆說了算，自動加會讓預計多出一筆她根本拿不到的錢。
+     */
+    mult(row) {
+        const m = Number(row?.mult);
+        return m > 1 ? m : 1;
     },
 
     /** 工時寫給人看。「3.5 小時」比「210 分鐘」好讀，整數不要拖 .0 */
@@ -276,6 +288,7 @@ const Shifts = {
                         e.time && e.endTime ? `${e.time}–${e.endTime}` : '沒填時間',
                         Number(e.breakMin) ? `休 ${e.breakMin} 分` : null,
                         h === null ? null : this.hoursText(h),
+                        this.mult(e) > 1 ? `${this.mult(e) === 2 ? '雙' : this.mult(e) + ' '}倍` : null,
                     ].filter(Boolean).join('　') }),
                 ]),
                 el('div', { class: 'money-num', text: p === null ? '—' : money(p) }),

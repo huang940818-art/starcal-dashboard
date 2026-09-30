@@ -2521,6 +2521,49 @@ const guard = (p, what, ms = 5000) => Promise.race([
       Money.save(); Money.render(); Overview.render(); await sleep(200);
     }
 
+    /* ── 打工：國定假日可以設雙倍 ── */
+    {
+      const keep = JSON.stringify(Cal.data);
+      const sh = { id: 'dbl-1', date: '2026-09-28', title: '早班', time: '06:00', endTime: '12:00',
+                   note: '', label: null, shift: 'x', rate: 196, breakMin: 0 };
+      const plain = { ...sh, id: 'dbl-2', date: '2026-09-29' };
+      Cal.data.events.push(sh, plain);
+
+      Cal.edit(plain);
+      ok('平常日的班沒有雙倍的勾勾', q('#e-double-row').hidden);
+      q('#dlg-event').close();
+
+      Cal.edit(sh);
+      ok('國定假日的班有雙倍的勾勾', !q('#e-double-row').hidden);
+      ok('寫出是哪個節日', q('#e-double-text').textContent.includes('教師節'),
+         q('#e-double-text').textContent);
+      q('#e-double').checked = true;
+      q('#e-save').click(); await sleep(150);
+      ok('勾了存起來是雙倍', sh.mult === 2 && Shifts.pay(sh) === 2352, String(Shifts.pay(sh)));
+
+      Cal.edit(sh);
+      q('#e-double').checked = false;
+      q('#e-save').click(); await sleep(150);
+      ok('取消勾勾就回到一倍', sh.mult === undefined && Shifts.pay(sh) === 1176);
+
+      Cal.data = JSON.parse(keep); Cal.save(); Overview.render(); await sleep(150);
+    }
+
+    /* ── 月底回顧 ── */
+    {
+      const box = document.createElement('div');
+      Overview.renderReview(box, '2026-10-02');
+      const card = box.firstChild;
+      ok('月初畫得出上個月的回顧', !!card && card.textContent.includes('9月回顧'),
+         card ? card.textContent.slice(0, 40) : '');
+      ok('回顧有錢、時間、待辦三欄',
+         !!card && ['錢', '時間', '待辦'].every(t =>
+           [...card.querySelectorAll('.review-title')].some(x => x.textContent === t)));
+      const mid = document.createElement('div');
+      Overview.renderReview(mid, '2026-10-15');
+      ok('月中不出現', !mid.firstChild);
+    }
+
     /* ── 收入點得開 ──
      *
      * 她的原話：「收入我希望可以點開來看哪些細項」。

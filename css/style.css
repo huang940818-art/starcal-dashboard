@@ -389,6 +389,11 @@ main {
  * 只鎖總覽。記帳、備忘那些地方的字是拿來讀、拿來複製的，不能一起鎖。
  * **輸入的地方要留活口**：便利貼的 textarea 就在總覽上，
  * 一起鎖掉的話那面牆就打不了字了。 */
+/* 整排寬的卡片（要注意的、月底回顧）被排到中間時，會把上一排切斷，
+   右邊留一個洞。平常讓後面的小卡往前補位；**排順序的時候不補**——
+   那時候看到的位置要跟清單順序一模一樣，不然拖到哪裡會對不起來。 */
+#overview-grid:not(:has(.arrange)) { grid-auto-flow: row dense; }
+
 #overview-grid .card,
 #overview-grid .arrange {
     -webkit-user-select: none;
@@ -3419,3 +3424,50 @@ dialog.editor { width: min(680px, calc(100vw - 24px)); }
 
 .income-detail { margin: 14px 0 0 0; }
 .income-cats { padding-bottom: 6px; }
+
+/* ── 月底回顧 ───────────────────────────────────────── */
+
+/* 三欄：錢、時間、待辦。手機上疊成一欄。 */
+.review-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 18px 28px;
+}
+
+@media (max-width: 620px) {
+    .review-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.review-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    color: var(--text-3);
+    margin-bottom: 8px;
+}
+
+.review-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 10px;
+    padding: 4px 0;
+    font-size: 15px;
+}
+
+.review-note { margin-top: 6px; line-height: 1.55; }
+.review-bad { color: var(--alert); }
+
+.review-todo {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 3px 0;
+    font-size: 14px;
+}
+.review-todo > .ellipsis { min-width: 0; }
+
+/* 改行程裡「這天雙倍」那一列：勾勾跟字同一行 */
+.field.e-double { display: flex; align-items: center; gap: 9px; }
+.field.e-double[hidden] { display: none; }
+.field.e-double > span { margin: 0; }

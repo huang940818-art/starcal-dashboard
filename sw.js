@@ -22,7 +22,7 @@ self.addEventListener('install', (e) => {
         './js/holidays.js', './holidays.json',
         './js/prefs.js', './js/themes.js', './js/icons.js', './js/md.js',
         './js/csv.js', './js/autocat.js', './js/shifts.js', './js/ke.js',
-        './js/update.js', './js/weather.js', './js/demo.js',
+        './js/update.js', './js/weather.js', './js/demo.js', './js/review.js',
     ]).catch(() => {
         // 少一兩個檔不要讓整個安裝失敗——有快取總比沒有好
     })));
