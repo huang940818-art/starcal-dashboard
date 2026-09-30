@@ -979,17 +979,15 @@ const Money = {
             const count = this.data.transactions.filter(t =>
                 Range.contains(this.range, t.date)
                 && (!this.reportAccount || t.account === this.reportAccount)).length;
+            // 沒有收入的日子不放這一格，攤開著的細項也一起收掉
+            const incomeCell = s.income ? this.incomeCell(s.income) : (this.openIncome = false, null);
 
             box.append(
                 el('div', { class: 'big money-num', text: money(s.expense) }),
                 el('div', { class: 'sub', text: this.rangeWord() + '花掉的' }),
                 el('div', { style: 'display:flex;gap:22px;margin-top:16px' }, [
                     // 沒有收入的日子佔絕大多數，寫出來只是每天看一次「0」
-                    s.income ? el('div', {}, [
-                        el('div', { class: 'sub', text: '收入' }),
-                        el('div', { class: 'money-num income', style: 'font-size:19px',
-                                    text: money(s.income) }),
-                    ]) : null,
+                    incomeCell,
                     s.income ? el('div', {}, [
                         el('div', { class: 'sub', text: '收支相抵' }),
                         el('div', { class: 'money-num' + (s.net < 0 ? ' negative' : ''),
@@ -1000,6 +998,7 @@ const Money = {
                         el('div', { class: 'money-num', style: 'font-size:19px', text: String(count) }),
                     ]),
                 ]));
+            if (this.openIncome) box.append(this.incomeDetail());
             return;
         }
 
@@ -1007,15 +1006,71 @@ const Money = {
             el('div', { class: 'big money-num' + (s.net < 0 ? ' negative' : ''), text: money(s.net, true) }),
             el('div', { class: 'sub', text: this.rangeWord() + '收支相抵' }),
             el('div', { style: 'display:flex;gap:22px;margin-top:16px' }, [
-                el('div', {}, [
-                    el('div', { class: 'sub', text: '收入' }),
-                    el('div', { class: 'money-num income', style: 'font-size:19px', text: money(s.income) }),
-                ]),
+                this.incomeCell(s.income),
                 el('div', {}, [
                     el('div', { class: 'sub', text: '支出' }),
                     el('div', { class: 'money-num', style: 'font-size:19px', text: money(s.expense) }),
                 ]),
             ]));
+        if (this.openIncome) box.append(this.incomeDetail());
+    },
+
+    /** 收入那一格攤開了沒有。換到沒有收入的期間就自己收起來。 */
+    openIncome: false,
+
+    /* **收入點得開。**
+     *
+     * 她的原話：「收入我希望可以點開來看哪些細項」。支出有圓餅和分類
+     * 可以點，收入只有一個總數——「這個月進來 12,000」回答不了
+     * 「是哪幾筆」。筆數很少，所以不分類畫圖，直接攤開每一筆，
+     * 跟分類點進去的樣子一樣。
+     *
+     * 是 0 的時候不給點：點開是一塊空白，只會讓人以為壞掉。
+     */
+    incomeCell(income) {
+        if (!income) this.openIncome = false;
+        const open = this.openIncome;
+        const toggle = () => {
+            this.openIncome = !this.openIncome;
+            this.renderMonth();
+        };
+        return el('div', income ? {
+            class: 'income-tap' + (open ? ' on' : ''),
+            role: 'button', tabindex: '0',
+            'aria-expanded': String(open),
+            title: open ? '收起來' : '看是哪幾筆',
+            onclick: toggle,
+            onkeydown: e => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+            },
+        } : {}, [
+            el('div', { class: 'sub', text: '收入' }),
+            el('div', { class: 'money-num income', style: 'font-size:19px', text: money(income) }),
+        ]);
+    },
+
+    /** 這段期間的每一筆收入。不只一類的話先給各類小計。 */
+    incomeDetail() {
+        const rows = this.data.transactions
+            .filter(t => t.kind === 'income'
+                      && Range.contains(this.range, t.date)
+                      && (!this.reportAccount || t.account === this.reportAccount))
+            .sort(newestFirst);
+
+        const box = el('div', { class: 'cat-detail income-detail' });
+
+        const byCat = new Map();
+        for (const t of rows) {
+            const c = t.category || '未分類';
+            byCat.set(c, (byCat.get(c) || 0) + (Number(t.amount) || 0));
+        }
+        if (byCat.size > 1) {
+            box.append(el('div', { class: 'sub income-cats',
+                text: [...byCat].sort((a, b) => b[1] - a[1])
+                    .map(([c, a]) => `${c} ${money(a)}`).join('　') }));
+        }
+
+        return this.detailList(rows, box);
     },
 
     /** 固定 vs 彈性。這張卡回答的是「我真正能省的有多少」。 */
@@ -1458,8 +1513,12 @@ const Money = {
                       && (!this.reportAccount || t.account === this.reportAccount))
             .sort(newestFirst);
 
+        return this.detailList(rows, el('div', { class: 'cat-detail' }));
+    },
+
+    /** 攤開來的那幾筆帳。分類和收入共用，點一筆就能改。 */
+    detailList(rows, box) {
         const SHOWN = 20;
-        const box = el('div', { class: 'cat-detail' });
 
         for (const t of rows.slice(0, SHOWN)) {
             box.append(el('div', { class: 'txn-row', onclick: () => this.editTxn(t) }, [

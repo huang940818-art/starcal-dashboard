@@ -3399,3 +3399,23 @@ dialog.editor { width: min(680px, calc(100vw - 24px)); }
 
 /* 課表上方那句「上課期間 9/14–1/15」／「沒設上課期間」 */
 .tt-term { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 2px 10px; }
+
+/* 收入那一格點得開。跟分類列一樣，**要看得出來可以點**——
+   不然它就只是一個數字，沒有人會去按。 */
+.income-tap {
+    cursor: pointer;
+    padding: 4px 8px;
+    margin: -4px -8px;
+    border-radius: 9px;
+    transition: background .12s;
+}
+
+.income-tap:hover,
+.income-tap:focus-visible,
+.income-tap.on { background: var(--raised); }
+
+.income-tap > .sub::after { content: ' ▸'; font-size: 10px; }
+.income-tap.on > .sub::after { content: ' ▾'; }
+
+.income-detail { margin: 14px 0 0 0; }
+.income-cats { padding-bottom: 6px; }

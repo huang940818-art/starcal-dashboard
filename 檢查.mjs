@@ -2521,6 +2521,79 @@ const guard = (p, what, ms = 5000) => Promise.race([
       Money.save(); Money.render(); Overview.render(); await sleep(200);
     }
 
+    /* ── 收入點得開 ──
+     *
+     * 她的原話：「收入我希望可以點開來看哪些細項」。
+     */
+    {
+      await tab('money');
+      const keep = JSON.stringify(Money.data);
+      const today = new Date().toISOString().slice(0, 10);
+      const inc = Money.data.categories.income[0].name;
+      const inc2 = Money.data.categories.income[1].name;
+      const cat = Money.data.categories.expense[0].name;
+
+      Money.data.accounts = [{ id: 'ic1', name: '甲', kind: 'cash', opening: 9999,
+                               includeInTotal: true, order: 0 }];
+      Money.data.transactions = [
+        { id: 'ic-t1', date: today, kind: 'income', amount: 12000, category: inc,
+          account: '甲', note: '九月的' },
+        { id: 'ic-t2', date: today, kind: 'income', amount: 500, category: inc2,
+          account: '甲', note: '賣舊書' },
+        { id: 'ic-t3', date: today, kind: 'expense', amount: 80, category: cat,
+          account: '甲', note: '便當' },
+      ];
+      Money.openIncome = false;
+      Money.save(); Money.setRange('month', today); await sleep(260);
+
+      const cell = () => q('#month-summary .income-tap');
+      ok('收入那一格看得出可以點', !!cell());
+      cell().click(); await sleep(200);
+
+      const detail = () => q('#month-summary .income-detail');
+      ok('點下去攤得開', !!detail());
+      ok('攤開的是每一筆收入',
+         !!detail() && detail().textContent.includes('九月的')
+         && detail().textContent.includes('賣舊書'),
+         detail() ? detail().textContent.slice(0, 80) : '');
+      ok('支出不會混進來', !!detail() && !detail().textContent.includes('便當'));
+      ok('不只一類的時候有各類小計',
+         !!q('#month-summary .income-cats')
+         && q('#month-summary .income-cats').textContent.includes(inc),
+         q('#month-summary .income-cats') ? q('#month-summary .income-cats').textContent : '');
+
+      ok('攤開的那一筆點得進去改', (() => {
+        const row = detail() && detail().querySelector('.txn-row');
+        if (!row) return false;
+        row.click();
+        const open = q('#dlg-txn').open;
+        if (open) q('#dlg-txn').close();
+        return open;
+      })());
+
+      await sleep(200);
+      cell().click(); await sleep(200);
+      ok('再點一次收回去', !detail());
+
+      // 沒有收入的期間：那一格不給點，攤開的也要收起來
+      cell().click(); await sleep(200);
+      Money.setRange('month', '2019-01-01'); await sleep(260);
+      ok('換到沒有收入的期間就收起來',
+         !Money.openIncome && !detail() && !cell(), String(Money.openIncome));
+
+      // 看一天的時候收入那格也點得開
+      Money.setRange('day', today); await sleep(260);
+      ok('看一天的時候收入也點得開', !!cell());
+      cell().click(); await sleep(200);
+      ok('看一天攤開也列得出來',
+         !!detail() && detail().textContent.includes('賣舊書'));
+
+      Money.openIncome = false;
+      Money.setRange('month', today); await sleep(200);
+      Money.data = JSON.parse(keep);
+      Money.save(); Money.render(); Overview.render(); await sleep(200);
+    }
+
     /* ── 總覽：今天的收支和這個月合併成一張 ──
      *
      * 她的原話：「今天的收支跟這個月的卡片合併，還有平均每天可用
