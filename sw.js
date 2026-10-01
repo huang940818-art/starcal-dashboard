@@ -40,16 +40,25 @@ self.addEventListener('fetch', (e) => {
     if (url.origin !== self.location.origin) return;
     if (url.pathname.includes('/api/')) return;   // 資料走快照，不走這裡
 
+    const fromCache = () => caches.match(e.request).then((hit) => hit
+        || caches.match('./index.html'));
+
     e.respondWith(
         fetch(e.request)
             .then((res) => {
                 if (res && res.ok) {
                     const copy = res.clone();
                     caches.open(CACHE).then((c) => c.put(e.request, copy));
+                    return res;
+                }
+                // **5xx 也算連不到。** 手機走 4G、Tailscale 剛好斷掉的時候，
+                // 100.x 會被電信的代理接走，回一頁「500 Internal Privoxy Error」。
+                // 那不是網路錯誤，不會進 catch，以前就直接把那頁錯誤秀給她看。
+                if (res && res.status >= 500) {
+                    return fromCache().then((hit) => hit || res);
                 }
                 return res;
             })
-            .catch(() => caches.match(e.request).then((hit) => hit
-                || caches.match('./index.html')))
+            .catch(fromCache)
     );
 });
