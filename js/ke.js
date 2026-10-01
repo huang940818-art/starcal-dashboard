@@ -67,12 +67,22 @@ const Ke = {
 
         const wins = this.windows();
         const problem = this.data.problem;
-        if (!wins.length && !problem) return;
+        const todos = this.data.todos || [];
+        if (!wins.length && !problem && !todos.length) return;
 
         const body = [];
 
         if (this.data.line) {
             body.push(el('p', { class: 'ke-line', text: this.data.line }));
+        }
+
+        // 板子上還沒做的事（App 的「小克」卡片同一份）。
+        // 標題一眼看得到，細節收起來——長條列會像另一張待辦清單壓上去。
+        for (const t of todos) {
+            body.push(el('details', { class: 'ke-todo' }, [
+                el('summary', { text: t.title }),
+                el('div', { class: 'ke-todo-note' }, [renderMarkdown(t.note)]),
+            ]));
         }
 
         for (const { label, l } of wins) {

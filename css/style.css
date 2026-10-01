@@ -3066,6 +3066,25 @@ body::before {
 
 .ke-row + .ke-row { margin-top: 14px; }
 
+.ke-todo {
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--hue) 10%, transparent);
+}
+.ke-todo summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+}
+.ke-todo-note {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.65;
+    color: var(--text-2);
+}
+.ke-todo-note p { margin: 0 0 8px; }
+
 .ke-head {
     display: flex;
     align-items: baseline;
