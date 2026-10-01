@@ -186,6 +186,30 @@ def rotate_backups(stem: str) -> None:
         old.unlink(missing_ok=True)
 
 
+def load_ext():
+    """這台機器自己的擴充：~/.config/starcal/server_ext.py（不在 repo 裡）。
+
+    有些端點只對自己這台有意義（例如給自己手機、手錶用的小工具），不該放進公開的程式碼。
+    那支檔案裡放兩張表 GET／POST：網址 /api/<鍵> → 函式(handler, name)。
+    沒有那支檔、或載入失敗，就當沒有——主程式照常跑。
+    """
+    path = Path.home() / ".config" / "starcal" / "server_ext.py"
+    if not path.exists():
+        return {}, {}
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("starcal_server_ext", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return dict(getattr(mod, "GET", {})), dict(getattr(mod, "POST", {}))
+    except Exception as e:
+        print(f"本機擴充載入失敗，略過：{e}", file=sys.stderr)
+        return {}, {}
+
+
+EXT_GET, EXT_POST = load_ext()
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
 
     def __init__(self, *args, **kwargs):
@@ -254,6 +278,9 @@ class Handler(http.server.SimpleHTTPRequestHandler):
             # 所以前端要自己問「程式換了沒」。見 js/update.js。
             return self.send_json({"version": web_version()})
 
+        if name in EXT_GET:
+            return EXT_GET[name](self, name)
+
         if name not in FILES:
             return self.send_json({"error": f"沒有這份資料：{name}"}, 404)
 
@@ -313,7 +340,12 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     # 關分頁時前端用 navigator.sendBeacon 把還沒寫的資料送出來——
     # 那時候 fetch 會被瀏覽器砍掉，beacon 才送得到。
     # 而 sendBeacon 一定是 POST，所以這裡接同一條路。
-    do_POST = do_PUT
+    # 本機擴充（見 load_ext）登記的 POST 先問它們。
+    def do_POST(self):
+        name = self.api_name()
+        if name in EXT_POST:
+            return EXT_POST[name](self, name)
+        return self.do_PUT()
 
 
 class Server(socketserver.ThreadingTCPServer):

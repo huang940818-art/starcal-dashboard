@@ -176,12 +176,20 @@ const Cal = {
 
     /** 某一天的行程，**含收起來的**。理由見 Agenda.eventsOnWithDone。 */
     allOn(day) {
-        return this.data.events
-            .filter(e => e.date === day)
+        // Google 日曆（有連的話）一起排進來。不寫進 data.events，見 js/gcal.js
+        const ext = [...(typeof GCal === 'undefined' ? [] : GCal.eventsOn(day)),
+                     ...(typeof Ics === 'undefined' ? [] : Ics.eventsOn(day))];
+        return [...this.data.events.filter(e => e.date === day), ...ext]
             .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'));
     },
 
     edit(e, defaultDay = null) {
+        // 別的日曆來的行程是唯讀的：有連結就開那一頁，沒有就講一聲，不開星歷的編輯框
+        if (e?.ext) {
+            if (e.link) window.open(e.link, '_blank', 'noopener');
+            else toast(`這是從「${e.note || '其他日曆'}」匯入的，要改請到原本的日曆改`);
+            return;
+        }
         const isNew = !e;
         e = e || { id: uid(), date: defaultDay || todayStr(), time: '', endTime: '',
                    title: '', note: '', label: null };
@@ -417,7 +425,9 @@ const Agenda = {
      */
     later() {
         const h = this.horizon();
-        const events = Cal.data.events
+        const ext = [...(typeof GCal === 'undefined' ? [] : GCal.after(h)),
+                     ...(typeof Ics === 'undefined' ? [] : Ics.after(h))];
+        const events = [...Cal.data.events, ...ext]
             .filter(e => e.date > h && !e.done && this.match(e))
             .map(e => ({ kind: 'event', day: e.date, item: e }));
         const todos = Todo.data.items

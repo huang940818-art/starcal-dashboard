@@ -271,6 +271,8 @@ const Prefs = {
                     },
                 }),
             ]),
+            ...(typeof GCal === 'undefined' ? [] : GCal.section()),
+            ...(typeof Ics === 'undefined' ? [] : Ics.section()),
         );
         mark();
         openDialog('#dlg-appearance');
