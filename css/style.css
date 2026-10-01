@@ -363,10 +363,23 @@ main {
  * 「名字 ↑ ↓」，卡片本身照樣是活的（點得到、按鈕還能按）——
  * 排順序的時候把整頁凍住，會讓人以為是進了另一個畫面。
  */
+/* 「好了」浮在右下角，不放在頁面最上面。
+ * 排順序時人一定在下面某張卡那裡，以前要一路捲回最上面才按得到（2026-10-01 她說很麻煩）。
+ * 放右下不放正中間：正中間底部是 toast 的位置。 */
 .overview-tools {
-    display: flex;
-    justify-content: flex-end;
-    margin: 0 0 10px;
+    position: fixed;
+    right: calc(20px + env(safe-area-inset-right, 0px));
+    bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    z-index: 150;
+    margin: 0;
+}
+/* 最後一張卡要能捲到按鈕上面，不然最底下那排箭頭會被蓋住 */
+.overview-tools:not([hidden]) + .grid { padding-bottom: 90px; }
+.overview-tools #arrange-cards {
+    padding: 12px 26px;
+    font-size: 15px;
+    border-radius: 999px;
+    box-shadow: var(--shadow-3);
 }
 
 /* 排順序時，每張卡外面包一層。**格線的成員變成這一層了**，
