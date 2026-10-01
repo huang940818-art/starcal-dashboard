@@ -1105,7 +1105,7 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 
 .chips .chip:hover { background: var(--separator); color: var(--text); }
 
-/* 總覽「今天的預算」裡的分類清單 */
+/* 總覽「今天的收支」裡每一類的額度（原本在「今天的預算」那張卡） */
 .quota { margin-top: 14px; }
 
 /* 上面有總額的話拉一條線分開：那是兩件事（總共還能花 vs 每一類還能花） */
@@ -1124,8 +1124,6 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 
 /* 分類的色點。**顏色照分類在清單裡的位置給**（見 money.js 的 colorOf），
  * 所以每天打開，吃的永遠是同一個顏色。 */
-/* 「今天總共」那一列比分類重一點 */
-.quota-row.strong { font-weight: 600; }
 
 /* 「照月預算」那個小標——要看得出這個額度是算的不是她定的，
  * 但不能搶走數字。 */
@@ -1155,17 +1153,15 @@ dialog h3 { margin: 0 0 16px; font-size: 17px; }
 .today-flow { display: flex; flex-wrap: wrap; gap: 10px 24px; margin-bottom: 6px; }
 .today-num { font-size: 20px; font-weight: 600; margin-top: 2px; }
 
-/* 「今天可以用 414／569」。**比支出小一號**——它是拿來對照的，
-   不是今天的主角；一樣大的話兩個數字會互相搶。 */
-.quota-note {
-    font-size: 15px;
-    font-weight: 600;
-    margin-top: 4px;
-    font-variant-numeric: tabular-nums;
-}
+/* 支出旁邊那一格「今天還可以花」。原本是「今天的預算」那張卡的主角，
+   2026-10 那張卡併進來之後整塊搬到這裡，大數字照舊（.big）。
+   **min-width: 0** 是為了 360px 的手機：排不下就整格換到下一行，
+   不要把卡片撐寬（撐寬整頁就能左右捲）。 */
+.today-budget { min-width: 0; }
+.today-budget .big { overflow-wrap: anywhere; }
 
-.quota-note.negative { color: var(--alert); }
-.quota-note .sub { font-size: 12.5px; font-weight: 400; }
+/* 大數字底下那一行額度＋進度條。整排寬，跟上面那排同一個視線。 */
+.today-budget-below { margin: 6px 0 4px; }
 
 /* 今天的收支底下那一行月結。上面那條線是在說「以下換一個時間尺度」。 */
 .month-foot {

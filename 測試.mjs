@@ -1832,6 +1832,30 @@ test('空陣列是「動過但一張都沒關」，跟沒動過不一樣', () =>
     assert.equal(Overview.onSet().size, Overview.CARDS.length, '全開');
 });
 
+/* 「今天的預算」(todaybudget) 2026-10 併進「今天的收支」，id 拿掉了。
+ * 用過排序或關過卡的人，存起來的設定裡還留著它——讀的時候要安靜略過，
+ * 不能多出一張畫不出來的卡，也不能把她排好的其他順序弄亂。 */
+test('存過的順序裡還有 todaybudget：略過，其他照舊', () => {
+    assert.ok(!Overview.CARDS.some(c => c.id === 'todaybudget'), 'todaybudget 應該已經拿掉了');
+    const all = Overview.CARDS.map(c => c.id);
+    const mine = [...all].reverse();
+    const saved = [...mine.slice(0, 3), 'todaybudget', ...mine.slice(3)];
+    assert.deepEqual(Overview.orderedIds(saved), mine);
+});
+
+test('關掉清單裡還有 todaybudget：不會壞，也不會影響別張', () => {
+    Prefs.data = { overviewOff: ['todaybudget', 'memo'] };
+    const on = Overview.onSet();
+    assert.ok(!on.has('todaybudget'));
+    assert.ok(!on.has('memo'));
+    assert.ok(on.has('today'), '今天的收支要還在');
+    assert.equal(on.size, Overview.CARDS.length - 1);
+
+    // 開著的時候存的是「沒有它」的關掉清單——今天的收支照樣開著
+    Prefs.data = { overviewOff: ['memo'] };
+    assert.ok(Overview.onSet().has('today'));
+});
+
 test('每張卡都畫得出來，沒有漏接的 id', () => {
     // renderCard 是一串 if，漏一個的話那張卡永遠是空的——
     // 而且不會報錯，只是排版設定裡多一個點了沒反應的選項。

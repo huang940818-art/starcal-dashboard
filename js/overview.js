@@ -41,11 +41,11 @@ const Overview = {
         // 「這個月」原本是自己一張卡。她說「今天的收支跟這個月的卡片合併」——
         // 兩張都在講同一本帳，分開放的時候眼睛要來回跳兩次才拼得起
         // 「今天花的在這個月裡算多還是算少」。現在月結縮成這張卡最下面一行。
+        //
+        // 「今天的預算」(todaybudget) 2026-10 起也整張併進這張了（見 renderToday）。
+        // 它的 id 從這裡拿掉之後，存過的順序或關掉清單裡如果還有它，
+        // orderedIds / onSet 都只認這個清單裡有的 id，會自己略過。
         { id: 'today',       name: '今天的收支' },
-        // 這張整張都在講額度。合併之後「今天可以用多少」已經用小字
-        // 貼在今天的支出旁邊了，所以它不再預設打開——要看每一類的
-        // 額度（含今天還沒花的那幾類）才自己在排版裡加回來。
-        { id: 'todaybudget', name: '今天的預算' },
         { id: 'balance',     name: '存款總額' },
         { id: 'spending',    name: '這個月花在哪' },
         { id: 'subs',        name: '訂閱' },
@@ -275,7 +275,6 @@ const Overview = {
         // 上面的迴圈看 box.firstChild 就會自動跳過，不會留一個空格。
         if (id === 'review') return this.renderReview(box);
         if (id === 'today') return this.renderToday(box);
-        if (id === 'todaybudget') return this.renderTodayBudget(box);
         if (id === 'upcoming') return this.renderUpcoming(box);
         if (id === 'memo') return this.renderMemo(box);
         if (id === 'classes') return this.renderClasses(box);
@@ -1169,33 +1168,61 @@ const Overview = {
     },
 
     /**
-     * 支出旁邊那一格小字：今天可以用多少。
+     * 支出旁邊那一格：今天還可以花多少（大數字），和它底下那條進度。
+     *
+     * 這一塊原本是「今天的預算」整張卡的主角。2026-10 那張卡併進
+     * 「今天的收支」——她要的是**只剩一張卡**，但那張卡上的東西都要留著，
+     * 所以大數字和進度條原封不動搬過來，取代原本支出旁邊那格小字
+     * （兩個都留的話，「今天可以用 414」會在同一張卡上出現兩次）。
+     *
+     * 回傳 `{ cell, below }`：cell 放在支出那一排**並排**
+     * （「花了 155」和「可以用 414」要在同一個視線裡才減得出來），
+     * below 是整排寬的那一行說明＋進度條。
      *
      * 沒設預算就回 null——**不要印「今天可以用 —」**，
      * 一個永遠是破折號的欄位每天都在那裡佔一格，卻什麼都沒說。
-     *
-     * 這個月的額度已經用完的時候不寫數字寫一句話：那時候算出來的
-     * 「還可以用 0」看起來像壞掉的，而它要講的本來就是一句話。
      */
-    dayQuotaNote() {
-        const q = Money.todayTotalQuota();
-        if (!q) return null;
+    dayBudgetBlock() {
+        // 自己定的每日額度優先，沒定的才拿月預算推（見 Money.todayTotalQuota）。
+        const totalQ = Money.todayTotalQuota();
+        if (!totalQ) return null;
 
         const pace = Money.budgetPace(thisMonth());
-        if (pace && pace.over && q.source === 'month') {
-            return el('div', {}, [
-                el('div', { class: 'sub', text: '今天可以用' }),
-                el('div', { class: 'quota-note negative', text: '額度用完了' }),
-            ]);
+        // 這個月的總額已經沒了。**不要印一個「今天可以用 0」**，
+        // 那看起來像算壞了，而且它要講的是一句話不是一個數字。
+        if (pace && pace.over && totalQ.source === 'month') {
+            return {
+                cell: el('div', { class: 'today-budget' }, [
+                    el('div', { class: 'sub', text: '今天可以用' }),
+                    el('div', { class: 'pace-word', text: '這個月的額度用完了' }),
+                ]),
+                below: el('div', { class: 'sub today-budget-below',
+                    text: `超出 ${money(pace.used - pace.limit)}`
+                        + (pace.daysLeft > 0 ? `，還有 ${pace.daysLeft} 天` : '') }),
+            };
         }
 
-        return el('div', {}, [
-            el('div', { class: 'sub', text: q.left < 0 ? '今天超出' : '今天可以用' }),
-            el('div', { class: 'quota-note' + (q.left < 0 ? ' negative' : '') },
-                // 剩多少是主角，額度本身是參考——所以後面那個小一號。
-                [money(Math.abs(q.left)),
-                 el('span', { class: 'sub', text: `／${money(q.limit)}` })]),
-        ]);
+        /* **「花了多少」這裡不再寫一次。** 原本那張卡寫的是
+         * 「今天還可以花 155 / 700」，可是 155 就是旁邊的「支出」——
+         * 併成一張之後同一個數字會出現兩次。所以這裡只講額度本身。 */
+        const ratio = totalQ.limit ? totalQ.spent / totalQ.limit : 0;
+        return {
+            cell: el('div', { class: 'today-budget' }, [
+                el('div', { class: 'sub', text: totalQ.left < 0 ? '今天超出了' : '今天還可以花' }),
+                el('div', { class: 'big money-num' + (totalQ.left < 0 ? ' negative' : ''),
+                            text: money(totalQ.left) }),
+            ]),
+            below: el('div', { class: 'today-budget-below' }, [
+                el('div', { class: 'sub', text: `今天的額度 ${money(totalQ.limit)}`
+                    + (totalQ.source === 'month' ? '（照月預算算的）' : '') }),
+                el('div', { class: 'track', style: 'margin-top:8px' }, [
+                    el('div', {
+                        class: 'fill' + (ratio > 1 ? ' over' : ratio > 0.8 ? ' warn' : ''),
+                        style: `width:${Math.min(ratio, 1) * 100}%`,
+                    }),
+                ]),
+            ]),
+        };
     },
 
     /* ── 今天的收支 ────────────────────────────────────
@@ -1206,24 +1233,25 @@ const Overview = {
      * （「那 155 是加油」隔一週就想不起來了）。
      *
      * 所以這張卡是明細不是總額：一筆一筆列出來，點得進去改。
+     *
+     * **「今天的預算」2026-10 起併在這張裡面。** 她說合併之後只要一張卡。
+     * 那張卡原本的東西都搬進來了（大數字、進度條、額度用完那句話、
+     * 每一類的額度、還有幾類沒動、「設定」），重複的只留一份：
+     * 支出旁邊那格小字和「今天總共 155 / 700」那一列都拿掉了，
+     * 它們講的就是大數字那一塊。
      */
     renderToday(grid) {
         const rows = Money.onDay();
         const flow = Money.dayFlow();
         const SHOWN = 6;
-        // 額度不寫在這裡——旁邊「今天的預算」那張卡整張都在講它。
-        // 同一個數字在同一頁講兩次，兩次都會被當成背景。
 
         /* 「今天可以用多少」。
          *
-         * 她的原話：「平均每天可用那邊可以直接放在今天收支旁邊用小字
-         * 標出來就好」。本來那是「今天的預算」整整一張卡，但那張卡的主角
-         * 只有一個數字——一個數字撐不起一張卡，還把今天的明細擠到下一排。
-         *
-         * 所以縮成支出旁邊的一格小字。**它要跟支出並排，不是另起一行**：
+         * 她的原話：「平均每天可用那邊可以直接放在今天收支旁邊」。
+         * **它要跟支出並排，不是另起一行**：
          * 「花了 155」和「可以用 414」要在同一個視線裡才減得出來。
          */
-        const dayQuota = this.dayQuotaNote();
+        const budget = this.dayBudgetBlock();
 
         const body = [];
         if (rows.length) {
@@ -1239,8 +1267,9 @@ const Overview = {
                         el('div', { class: 'money-num today-num income', text: money(flow.income) }),
                     ])
                     : null,
-                dayQuota,
+                budget?.cell,
             ]));
+            if (budget) body.push(budget.below);
 
             for (const t of rows.slice(0, SHOWN)) {
                 const isIncome = t.kind === 'income';
@@ -1268,40 +1297,45 @@ const Overview = {
         } else {
             // 一筆都還沒記的日子，額度是這張卡唯一有內容的東西——
             // 「今天可以用 414」正是還沒花之前最想知道的那一個數字。
-            if (dayQuota) body.push(el('div', { class: 'today-flow' }, [dayQuota]));
+            if (budget) {
+                body.push(el('div', { class: 'today-flow' }, [budget.cell]), budget.below);
+            }
             body.push(el('div', { class: 'empty' }, [
                 icon('money', 26), '今天還沒有記帳',
                 el('div', { class: 'hint', text: '按右上角的「記一筆」' }),
             ]));
         }
 
-        /* ── 今天的額度 ──
+        /* ── 今天的額度（每一類）──
          *
          * 她的原話：「我希望可以放在今日收支，比如支出食物 155/300 這種的」。
          *
          * 「花了 155」自己回答不了「還能不能再吃一餐」，要旁邊那個 300
          * 才行。所以額度就貼在明細下面，不用切到別的地方。
+         *
+         * 分類**照分類清單的固定順序**排，不照「今天超支的排前面」——
+         * 順序每天跳動的話，每天都要重新找一次「吃的在哪一行」。
+         * 要注意的那幾個用紅色抓眼睛，位置不動。
          */
         /* **只列今天真的花過的那幾類。**
          *
-         * 她的原話：「今天沒有花的不要放」。六類裡有五類寫著 0/200，
-         * 那五行每天都在，而且每天都一樣——等於是一張表格擠在
-         * 一張明細卡上，真正變動的那一行反而被淹掉。
+         * 她的原話：「今天沒有花的不要放」「今天沒用到的項目不要顯示」。
+         * 六類裡有五類寫著 0/200，那五行每天都在，而且每天都一樣——
+         * 等於是一張表格擠在一張明細卡上，真正變動的那一行反而被淹掉。
          *
-         * 想看全部的額度（包括今天還沒動的）就看隔壁「今天的預算」那張，
-         * 那張卡整張都在講額度。 */
-        const quotas = Money.todayQuotas().filter(q => q.spent > 0);
-        const totalQ = Money.todayTotalQuota();
-        if (quotas.length || totalQ) {
-            body.push(el('div', { class: 'quota has-total' }, [
-                totalQ ? el('div', { class: 'quota-row strong' }, [
-                    el('span', { class: 'grow', text: '今天總共' }),
-                    el('span', {
-                        class: 'money-num' + (totalQ.left < 0 ? ' negative' : ''),
-                        text: `${money(totalQ.spent)} / ${money(totalQ.limit)}`,
-                    }),
-                ]) : null,
-                ...quotas.map(q => el('div', { class: 'quota-row' }, [
+         * 代價講明白：**原本那張預算卡回答的是「站在超商前面，食物今天
+         * 還能花多少」，濾掉沒花過的之後，那句話要等到今天已經花過一筆
+         * 才問得到。** 所以下面留一行「還有 N 類今天還沒動」——不列出來，
+         * 但讓她知道那幾類還在，不是被刪掉了。
+         */
+        const quotas = Money.todayQuotas();
+        const used = quotas.filter(q => q.spent > 0);
+        const untouched = quotas.length - used.length;
+        if (used.length || untouched) {
+            const shown = used.slice(0, 6);
+            const part = [];
+            for (const q of shown) {
+                part.push(el('div', { class: 'quota-row' }, [
                     el('span', { class: 'dot', style: `background:${Money.colorOf(q.category)}` }),
                     el('span', { class: 'grow ellipsis', text: q.category }),
                     // **要看得出這個額度是她定的還是我算的。** 兩個長得一樣的
@@ -1310,8 +1344,21 @@ const Overview = {
                         ? el('span', { class: 'sub tiny', text: '照月預算' })
                         : null,
                     this.quotaValue(q),
-                ])),
-            ]));
+                ]));
+            }
+            if (used.length > shown.length) {
+                part.push(el('div', { class: 'sub', style: 'margin-top:8px',
+                    text: `還有 ${used.length - shown.length} 類` }));
+            }
+            if (untouched) {
+                // 一類都還沒花的時候，「還有 5 類今天還沒動」會是這一段唯一的一行，
+                // 讀起來像句子講到一半。那種情況直接把話講完整。
+                part.push(el('div', { class: 'sub', style: used.length ? 'margin-top:8px' : '',
+                    text: used.length ? `還有 ${untouched} 類今天還沒動`
+                                      : `今天還沒花到有預算的那 ${untouched} 類` }));
+            }
+            // 上面有總額的話拉一條線分開：那是兩件事（總共還能花 vs 每一類還能花）
+            body.push(el('div', { class: 'quota' + (budget ? ' has-total' : '') }, part));
         }
 
         /* ── 這個月 ──
@@ -1349,6 +1396,10 @@ const Overview = {
 
         grid.append(el('div', { class: 'card', 'data-hue': 'money' }, [
             this.head('list', '今天的收支', el('span', {}, [
+                // 「設定」是原本預算卡上的那一顆，跟著搬過來：沒設預算的時候
+                // 這張卡不印額度，這顆就是唯一去設的入口。
+                el('button', { class: 'btn small ghost', text: '設定', title: '設定預算',
+                               onclick: () => { showPanel('money'); Money.editBudgets(); } }),
                 el('button', { class: 'btn small ghost', text: '看報表',
                                onclick: () => showPanel('money') }),
                 el('button', { class: 'btn primary small', text: '記一筆',
@@ -1356,112 +1407,6 @@ const Overview = {
             ])),
             ...body,
         ]));
-    },
-
-    /* ── 今天的預算 ────────────────────────────────────
-     *
-     * 她說「今天預算可以放總覽」。
-     *
-     * 記帳那頁的預算卡回答的是「這個月」——月初看它很寬裕，月底才發現
-     * 早就爆了。**站在超商前面要的是「今天還能花多少」**，而那個數字
-     * 本來要切到記帳頁才看得到。
-     *
-     * 分類**照分類清單的固定順序**排，不照「今天超支的排前面」——
-     * 順序每天跳動的話，每天都要重新找一次「吃的在哪一行」。
-     * 要注意的那幾個用紅色抓眼睛，位置不動。
-     */
-    renderTodayBudget(grid) {
-        const ym = thisMonth();
-        const pace = Money.budgetPace(ym);
-        // 自己定的每日額度優先，沒定的才拿月預算推——跟「今天的收支」
-        // 那張同一套，兩張卡不該給出兩個不一樣的數字。
-        /* **只列今天真的花過的那幾類。**
-         *
-         * 她的原話：「今天沒用到的項目不要顯示」。跟「今天的收支」那張
-         * 同一個理由：沒動過的那幾類每天都長一樣，佔著位置卻不會變，
-         * 真正在動的那一行反而被擠到看不見。
-         *
-         * 代價講明白：**這張卡原本回答的是「站在超商前面，食物今天還能
-         * 花多少」，濾掉沒花過的之後，那句話要等到今天已經花過一筆才問得到。**
-         * 所以下面留一行「還有 N 類今天還沒動」——不列出來，但讓她知道
-         * 那幾類還在，不是被刪掉了。
-         */
-        const quotas = Money.todayQuotas();
-        const used = quotas.filter(q => q.spent > 0);
-        const untouched = quotas.length - used.length;
-        const totalQ = Money.todayTotalQuota();
-
-        const head = this.head('budget', '今天的預算',
-            el('button', {
-                class: 'btn small ghost', text: '設定',
-                onclick: () => { showPanel('money'); Money.editBudgets(); },
-            }));
-
-        if (!totalQ && !quotas.length) {
-            grid.append(el('div', { class: 'card', 'data-hue': 'budget' }, [
-                head,
-                el('div', { class: 'empty' }, [
-                    icon('budget', 26), '還沒設預算',
-                    el('div', { class: 'hint',
-                                text: '設一個總額，這裡就會寫「今天可以用多少」' }),
-                ]),
-            ]));
-            return;
-        }
-
-        const body = [];
-
-        if (totalQ) {
-            // 這個月的總額已經沒了的話，「今天還能花多少」是騙人的
-            if (pace && pace.over && totalQ.source === 'month') {
-                // 這個月的總額已經沒了。**不要印一個「今天可以用 0」**，
-                // 那看起來像算壞了，而且它要講的是一句話不是一個數字。
-                body.push(
-                    el('div', { class: 'pace-word', text: '這個月的額度用完了' }),
-                    el('div', { class: 'sub', style: 'margin-top:4px',
-                        text: `超出 ${money(pace.used - pace.limit)}`
-                            + (pace.daysLeft > 0 ? `，還有 ${pace.daysLeft} 天` : '') }));
-            } else {
-                const ratio = totalQ.limit ? totalQ.spent / totalQ.limit : 0;
-                body.push(
-                    el('div', { class: 'big money-num' + (totalQ.left < 0 ? ' negative' : ''),
-                                text: money(totalQ.left) }),
-                    el('div', { class: 'sub', text: (totalQ.left < 0 ? '今天超出了　' : '今天還可以花　')
-                        + `${money(totalQ.spent)} / ${money(totalQ.limit)}`
-                        + (totalQ.source === 'month' ? '（照月預算算的）' : '') }),
-                    el('div', { class: 'track', style: 'margin-top:12px' }, [
-                        el('div', {
-                            class: 'fill' + (ratio > 1 ? ' over' : ratio > 0.8 ? ' warn' : ''),
-                            style: `width:${Math.min(ratio, 1) * 100}%`,
-                        }),
-                    ]));
-            }
-        }
-
-        if (used.length) {
-            const shown = used.slice(0, 6);
-            body.push(el('div', { class: 'quota' + (totalQ ? ' has-total' : '') },
-                shown.map(q => el('div', { class: 'quota-row' }, [
-                    el('span', { class: 'dot', style: `background:${Money.colorOf(q.category)}` }),
-                    el('span', { class: 'grow ellipsis', text: q.category }),
-                    q.source === 'month' ? el('span', { class: 'sub tiny', text: '照月預算' }) : null,
-                    this.quotaValue(q),
-                ]))));
-            if (used.length > shown.length) {
-                body.push(el('div', { class: 'sub', style: 'margin-top:8px',
-                    text: `還有 ${used.length - shown.length} 類` }));
-            }
-        }
-
-        if (untouched) {
-            // 一類都還沒花的時候，「還有 5 類今天還沒動」會是整張卡唯一的一行，
-            // 讀起來像句子講到一半。那種情況直接把話講完整。
-            body.push(el('div', { class: 'sub', style: 'margin-top:8px',
-                text: used.length ? `還有 ${untouched} 類今天還沒動`
-                                  : `今天還沒花到有預算的那 ${untouched} 類` }));
-        }
-
-        grid.append(el('div', { class: 'card', 'data-hue': 'budget' }, [head, ...body]));
     },
 
     /* ── 打工 ──────────────────────────────────────────

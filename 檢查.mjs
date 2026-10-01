@@ -738,8 +738,8 @@ const guard = (p, what, ms = 5000) => Promise.race([
       await tab('money');
       const keep = JSON.stringify(Money.data);
       const keepOff = Prefs.data.overviewOff;
-      // 「今天的預算」合併之後不預設出現（每天可以用多少已經用小字
-      // 貼在「今天的收支」上了）。這一段要驗的正是那張卡，所以先打開。
+      // 「今天的預算」2026-10 起整張併進「今天的收支」了。
+      // 全部打開，免得哪張被關掉影響下面要驗的東西。
       Prefs.data.overviewOff = [];
       const cat = Money.data.categories.expense[0].name;
       const today = new Date().toISOString().slice(0, 10);
@@ -788,8 +788,13 @@ const guard = (p, what, ms = 5000) => Promise.race([
         ok('「今天的收支」上看得到 花了/額度', !!todayCard
            && todayCard.textContent.includes('155 / 300'),
            todayCard ? todayCard.textContent.slice(0, 90) : '沒有那張卡');
-        ok('今天總共也是同一個格式',
-           !!todayCard && todayCard.textContent.includes('155 / 700'),
+        // 一天總共的額度：2026-10「今天的預算」併進來之後改成大數字
+        // （700 − 155 = 545）加上「今天的額度 700」。原本的「今天總共 155 / 700」
+        // 那一列拿掉了——155 就是旁邊的「支出」，同一張卡上不講兩次。
+        ok('今天總共可以花多少，寫成大數字＋今天的額度',
+           !!todayCard && todayCard.textContent.includes('今天還可以花545')
+           && todayCard.textContent.includes('今天的額度 700')
+           && !todayCard.textContent.includes('155 / 700'),
            todayCard ? todayCard.textContent.slice(0, 90) : '');
 
         // 沒自己定的分類要標「照月預算」，不能跟她定的長得一樣
@@ -805,7 +810,8 @@ const guard = (p, what, ms = 5000) => Promise.race([
            !!card2 && !card2.textContent.includes('0 / '),
            card2 ? card2.textContent.slice(0, 120) : '');
 
-        /* 「今天的預算」2026-09-12 起也只列今天花過的那幾類
+        /* 每一類的額度（原本在「今天的預算」，2026-10 併進「今天的收支」）
+         * 2026-09-12 起只列今天花過的那幾類
          * （她的原話：「今天沒用到的項目不要顯示」）。
          * 所以要驗那一類的長相，今天就得先有一筆。
          *
@@ -820,7 +826,7 @@ const guard = (p, what, ms = 5000) => Promise.race([
         Money.save(); Overview.render(); await sleep(280);
 
         const budgetCard = [...document.querySelectorAll('#overview-grid .card')]
-          .find(c => c.textContent.includes('今天的預算'));
+          .find(c => c.textContent.includes('今天的收支'));
         ok('沒自己定的那幾類標成「照月預算」',
            !!budgetCard && budgetCard.textContent.includes('照月預算'),
            budgetCard ? budgetCard.textContent.slice(0, 110) : '');
@@ -834,7 +840,7 @@ const guard = (p, what, ms = 5000) => Promise.race([
         Money.data.budgets = [...Money.data.budgets, { category: quiet, limit: 1200 }];
         Money.save(); Overview.render(); await sleep(280);
         const budgetCard2 = [...document.querySelectorAll('#overview-grid .card')]
-          .find(c => c.textContent.includes('今天的預算'));
+          .find(c => c.textContent.includes('今天的收支'));
         ok('沒列出來的那幾類會說還有幾類',
            !!budgetCard2 && budgetCard2.textContent.includes('還有 1 類今天還沒動')
            && !budgetCard2.textContent.includes(quiet),
@@ -852,7 +858,7 @@ const guard = (p, what, ms = 5000) => Promise.race([
             amount: 99999, category: other, account: '甲' });
           Money.save(); Overview.render(); await sleep(280);
           const card2b = [...document.querySelectorAll('#overview-grid .card')]
-            .find(c => c.textContent.includes('今天的預算'));
+            .find(c => c.textContent.includes('今天的收支'));
           ok('月預算爆掉的那一類不會印 0 / 0',
              !!card2b && !card2b.textContent.includes('0 / 0')
              && card2b.textContent.includes('額度用完了'),
@@ -882,14 +888,14 @@ const guard = (p, what, ms = 5000) => Promise.race([
       Money.save(); Money.render(); Overview.render(); await sleep(200);
     }
 
-    // ── 總覽上的「今天的預算」──
+    // ── 總覽上的「今天還可以花」（原本「今天的預算」那張卡，2026-10 併進「今天的收支」）──
     //
     // 記帳那頁的預算卡回答「這個月」，站在超商前面要的是「今天還能花多少」。
     {
       await tab('money');
       const keep = JSON.stringify(Money.data);
       const keepOff = Prefs.data.overviewOff;
-      Prefs.data.overviewOff = [];      // 同上：這一段驗的是那張卡本身
+      Prefs.data.overviewOff = [];      // 同上：全部打開
       const cat = Money.data.categories.expense[0].name;
       const today = new Date().toISOString().slice(0, 10);
 
@@ -901,11 +907,15 @@ const guard = (p, what, ms = 5000) => Promise.race([
       Money.save(); Overview.render(); await tab('overview'); await sleep(220);
 
       const card = () => [...document.querySelectorAll('#overview-grid .card')]
-        .find(c => c.textContent.includes('今天的預算'));
-      ok('總覽上有「今天的預算」', !!card());
-      ok('沒設預算的時候是空狀態，而且給得出入口',
-         !!card() && card().textContent.includes('還沒設預算')
-         && !!card().querySelector('button'),
+        .find(c => c.textContent.includes('今天的收支'));
+      ok('「今天的預算」不再是自己一張卡',
+         ![...document.querySelectorAll('#overview-grid .card')]
+             .some(c => c.textContent.includes('今天的預算')));
+      // 沒設預算的時候不印空額度（不要一個永遠是破折號的欄位），
+      // 但「設定」那顆要在，那是唯一去設的入口
+      ok('沒設預算的時候不印額度，但給得出「設定」入口',
+         !!card() && !card().querySelector('.today-budget')
+         && [...card().querySelectorAll('button')].some(b => b.textContent === '設定'),
          card() ? card().textContent.slice(0, 40) : '');
 
       // 設一個總預算，今天花掉一點
@@ -916,13 +926,16 @@ const guard = (p, what, ms = 5000) => Promise.race([
       Money.save(); Overview.render(); await sleep(250);
 
       const p = Money.budgetPace(Money.range.start.slice(0, 7));
-      ok('主角是「今天還可以花」那個數字',
-         !!card() && card().textContent.includes(Math.round(p.todayLeft).toLocaleString('zh-TW')),
+      const bigNum = card() && card().querySelector('.today-budget .big');
+      ok('「今天還可以花」是大數字',
+         !!bigNum && bigNum.textContent.includes(Math.round(p.todayLeft).toLocaleString('zh-TW')),
          card() ? card().textContent.slice(0, 60) : '');
-      // 格式統一成她要的「花了 / 額度」（原話：支出食物 155/300 這種的）
-      ok('額度和今天花掉的寫成 花了/額度',
-         !!card() && card().textContent.includes('200 / '),
-         card() ? card().textContent.slice(0, 70) : '');
+      ok('大數字跟支出在同一排',
+         !!bigNum && bigNum.closest('.today-flow') !== null);
+      ok('底下有進度條和今天的額度',
+         !!card() && !!card().querySelector('.today-budget-below .track')
+         && card().textContent.includes('今天的額度'),
+         card() ? card().textContent.slice(0, 90) : '');
 
       // 分類的今天額度
       Money.data.budgets = [{ category: cat, limit: 30000 }];
@@ -941,11 +954,12 @@ const guard = (p, what, ms = 5000) => Promise.race([
          !!card() && !!card().querySelector('.quota-row .negative'),
          card() ? card().textContent.slice(0, 90) : '');
 
-      // 同一個數字不要在同一頁講兩次
-      const todayCard = [...document.querySelectorAll('#overview-grid .card')]
-        .find(c => c.textContent.includes('今天的收支'));
-      ok('「今天的收支」不再重複講額度',
-         !!todayCard && !todayCard.textContent.includes('額度'),
+      // 同一個數字不要在同一張卡上講兩次：「今天還可以花」只有一份，
+      // 原本的「今天總共 花了/額度」那一列不再出現
+      const todayCard = card();
+      ok('「今天還可以花」只出現一次',
+         !!todayCard && todayCard.querySelectorAll('.today-budget').length === 1
+         && !todayCard.textContent.includes('今天總共'),
          todayCard ? todayCard.textContent.slice(0, 60) : '');
 
       Money.data = JSON.parse(keep);
@@ -2678,32 +2692,27 @@ const guard = (p, what, ms = 5000) => Promise.race([
          !!todayCard && [...todayCard.querySelectorAll('button')]
              .some(b => b.textContent === '看報表'));
 
-      // 「今天可以用」貼在支出旁邊，小字，而且在同一排
-      const note = todayCard && todayCard.querySelector('.quota-note');
+      // 「今天還可以花」貼在支出旁邊，而且在同一排
+      // （2026-10「今天的預算」整張併進來之後，這一格換成那張卡的大數字）
+      const note = todayCard && todayCard.querySelector('.today-budget');
       ok('今天可以用多少貼在支出旁邊', !!note,
          todayCard ? todayCard.textContent.slice(0, 70) : '');
       ok('它跟支出在同一排，不是另起一行',
          !!note && note.closest('.today-flow') !== null);
-      ok('它比支出的數字小一號', (() => {
-        if (!note) return false;
-        const big = todayCard.querySelector('.today-num');
-        return parseFloat(getComputedStyle(note).fontSize)
-             < parseFloat(getComputedStyle(big).fontSize);
-      })());
 
-      // 合併之後「今天的預算」那張不再預設出現，不然同一個數字講兩次
-      ok('「今天的預算」不再預設出現',
+      // 合併之後「今天的預算」不再是自己一張卡，排版裡也沒有它
+      ok('「今天的預算」不再是自己一張卡',
          !cards().some(c => c.textContent.includes('今天的預算')),
          cards().length + ' 張');
-      ok('但排版裡還找得回來',
-         Overview.CARDS.some(c => c.id === 'todaybudget'));
+      ok('todaybudget 已經從卡片清單拿掉',
+         !Overview.CARDS.some(c => c.id === 'todaybudget'));
 
       // 一筆都沒記的時候額度還是要看得到——那正是還沒花之前最想知道的
       Money.data.transactions = [];
       Money.save(); Overview.render(); await sleep(280);
       const empty = cards().find(c => c.textContent.includes('今天的收支'));
       ok('還沒記帳的時候也看得到今天可以用多少',
-         !!empty && !!empty.querySelector('.quota-note'),
+         !!empty && !!empty.querySelector('.today-budget'),
          empty ? empty.textContent.slice(0, 70) : '');
 
       // 沒設預算就不要印一個永遠是破折號的欄位
@@ -2711,7 +2720,7 @@ const guard = (p, what, ms = 5000) => Promise.race([
       Money.save(); Overview.render(); await sleep(280);
       const noBudget = cards().find(c => c.textContent.includes('今天的收支'));
       ok('沒設預算的時候不印空額度',
-         !!noBudget && !noBudget.querySelector('.quota-note'),
+         !!noBudget && !noBudget.querySelector('.today-budget'),
          noBudget ? noBudget.textContent.slice(0, 70) : '');
 
       Money.data = JSON.parse(keep);
