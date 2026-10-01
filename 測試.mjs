@@ -1339,15 +1339,42 @@ test('沒有分類的帳目算在「未分類」，不是被丟掉', () => {
     assert.equal(m.dayCategoryExpense('未分類'), 60);
 });
 
-test('超支的時候每日額度是 0，不會變成負的', () => {
+/* **這兩條要固定「今天」是哪一天，不能用真的今天。**
+ *
+ * 「每天可以用」是拿「今天以前」花掉的算的（見 money.js 的 pace()），
+ * 今天花的從今天的額度裡扣，不會讓今天的額度變小。所以「這個月已經超支」
+ * 要讓每日額度變 0，那筆超支一定要記在**今天以前**。
+ *
+ * 原本這條把超支記在 day(1)、今天是真的今天。2026-10-01 那天跑，
+ * 1 號就是今天，那 8000 變成「今天花的」，每日額度是 5000 ÷ 31 = 161.29，
+ * 測試就失敗了——程式照設計在算，是測試偷偷假設了「今天不是 1 號」。
+ * 所以把今天固定在月中，1 號那天的情況另外寫一條。 */
+test('超支的時候每日額度是 0，不會變成負的', (t) => {
+    t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 9, 15, 12) });   // 2026-10-15
     const m = setup({
         totalBudgets: [{ limit: 5000 }],
-        transactions: [{ id: 't1', date: day(1), kind: 'expense', amount: 8000, category: '餐飲', account: '現金' }],
+        transactions: [{ id: 't1', date: '2026-10-01', kind: 'expense', amount: 8000, category: '餐飲', account: '現金' }],
     });
-    const p = m.budgetPace(thisMonthStr);
+    const p = m.budgetPace('2026-10');
     assert.ok(p.over);
     assert.equal(p.left, -3000, '超出多少要看得到');
     assert.equal(p.perDayLeft, 0, '不能給一個負的「每天可以用」');
+});
+
+test('月初第一天就花超過整個月：額度照算，今天剩下的是負的', (t) => {
+    // 1 號沒有「今天以前」，8000 全部算今天花的。每日額度還是整個月平分，
+    // 超出的部分落在「今天還剩多少」，要是負的才看得見。
+    t.mock.timers.enable({ apis: ['Date'], now: new Date(2026, 9, 1, 12) });    // 2026-10-01
+    const m = setup({
+        totalBudgets: [{ limit: 5000 }],
+        transactions: [{ id: 't1', date: '2026-10-01', kind: 'expense', amount: 8000, category: '餐飲', account: '現金' }],
+    });
+    const p = m.budgetPace('2026-10');
+    assert.ok(p.over);
+    assert.equal(p.left, -3000);
+    assert.equal(p.spentToday, 8000);
+    assert.ok(Math.abs(p.perDayLeft - 5000 / 31) < 1e-9, String(p.perDayLeft));
+    assert.ok(p.todayLeft < 0, '今天花超過要看得見');
 });
 
 test('轉帳不算進總預算——換個口袋不是花掉', () => {
