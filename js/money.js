@@ -42,6 +42,14 @@ const DEFAULT_CATEGORIES = {
     ],
 };
 
+/* 不算進「這個月總共可以花」的分類。
+ *
+ * 一年付一次的年費記進去，每天的額度就掉一半——那種錢不該壓到
+ * 每天吃飯的錢。花掉的還是花掉了，總覽和報表照算，只是總預算不吃它。
+ * 長途車票同理：從「交通」拆出來成「車票」這一類，日常交通照算。
+ * App 的 Budgets.outsideTotal 要一字不差。 */
+const OUTSIDE_TOTAL = ['訂閱', '車票'];
+
 /** 「存款遮起來」記在瀏覽器自己身上，不進資料。 */
 const HIDE_KEY = '星歷:遮住存款';
 
@@ -499,8 +507,27 @@ const Money = {
         const limit = this.totalBudgetFor(ym);
         if (!limit) return null;
         const isNow = ym === thisMonth();
-        return this.pace(ym, limit, this.monthSummary(ym).expense,
-                         isNow ? this.dayFlow().expense : 0);
+        const outside = this.outsideTotalExpense(ym);
+        const p = this.pace(ym, limit, this.monthSummary(ym).expense - outside,
+                            isNow ? this.budgetDayExpense() : 0);
+        p.outside = outside;
+        return p;
+    },
+
+    /** 這個月 OUTSIDE_TOTAL 那幾類花了多少（不算進總預算的部分） */
+    outsideTotalExpense(ym) {
+        let sum = 0;
+        for (const t of this.data.transactions) {
+            if (t.kind !== 'expense' || monthOf(t.date) !== ym) continue;
+            if (OUTSIDE_TOTAL.includes(t.category)) sum += Number(t.amount) || 0;
+        }
+        return sum;
+    },
+
+    /** 某一天算進總預算的支出（扣掉 OUTSIDE_TOTAL） */
+    budgetDayExpense(day = todayStr()) {
+        return OUTSIDE_TOTAL.reduce((n, c) => n - this.dayCategoryExpense(c, day),
+                                    this.dayFlow(day).expense);
     },
 
     /* ── 每天的預算（自己定的）────────────────────────
@@ -557,7 +584,7 @@ const Money = {
 
     /** 今天總共的額度和花掉的。規則同上。 */
     todayTotalQuota() {
-        const spent = this.dayFlow().expense;
+        const spent = this.budgetDayExpense();
 
         const own = this.dailyTotalLimit();
         if (own !== null) {
@@ -1153,6 +1180,9 @@ const Money = {
             ]),
             el('div', { class: 'sub', style: 'margin-top:4px',
                         text: `${money(p.used)} / ${money(p.limit)}` }),
+            p.outside > 0
+                ? el('div', { class: 'sub', text: `${OUTSIDE_TOTAL.join('、')}另計 ${money(p.outside)}` })
+                : null,
         ]);
 
         if (p.over) {
