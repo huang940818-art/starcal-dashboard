@@ -7,6 +7,9 @@
  * 最後每一件都變成「最高」。
  */
 
+/** 重要嗎。priority 是兩個位元：1 重要、2 手機四格上標的緊急（10/22）；舊資料只有 0／1 */
+const imp = i => (Number(i.priority) || 0) & 1;
+
 const Todo = {
     data: null,
 
@@ -35,7 +38,8 @@ const Todo = {
     /** 沒做完的，按急迫程度排 */
     open() {
         return this.data.items.filter(i => !i.done).sort((a, b) => {
-            if (a.priority !== b.priority) return (b.priority || 0) - (a.priority || 0);
+            // priority 是兩個位元（1 重要、2 手機上標的緊急），排序只看重要
+            if (imp(a) !== imp(b)) return imp(b) - imp(a);
             if (!!a.due !== !!b.due) return a.due ? -1 : 1;
             if (a.due && b.due) return a.due.localeCompare(b.due);
             return (b.createdAt || 0) - (a.createdAt || 0);
@@ -81,11 +85,11 @@ const Todo = {
                 }) : null,
             ]),
             el('button', {
-                class: 'star-btn' + (i.priority ? ' on' : ''),
-                'aria-label': i.priority ? '取消重要' : '標成重要',
-                text: i.priority ? '★' : '☆',
+                class: 'star-btn' + (imp(i) ? ' on' : ''),
+                'aria-label': imp(i) ? '取消重要' : '標成重要',
+                text: imp(i) ? '★' : '☆',
                 onclick: () => {
-                    i.priority = i.priority ? 0 : 1;
+                    i.priority = (i.priority || 0) ^ 1;
                     this.touch(i);
                     this.render();
                     Overview.render();
@@ -132,7 +136,7 @@ const Todo = {
         $('#dlg-todo-title').textContent = isNew ? '新增待辦' : '改待辦';
         $('#d-title').value = i.title;
         $('#d-due').value = i.due || '';
-        $('#d-priority').checked = !!i.priority;
+        $('#d-priority').checked = !!imp(i);
         $('#d-note').value = i.note || '';
         Prefs.fillSelect($('#d-label'), i.label);
         $('#d-delete').hidden = isNew;
@@ -146,7 +150,7 @@ const Todo = {
             Object.assign(i, {
                 title,
                 due: $('#d-due').value || null,
-                priority: $('#d-priority').checked ? 1 : 0,
+                priority: ($('#d-priority').checked ? 1 : 0) | ((i.priority || 0) & 2),
                 note: $('#d-note').value.trim(),
                 label: $('#d-label').value || null,
             });
