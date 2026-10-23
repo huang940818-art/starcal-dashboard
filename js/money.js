@@ -2050,6 +2050,15 @@ const Money = {
             }
         }
 
+        // 匯進來又用到的分類，就不算刪掉了
+        const gone = this.data.deletedCategories;
+        if (gone) {
+            for (const group of ['expense', 'income']) {
+                const now = new Set(this.data.categories[group].map(c => c.name));
+                gone[group] = (gone[group] || []).filter(n => !now.has(n));
+            }
+        }
+
         this.data.transactions.push(...rows);
         this.save();
         $('#dlg-csv').close();
@@ -2524,6 +2533,27 @@ const Money = {
     },
 
     /** 自訂分類。寫死的分類遲早會缺一個，缺了就只能記到「其他」。 */
+    /**
+     * 記住刪掉（或改名改掉）的分類名字。
+     *
+     * 跟手機的同步對分類是「只補不刪」——手機上還有那個名字，
+     * 下次一同步就長回來，她說「刪掉他會一直再回來」。
+     * 同步那支看到這份清單就不補，手機也照這份把自己的刪掉。
+     * 之後又自己加回同一個名字，就從清單拿掉。
+     */
+    rememberDeletedCategories(before) {
+        const gone = this.data.deletedCategories ||= { expense: [], income: [] };
+        for (const group of ['expense', 'income']) {
+            const now = new Set(this.data.categories[group].map(c => c.name));
+            const list = new Set(gone[group] || []);
+            for (const c of before[group] || []) {
+                if (c.name && !now.has(c.name)) list.add(c.name);
+            }
+            for (const name of now) list.delete(name);
+            gone[group] = [...list];
+        }
+    },
+
     editCategories() {
         const box = $('#category-editor');
 
@@ -2592,6 +2622,7 @@ const Money = {
                     .filter(c => c.name.trim())
                     .map(c => ({ ...c, name: c.name.trim() }));
             }
+            this.rememberDeletedCategories(backup);
             this.save();
             dlg.close();
             this.render();
