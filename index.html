@@ -76,6 +76,38 @@
                 <div id="month-summary"></div>
             </div>
 
+            <!-- 排在「這個月」底下：找一筆舊帳、搜店名是記帳頁最常做的事，
+                 放在最後面要先滑過四五張圖表才打得到字。 -->
+            <div class="card wide" data-hue="money">
+                <h2 data-icon="list"><span class="label">所有帳目</span>
+                    <span>
+                        <button class="btn small ghost" id="import-csv">從別的 App 匯入</button>
+                        <button class="btn small ghost" id="manage-categories">管理分類</button>
+                    </span>
+                </h2>
+                <div class="row" style="margin-bottom:14px">
+                    <input id="q" type="search" placeholder="搜尋店名、備註、分類…" aria-label="搜尋">
+                    <select id="f-kind" class="shrink" style="width:auto">
+                        <option value="">收支不限</option>
+                        <option value="expense">只看支出</option>
+                        <option value="income">只看收入</option>
+                        <option value="transfer">只看轉帳</option>
+                    </select>
+                    <select id="f-category" class="shrink" style="width:auto"></select>
+                    <select id="f-account" class="shrink" style="width:auto"></select>
+                    <select id="f-when" class="shrink" style="width:auto">
+                        <option value="">全部時間</option>
+                        <option value="month">這個月</option>
+                        <option value="last">上個月</option>
+                        <option value="year">今年</option>
+                        <option value="90">近 90 天</option>
+                    </select>
+                    <button class="btn ghost shrink" id="clear-filters">清除</button>
+                </div>
+                <div id="txn-result-summary" class="sub" style="margin-bottom:8px"></div>
+                <div id="txns"></div>
+            </div>
+
             <div class="card" data-hue="budget">
                 <h2 data-icon="scale"><span class="label">固定支出 vs 想要的花費</span>
                     <button class="btn small ghost" id="edit-nature">哪些算固定</button>
@@ -118,35 +150,6 @@
                 <div id="subs"></div>
             </div>
 
-            <div class="card wide" data-hue="money">
-                <h2 data-icon="list"><span class="label">所有帳目</span>
-                    <span>
-                        <button class="btn small ghost" id="import-csv">從別的 App 匯入</button>
-                        <button class="btn small ghost" id="manage-categories">管理分類</button>
-                    </span>
-                </h2>
-                <div class="row" style="margin-bottom:14px">
-                    <input id="q" type="search" placeholder="搜尋店名、備註、分類…" aria-label="搜尋">
-                    <select id="f-kind" class="shrink" style="width:auto">
-                        <option value="">收支不限</option>
-                        <option value="expense">只看支出</option>
-                        <option value="income">只看收入</option>
-                        <option value="transfer">只看轉帳</option>
-                    </select>
-                    <select id="f-category" class="shrink" style="width:auto"></select>
-                    <select id="f-account" class="shrink" style="width:auto"></select>
-                    <select id="f-when" class="shrink" style="width:auto">
-                        <option value="">全部時間</option>
-                        <option value="month">這個月</option>
-                        <option value="last">上個月</option>
-                        <option value="year">今年</option>
-                        <option value="90">近 90 天</option>
-                    </select>
-                    <button class="btn ghost shrink" id="clear-filters">清除</button>
-                </div>
-                <div id="txn-result-summary" class="sub" style="margin-bottom:8px"></div>
-                <div id="txns"></div>
-            </div>
         </div>
     </section>
 

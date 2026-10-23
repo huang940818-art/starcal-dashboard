@@ -776,6 +776,34 @@ const Overview = {
         showPanel('agenda');
     },
 
+    /**
+     * 今天第一個要出門的是幾點：第一堂課或第一個班，取早的那個。
+     * 她要的是「今天幾點要到」，所以已經過了也照樣寫——那是今天的形狀，不是倒數。
+     */
+    firstStat() {
+        const today = todayStr();
+        // 節次還沒填時間的課也要算——寫「沒有」的話，明明有課卻說沒有。
+        // 那種就寫第幾節，排序照 sortKey 排在有時間的後面。
+        const items = [
+            ...Timetable.activeOn(today).map(c => {
+                const sp = Timetable.span(c);
+                const label = Timetable.startOf(c)
+                    || (sp ? `第${Timetable.periods()[sp.a].name}節` : '');
+                return { key: Timetable.sortKey(c), label, what: '課' };
+            }),
+            ...Cal.data.events
+                .filter(e => e.date === today && Shifts.isShift(e) && e.time)
+                .map(e => ({ key: mins(e.time), label: e.time, what: e.title || '班' })),
+        ].filter(x => x.label).sort((a, b) => a.key - b.key);
+
+        const first = items[0];
+        return {
+            hue: 'var(--accent)', ico: 'clock', name: '第一個',
+            value: first ? first.label : '沒有', unit: first ? first.what : null,
+            go: () => this.goAgenda('timeline'),
+        };
+    },
+
     heroStats(openCount, todayCount) {
         const s = Money.monthSummary(thisMonth());
         // **每一格都要有去處。** 底下那句「留一個點不進去的數字只會讓人
@@ -798,6 +826,7 @@ const Overview = {
                 negative: s.net < 0,
                 go: () => showPanel('money'),
             },
+            this.firstStat(),
             {
                 hue: 'var(--calendar)', ico: 'clock', name: '今天的課',
                 value: String(Timetable.activeOn(todayStr()).length), unit: '堂',

@@ -1664,6 +1664,8 @@ const Money = {
         }).sort(newestFirst);
     },
 
+    txnLimit: 20,
+
     renderTxns() {
         const box = $('#txns');
         clear(box);
@@ -1689,7 +1691,9 @@ const Money = {
             (income ? `收入 ${money(income)}　` : '') +
             (expense ? `支出 ${money(expense)}` : '');
 
-        const shown = rows.slice(0, 200);
+        // 先給 20 筆。這張卡現在排在記帳頁的第三張，一次畫 200 筆的話
+        // 底下的圖表要滑一萬多像素才到——等於把問題從上面搬到下面。
+        const shown = rows.slice(0, this.txnLimit);
         for (const t of shown) {
             const isIncome = t.kind === 'income';
             const isTransfer = t.kind === 'transfer';
@@ -1709,8 +1713,12 @@ const Money = {
         }
 
         if (rows.length > shown.length) {
-            box.append(el('div', { class: 'sub', style: 'padding-top:12px;text-align:center' },
-                `只顯示最近 ${shown.length} 筆，還有 ${rows.length - shown.length} 筆。縮小篩選範圍看更早的。`));
+            const more = Math.min(30, rows.length - shown.length);
+            box.append(el('button', {
+                type: 'button', class: 'btn ghost txn-more',
+                text: `再看 ${more} 筆（還有 ${rows.length - shown.length} 筆）`,
+                onclick: () => { this.txnLimit += 30; this.renderTxns(); },
+            }));
         }
     },
 
@@ -2638,13 +2646,18 @@ const Money = {
         }
 
         let t;
-        const refilter = () => { clearTimeout(t); t = setTimeout(() => this.renderTxns(), 120); };
+        // 換了篩選條件就從頭 20 筆開始，不然上一次按到的「再看」會一直留著
+        const refilter = () => {
+            clearTimeout(t);
+            t = setTimeout(() => { this.txnLimit = 20; this.renderTxns(); }, 120);
+        };
         $('#q').oninput = refilter;
         for (const id of ['#f-kind', '#f-category', '#f-account', '#f-when']) $(id).onchange = refilter;
 
         $('#clear-filters').onclick = () => {
             $('#q').value = '';
             for (const id of ['#f-kind', '#f-category', '#f-account', '#f-when']) $(id).value = '';
+            this.txnLimit = 20;
             this.renderTxns();
         };
     },
