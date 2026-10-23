@@ -110,19 +110,6 @@ const Shifts = {
 
     isShift(e) { return !!e && !!e.shift; },
 
-    /**
-     * 這個班上完了沒。班不像待辦，時間到了就一定是過了——
-     * 不用她一個一個按勾，過了就自己變淡、不算「過期沒處理」。
-     */
-    isPast(e) {
-        if (!this.isShift(e)) return false;
-        const today = todayStr();
-        if (e.date !== today) return e.date < today;
-        const end = e.endTime || e.time;
-        if (!end) return false;
-        const n = new Date();
-        return mins(end) <= n.getHours() * 60 + n.getMinutes();
-    },
 
     /** 某一段期間的班，早的在前 */
     inRange(events, start, end) {

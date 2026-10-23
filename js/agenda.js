@@ -301,9 +301,25 @@ const Agenda = {
      * **收起來的排最後。** 格子裡只放得下三件，讓已經過去的把今天
      * 真正要做的擠下去，就本末倒置了。
      */
+    /**
+     * 這件行程過了沒。行程不像待辦，時間到了就一定是過了——
+     * 她說「時間過了就一定會過的就不要打勾了」。
+     * 本來只有班這樣（10/23 上午），同一天她說一般行程也一起。
+     * 整天的過了那一天才算；有時間的看結束時間，沒有結束時間就看開始。
+     */
+    isOver(e) {
+        if (!e || !e.date) return false;
+        const today = todayStr();
+        if (e.date !== today) return e.date < today;
+        const end = e.endTime || e.time;
+        if (!end) return false;
+        const n = new Date();
+        return mins(end) <= n.getHours() * 60 + n.getMinutes();
+    },
+
     eventsOnWithDone(day) {
         const rows = Cal.allOn(day).filter(e => this.match(e));
-        const over = e => e.done || Shifts.isPast(e);
+        const over = e => e.done || this.isOver(e);
         return [...rows.filter(e => !over(e)), ...rows.filter(over)];
     },
 
@@ -451,10 +467,8 @@ const Agenda = {
         const today = todayStr();
         const ok = x => all || this.match(x);
         return {
-            // 班不算：過了就是過了，見 Shifts.isPast
-            events: Cal.data.events.filter(e => e.date < today && !e.done
-                                                && !Shifts.isShift(e) && ok(e))
-                .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10),
+            // 行程不算過期：過了就是過了，見 isOver。這裡只剩待辦。
+            events: [],
             todos: Todo.data.items.filter(t => !t.done && t.due && t.due < today && ok(t))
                 .sort((a, b) => a.due.localeCompare(b.due)),
         };
@@ -761,8 +775,8 @@ const Agenda = {
         // **要看得出它是收起來的，而且放得回去**——長得跟還沒處理的
         // 一模一樣的話，那顆空心點就變成一個查不出來的疑問。
         const gone = !!e.done;
-        // 上完的班長得跟收起來的一樣淡，但沒有「放回去」——它本來就沒被收
-        const past = !gone && Shifts.isPast(e);
+        // 過了的行程長得跟收起來的一樣淡，但沒有「放回去」——它本來就沒被收
+        const past = !gone && this.isOver(e);
 
         return el('div', {
             class: 'event-row' + (late ? ' late' : '') + (gone || past ? ' gone' : ''),

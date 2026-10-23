@@ -1980,76 +1980,46 @@ const guard = (p, what, ms = 5000) => Promise.race([
     ok('遠一點的待辦看得到', q('#agenda-list').textContent.includes('25天後的待辦'));
     ok('有「更遠」那一區', q('#agenda-list').textContent.includes('更遠'));
 
-    // 過期的行程要能一件一件收掉。她的原話是「過期的我不能按已完成」——
-    // 行程沒有完成狀態，但她要的是同一件事：這件處理完了，讓它消失。
+    // 過了的行程不用按勾。她 10/23 說「時間過了就一定會過的就不要打勾了」，
+    // 先是班、同一天一般行程也一起：過了就自己變淡，不排進「過期了」那一區。
     {
       const past = new Date(Date.now() - 3 * 86400000);
-      const pastYmd = past.getFullYear() + '-'
-          + String(past.getMonth()+1).padStart(2,'0') + '-'
-          + String(past.getDate()).padStart(2,'0');
+      const pastYmd = ymd(past);
       q('#add-event').click(); await sleep(160);
       q('#e-title').value = '過期的行程';
       q('#e-date').value = pastYmd;
       q('#e-save').click(); await sleep(300);
 
-      const row = [...document.querySelectorAll('#agenda-list .overdue-group .event-row')]
-          .find(r => r.textContent.includes('過期的行程'));
-      ok('過期的行程出現在過期那一區', !!row);
-      const done = row?.querySelector('.event-done');
-      ok('過期的行程每一列都有收掉的鍵', !!done);
-      if (done) {
-        const before = Cal.data.events.length;
-        done.click(); await sleep(320);
-        // **收起來，不是刪掉。** 會讓東西永遠消失的按鈕太兇了。
-        ok('收掉不會把資料刪掉', Cal.data.events.length === before);
-        ok('收掉的那件標成收起來了',
-           Cal.data.events.find(e => e.title === '過期的行程')?.done === true);
-        ok('收掉之後不在「過期了」那一區',
-           !q('#agenda-list .overdue-group')
-           || !q('#agenda-list .overdue-group').textContent.includes('過期的行程'));
-        // **做完的不留在時間線上。** 她的話：「做完的東西不要留在版面，
-        // 可以把做完的集合起來放在某一個地方」——那個地方是「做完的」檢視。
-        ok('收掉之後不留在時間線上',
-           !q('#agenda-list').textContent.includes('過期的行程'),
+      ok('過了的行程不排進過期那一區',
+         !q('#agenda-list .overdue-group')
+         || !q('#agenda-list .overdue-group').textContent.includes('過期的行程'));
+      ok('過了的行程不留在時間線上',
+         !q('#agenda-list').textContent.includes('過期的行程'));
+      ok('過了的行程不算過期',
+         !Agenda.overdue(true).events.some(e => e.title === '過期的行程'));
+      ok('過了的行程在月曆上變淡', Agenda.isOver(
+         Cal.data.events.find(e => e.title === '過期的行程')));
+
+      // 以前收掉的那些還在「做完的」裡面，要看得到、放得回去
+      const ev = Cal.data.events.find(e => e.title === '過期的行程');
+      Agenda.doneWithEvent(ev); await sleep(320);
+      const doneBtn = [...document.querySelectorAll('#agenda-tools .view-btn')]
+          .find(b => b.textContent.includes('做完的'));
+      ok('有「做完的」這個檢視', !!doneBtn);
+      if (doneBtn) {
+        doneBtn.click(); await sleep(300);
+        ok('做完的那一頁看得到收掉的',
+           q('#agenda-list').textContent.includes('過期的行程'),
            q('#agenda-list').textContent.slice(0, 60));
-
-        // 但一定找得到。收掉就等於不見的按鈕太兇了。
-        const doneBtn = [...document.querySelectorAll('#agenda-tools .view-btn')]
-            .find(b => b.textContent.includes('做完的'));
-        ok('有「做完的」這個檢視', !!doneBtn);
-        if (doneBtn) {
-          doneBtn.click(); await sleep(300);
-          ok('做完的那一頁看得到剛收掉的',
-             q('#agenda-list').textContent.includes('過期的行程'),
-             q('#agenda-list').textContent.slice(0, 60));
-          // 按什麼時候做完的分組。一年份排成一長串跟沒有一樣
-          const heads = [...document.querySelectorAll('#agenda-list .day-name')]
-              .map(n => n.textContent);
-          ok('做完的有按時間分組',
-             heads.some(h => ['今天', '這七天', '更早', '不知道什麼時候'].includes(h)),
-             heads.join('、'));
-          ok('做完的那一列有「放回去」',
-             [...document.querySelectorAll('#agenda-list button')]
-               .some(b => b.textContent === '放回去'));
-          // 「清掉完成的」只在這一頁出現——做完的已經不在時間線上了，
-          // 把刪除鍵留在那裡等於一顆看不到目標的按鈕
-          ok('「清掉完成的」在做完的那一頁', !q('#clear-done').hidden);
-
-          const back = [...document.querySelectorAll('#agenda-tools .view-btn')]
-              .find(b => b.textContent.includes('時間線'));
-          back.click(); await sleep(300);
-          ok('回到時間線時「清掉完成的」收起來', q('#clear-done').hidden);
-        }
-
-        const undo = q('#toast button');
-        ok('剛收掉的時候也給得回來', !!undo);
-        if (undo) {
-          undo.click(); await sleep(320);
-          ok('放回去之後回到過期那一區',
-             q('#agenda-list .overdue-group').textContent.includes('過期的行程'));
-        }
+        ok('做完的那一列有「放回去」',
+           [...document.querySelectorAll('#agenda-list button')]
+             .some(b => b.textContent === '放回去'));
+        ok('「清掉完成的」在做完的那一頁', !q('#clear-done').hidden);
+        const back = [...document.querySelectorAll('#agenda-tools .view-btn')]
+            .find(b => b.textContent.includes('時間線'));
+        back.click(); await sleep(300);
+        ok('回到時間線時「清掉完成的」收起來', q('#clear-done').hidden);
       }
-      // 清乾淨，不要影響後面的檢查
       Cal.data.events = Cal.data.events.filter(e => e.title !== '過期的行程');
       Cal.save(); Agenda.render(); await sleep(150);
     }
@@ -2077,43 +2047,14 @@ const guard = (p, what, ms = 5000) => Promise.race([
     q('#e-save').click(); await sleep(300);
     ok('遠一點的行程看得到', q('#agenda-list').textContent.includes('25天後的行程'));
 
-    // ── 過期的行程要清得掉 ──
-    //
-    // 她說「網頁版那邊過期的事情還沒辦法刪掉，會一直留在版面上」。
-    // 單筆點進去本來就刪得掉，缺的是「一次清掉」。
+    // 過了的行程不會讓總覽說「有幾件過期了」——那句只講待辦
     {
-        const past = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+        const past = ymd(new Date(Date.now() - 6 * 86400000));
         q('#add-event').click(); await sleep(160);
         q('#e-title').value = '過期用行程';
         q('#e-date').value = past;
         q('#e-save').click(); await sleep(300);
-        ok('過期的行程會排到「過期了」那一區',
-           q('.overdue-group')?.textContent.includes('過期用行程') === true);
-
-        const before = Cal.data.events.length;
-        const openTodos = Todo.open().filter(t => t.due && t.due < todayStr()).length;
-        const clear = q('.day-clear');
-        ok('過期那一區有清掉鈕', !!clear, clear ? clear.textContent : '沒有');
-        clear.click(); await sleep(350);
-        // 「清掉」也是收起來，不是刪掉——「清掉」這兩個字聽起來像永久
-        // 消失，但它們會待在「收起來的」那一區，隨時放得回去。
-        ok('清掉不會把資料刪掉', Cal.data.events.length === before);
-        ok('清掉的那件標成收起來了',
-           Cal.data.events.find(e => e.title === '過期用行程')?.done === true);
-        ok('不在「過期了」那一區了',
-           !q('.overdue-group')
-           || !q('.overdue-group').textContent.includes('過期用行程'));
-        ok('待辦沒有被順手清掉',
-           Todo.open().filter(t => t.due && t.due < todayStr()).length === openTodos);
-
-        const undo = q('.toast-btn');
-        ok('清完給得起復原', !!undo, undo ? undo.textContent : '沒有');
-        undo.click(); await sleep(350);
-        ok('放回去之後回到過期那一區',
-           q('.overdue-group')?.textContent.includes('過期用行程') === true);
-        ok('畫面上也回來了', q('#agenda-list').textContent.includes('過期用行程'));
-
-        // 收拾乾淨，後面的檢查不要被這一筆影響
+        ok('過了的行程不進總覽的過期數', Agenda.overdue(true).events.length === 0);
         Cal.data.events = Cal.data.events.filter(e => e.title !== '過期用行程');
         Cal.save(); Agenda.render(); await sleep(200);
     }
