@@ -3083,10 +3083,20 @@ const guard = (p, what, ms = 5000) => Promise.race([
         ok('退出排班模式後「在這天加」回來了',
            document.querySelectorAll('#calendar .cal-add').length > 0);
 
-        // 排出去的班要出現在時間線上
+        // 還沒上的班要出現在時間線上；上完的不要——班過了就是過了，
+        // 不該堆在「過期」那區等她一個一個按勾。
+        // 上面點的是月曆的 11～13 號，哪天跑都可能已經過了，所以另外排一個明天的。
+        const tmr = new Date(); tmr.setDate(tmr.getDate() + 1);
+        const tmrStr = ymd(tmr);
+        Cal.data.events.push({ id: 'chk-tmr-shift', date: tmrStr, time: '18:00',
+            endTime: '22:00', title: '明天的晚班', shift: MonthView.pickedShift });
         Agenda.view = 'timeline'; Agenda.render(); await sleep(260);
-        ok('排出去的班出現在時間線上',
-           q('#agenda-list').textContent.includes('打工晚班'));
+        ok('還沒上的班出現在時間線上',
+           q('#agenda-list').textContent.includes('明天的晚班'));
+        const pastShift = Cal.data.events.find(e => e.shift && e.date < todayStr());
+        ok('上完的班不算過期、不用按勾',
+           !pastShift || !Agenda.overdue(true).events.includes(pastShift));
+        Cal.data.events = Cal.data.events.filter(e => e.id !== 'chk-tmr-shift');
 
         // 刪掉班別，已經排出去的班要留著——刪班別是「以後不用這個樣板」，
         // 不是「我上個月沒去上班」

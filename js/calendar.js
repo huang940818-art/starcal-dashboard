@@ -137,7 +137,7 @@ const MonthView = {
                 tabindex: '0',
                 // 唸出來的件數只算還沒收起來的——收起來的那幾件
                 // 在畫面上是空心點，講成「還有 3 件事」會對不上。
-                'aria-label': `${c.n} 日，${items.filter(x => !x.it.done).length} 件事`
+                'aria-label': `${c.n} 日，${items.filter(x => !x.it.done && !(x.kind === 'event' && Shifts.isPast(x.it))).length} 件事`
                     // 放假這件事要唸出來——螢幕報讀器讀不到底色
                     + (c.holiday ? `，${c.holiday.name || c.holiday.breakName}` : ''),
                 onclick: () => {
@@ -230,7 +230,8 @@ const MonthView = {
                         return el('button', {
                             type: 'button',
                             class: 'cal-item' + (x.kind === 'todo' ? ' todo' : '')
-                                + (x.it.done ? ' done' : ''),
+                                + (x.it.done || (x.kind === 'event' && Shifts.isPast(x.it))
+                                    ? ' done' : ''),
                             style: l ? `--line:${l.color}` : '',
                             title: [t, x.it.title, l ? `・${l.name}` : '']
                                 .filter(Boolean).join(' ') + '　點一下改',
@@ -288,7 +289,7 @@ const MonthView = {
                         const l = Prefs.label(x.it.label);
                         // 收起來的畫成空心，**不是拿掉**——跟上面停課那顆
                         // 同一個道理：拿掉的話「這天有排班」就消失了。
-                        const gone = !!x.it.done;
+                        const gone = !!x.it.done || (x.kind === 'event' && Shifts.isPast(x.it));
                         return el('span', {
                             class: 'label-dot' + (l ? '' : ' none') + (gone ? ' gone' : ''),
                             style: l ? (gone ? `border-color:${l.color}`

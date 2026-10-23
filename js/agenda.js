@@ -303,7 +303,8 @@ const Agenda = {
      */
     eventsOnWithDone(day) {
         const rows = Cal.allOn(day).filter(e => this.match(e));
-        return [...rows.filter(e => !e.done), ...rows.filter(e => e.done)];
+        const over = e => e.done || Shifts.isPast(e);
+        return [...rows.filter(e => !over(e)), ...rows.filter(over)];
     },
 
     todosOn(day) {
@@ -450,7 +451,9 @@ const Agenda = {
         const today = todayStr();
         const ok = x => all || this.match(x);
         return {
-            events: Cal.data.events.filter(e => e.date < today && !e.done && ok(e))
+            // 班不算：過了就是過了，見 Shifts.isPast
+            events: Cal.data.events.filter(e => e.date < today && !e.done
+                                                && !Shifts.isShift(e) && ok(e))
                 .sort((a, b) => b.date.localeCompare(a.date)).slice(0, 10),
             todos: Todo.data.items.filter(t => !t.done && t.due && t.due < today && ok(t))
                 .sort((a, b) => a.due.localeCompare(b.due)),
@@ -758,9 +761,11 @@ const Agenda = {
         // **要看得出它是收起來的，而且放得回去**——長得跟還沒處理的
         // 一模一樣的話，那顆空心點就變成一個查不出來的疑問。
         const gone = !!e.done;
+        // 上完的班長得跟收起來的一樣淡，但沒有「放回去」——它本來就沒被收
+        const past = !gone && Shifts.isPast(e);
 
         return el('div', {
-            class: 'event-row' + (late ? ' late' : '') + (gone ? ' gone' : ''),
+            class: 'event-row' + (late ? ' late' : '') + (gone || past ? ' gone' : ''),
             onclick: () => Cal.edit(e),
         }, [
             el('div', { class: 'event-time', text: time }),
