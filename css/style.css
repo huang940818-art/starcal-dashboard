@@ -2464,6 +2464,73 @@ h6.md-h, h7.md-h, h8.md-h, h9.md-h { font-size: 13.5px; color: var(--text-2); }
      * 兩個一起畫只是同一份資訊重複兩次，還會把本來就緊的格子撐更高。 */
 }
 
+/* ── 不要格子（2026-10-24）──────────────────────────
+ *
+ * 她要把網頁版發到脆上，說月曆「格子弄大一點，或是不要格子也可以」。
+ * 手機上一格只有 45px 寬，每格又各自包一個框：框的邊、圓角、內距
+ * 一圈吃掉將近 10px，「實驗室 meeting」只剩「實驗室 m」。
+ *
+ * **拿掉每一格的框，只留週與週之間一條細線**——iPhone 行事曆的月檢視
+ * 就是這樣。格子本來就是靠七欄對齊排出來的，框只是在重複同一件事，
+ * 還把三十五格畫成三十五塊磚，整張看起來很重。
+ *
+ * 連假的底色、今天、選中的那天都還在，只是不再靠邊框講：
+ * 今天改成日期數字墊一顆圓，選中的那天給一塊淡底。 */
+.cal-grid:not(.cal-head) { gap: 0; }
+
+.cal-cell,
+.cal-cell.in-break,
+.cal-cell.today,
+.cal-cell.picked,
+.cal-cell.shift-on {
+    border: 0;
+    border-top: 1px solid color-mix(in srgb, var(--separator) 70%, transparent);
+    border-radius: 0;
+    box-shadow: none;
+}
+
+.cal-cell { background: transparent; padding: 6px 5px; }
+.cal-cell:hover { background: color-mix(in srgb, var(--raised) 45%, transparent); }
+.cal-cell.picked { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+
+/* 今天：數字墊一顆實心圓。原本是整格的邊框，框拿掉之後
+ * 只剩數字變色，在一整片字裡太容易漏看。 */
+.cal-cell.today .cal-n {
+    background: var(--accent);
+    color: var(--bg);
+    border-radius: 999px;
+    min-width: 1.75em;
+    padding: 1px 5px;
+    text-align: center;
+}
+
+/* 格子沒有框了，條目也不用自己再包一層——
+ * 留左邊那條分類色線，底色淡一點，看起來才不會又是一格一格的磚。 */
+.cal-item { background: color-mix(in srgb, var(--line, var(--calendar)) 9%, transparent); }
+
+@media (max-width: 620px) {
+    .cal-cell { padding: 4px 1px; min-height: 96px; }
+    .cal-cell.today .cal-n { padding: 0 4px; }
+
+    /* 手機上標題**折成兩行**，不要一行截斷。
+     * 一欄 50px 一行只放得下四個字，「實驗室 meeting」截成「實驗室」
+     * 還看得懂，「寄回函給系辦」截成「寄回函給」就不知道在講什麼。
+     * 兩行剛好是「早班」「多益考試」這種大部分標題的長度。 */
+    .cal-item {
+        padding: 1px 2px;
+        line-height: 1.35;
+        align-items: flex-start;
+    }
+    .cal-item .ellipsis {
+        white-space: normal;
+        word-break: break-all;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+    }
+}
+
 /* ── 課表 ───────────────────────────────────────────
  *
  * 按實際時間擺，不按節次。大學的課不一定對齊節次
