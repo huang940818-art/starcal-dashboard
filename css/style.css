@@ -3627,17 +3627,17 @@ dialog.editor { width: min(680px, calc(100vw - 24px)); }
 .txn-more { display: block; width: 100%; margin-top: 10px; }
 
 
-/* ── 手機上月曆那張卡不要外框（2026-10-24）──────────────
+/* ── 手機上「接下來」那張卡不要外框（2026-10-24）──────────────
  *
  * 早上試過手機上所有卡片都拿掉框，她說「沒有格子很不習慣」，
- * 再改成「只要月曆那邊不要格子就好」。
+ * 改成只拿掉月曆的，最後定案「接下來那邊整個都不要格子，其他保留」。
  *
- * 月曆跟時間線、課表共用「接下來」那張卡，所以不能整張卡寫死，
- * 要看現在露出來的是不是月曆：切到月曆才拿掉框，切回時間線框就回來。
- * 拿掉的理由還是早上那個：390px 寬一欄才 45px，外框加內距吃掉的就是它。 */
+ * 所以是「接下來」分頁那張卡（時間線、月曆、課表共用）整張不畫框，
+ * 切哪個檢視都一樣；總覽和其他卡片照舊有框。
+ * 理由還是早上那個：390px 寬月曆一欄才 45px，外框加內距吃掉的就是它。 */
 @media (max-width: 620px) {
-    .card:has(> #calendar:not([hidden])),
-    .card:has(> #calendar:not([hidden])):hover {
+    #panel-agenda .card[data-hue="todo"],
+    #panel-agenda .card[data-hue="todo"]:hover {
         background: transparent;
         border: 0;
         border-radius: 0;
