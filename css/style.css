@@ -3625,29 +3625,3 @@ dialog.editor { width: min(680px, calc(100vw - 24px)); }
 
 /* 帳目列表底下的「再看 30 筆」 */
 .txn-more { display: block; width: 100%; margin-top: 10px; }
-
-/* ── 手機上拿掉卡片的外框（2026-10-24）──────────────────
- *
- * 她圈著「接下來」那張卡的右上角說：「把最外圍的這個格子拿掉會不會比較好」。
- * 手機只有 390px 寬，頁面留白 14px、卡片外框加內距又 19px，
- * 兩層一疊，左右各吃掉三十幾 px——月曆一欄才 45px，被擠得最慘的就是它。
- *
- * **手機上卡片不畫框、不墊底色，直接貼著頁面。** 卡片跟卡片之間
- * 改用一條細線分開；卡片裡面的東西（月曆、清單、輸入框）自己有底色，
- * 少了外面那層框也分得出來。桌機不動——寬螢幕上卡片並排，框是在分欄。
- *
- * 擺在檔案最後面：前面好幾個 620px 區塊也碰過 .card，同樣權重後寫的贏。 */
-@media (max-width: 620px) {
-    .card,
-    .card:hover {
-        background: transparent;
-        border: 0;
-        border-radius: 0;
-        padding: 4px 0 18px;
-    }
-    .grid > .card + .card,
-    .panel > .card + .card {
-        border-top: 1px solid var(--separator);
-        padding-top: 18px;
-    }
-}
