@@ -351,6 +351,16 @@ const Prefs = {
             for (const t of Todo.data.items) if (t.label && !alive.has(t.label)) { t.label = null; orphan++; }
             if (orphan) { Cal.save(); Todo.save(); }
 
+            // 刪掉的分類記名字（墓碑）。跟手機的同步對分類是聯集，
+            // 手機上還有那個分類，下次一同步就長回來——10/24 她說
+            // 「格子刪掉後又跑回來了」。課表同步.sh 看到墓碑就不補，
+            // 手機也照這份把自己的刪掉。之後又加回同名的，就從墓碑拿掉。
+            const names = new Set(kept.map(l => l.name));
+            const tomb = new Set(this.data.deletedLabels || []);
+            for (const l of before.values()) if (l.name && !names.has(l.name)) tomb.add(l.name);
+            for (const n of names) tomb.delete(n);
+            this.data.deletedLabels = [...tomb];
+
             this.data.labels = kept;
             // 她自己動過分類了（包括刪光），之後就不要再自己長回來
             this.data.labelsSeeded = true;

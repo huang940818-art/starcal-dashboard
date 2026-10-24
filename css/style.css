@@ -3625,3 +3625,24 @@ dialog.editor { width: min(680px, calc(100vw - 24px)); }
 
 /* 帳目列表底下的「再看 30 筆」 */
 .txn-more { display: block; width: 100%; margin-top: 10px; }
+
+
+/* ── 手機上月曆那張卡不要外框（2026-10-24）──────────────
+ *
+ * 早上試過手機上所有卡片都拿掉框，她說「沒有格子很不習慣」，
+ * 再改成「只要月曆那邊不要格子就好」。
+ *
+ * 月曆跟時間線、課表共用「接下來」那張卡，所以不能整張卡寫死，
+ * 要看現在露出來的是不是月曆：切到月曆才拿掉框，切回時間線框就回來。
+ * 拿掉的理由還是早上那個：390px 寬一欄才 45px，外框加內距吃掉的就是它。 */
+@media (max-width: 620px) {
+    .card:has(> #calendar:not([hidden])),
+    .card:has(> #calendar:not([hidden])):hover {
+        background: transparent;
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+        padding-left: 0;
+        padding-right: 0;
+    }
+}
