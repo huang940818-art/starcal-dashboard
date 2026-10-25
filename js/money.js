@@ -712,6 +712,43 @@ const Money = {
             || rank.get(a) - rank.get(b));
     },
 
+    /**
+     * 記一筆的時候，從這個分類記過的挑一筆照抄。
+     *
+     * 她的原話（2026-10-20）：「可以點歷史紀錄去記帳，要分類的，比如飲食就都是飲食的」。
+     * 每天的早餐、同一家便當、固定的車錢，金額和備註幾乎一樣，點一下就帶進來。
+     * 手機 App 早就有了，網頁補上。**規則逐條對著 Swift 的 RecentEntries 寫。**
+     *
+     * **只抄金額、備註、帳戶，不抄日期。** 照抄的是「同樣的東西」，不是「同一天」。
+     * **同樣的備註＋金額只留最近那一筆。** 每天買的咖啡會記上幾十次，
+     * 不收起來的話清單整排都是它。
+     *
+     * @returns 最近的在前，最多 limit 筆：{ amount, note, account, key }
+     */
+    recentEntries(kind, category, excludeId, limit = 8) {
+        if (!category || kind === 'transfer') return [];
+        const txns = this.data.transactions ?? [];
+        // 日期新的在前；同一天的，陣列後面的（後記的）在前
+        const rows = txns
+            .map((t, i) => ({ t, i }))
+            .filter(({ t }) => !(excludeId !== undefined && t.id === excludeId)
+                               && t.kind === kind && t.category === category && +t.amount > 0)
+            .sort((a, b) => String(b.t.date || '').localeCompare(String(a.t.date || ''))
+                            || b.i - a.i);
+
+        const seen = new Set(), out = [];
+        for (const { t } of rows) {
+            const note = String(t.note || '').trim();
+            const amount = +t.amount;
+            const key = `${note}|${amount}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            out.push({ amount, note, account: t.account || '', key });
+            if (out.length === limit) break;
+        }
+        return out;
+    },
+
     /* ── 畫面 ──────────────────────────────────────── */
 
     /** 現在在看哪一段。預設是這個月。 */
@@ -1737,6 +1774,10 @@ const Money = {
 
         const kindNow = () => $('#t-kind').value;
 
+        // 「記過的○○」清單。畫的那一支在帳戶下拉建好之後才定義（點下去要填帳戶），
+        // 但換類型、換分類都要叫它，所以這裡先放一個空的。
+        let renderRecent = () => {};
+
         const syncKind = () => {
             const kind = $('#t-kind').value;
             const transfer = kind === 'transfer';
@@ -1751,6 +1792,7 @@ const Money = {
             // 現在那一個就是她最常記的那類。
             const want = names.includes(t.category) ? t.category : names[0];
             fillSelect($('#t-category'), names, want);
+            renderRecent();
         };
         $('#t-kind').onchange = syncKind;
         syncKind();
@@ -1772,6 +1814,7 @@ const Money = {
         $('#t-category').addEventListener('change', () => {
             pickedByHand = true;
             hint.hidden = true;
+            renderRecent();
         });
 
         const autoCategory = () => {
@@ -1786,6 +1829,7 @@ const Money = {
             $('#t-category').value = guess.category;
             hint.textContent = `自動選了「${guess.category}」・${guess.reason}`;
             hint.hidden = false;
+            renderRecent();
         };
 
         $('#t-note').oninput = autoCategory;
@@ -1833,6 +1877,42 @@ const Money = {
         watchNew($('#t-account'));
         watchNew($('#t-to-account'));
         closeNew();
+
+        // ── 記過的這個分類 ──
+        //
+        // 只有新的一筆才給。改舊帳的時候點一下就把金額蓋掉，是在幫倒忙。
+        // 標題跟 App 一字不差：「記過的」＋分類名。
+        renderRecent = () => {
+            const box = $('#t-recent');
+            const list = $('#t-recent-list');
+            const entries = isNew
+                ? this.recentEntries(kindNow(), $('#t-category').value, t.id) : [];
+            list.replaceChildren();
+            box.hidden = !entries.length;
+            if (!entries.length) return;
+
+            $('#t-recent-title').textContent = `記過的${$('#t-category').value}`;
+            for (const e of entries) {
+                list.append(el('button', {
+                    type: 'button', class: 'recent-pick',
+                    onclick: () => {
+                        $('#t-amount').value = e.amount;
+                        $('#t-note').value = e.note;
+                        // 帳戶可能已經刪掉了；不在了就留著原本選的
+                        if (this.data.accounts.some(a => a.name === e.account))
+                            $('#t-account').value = e.account;
+                        $('#t-amount').focus();
+                    },
+                }, [
+                    el('div', { class: 'grow' }, [
+                        el('div', { class: 'ellipsis', text: e.note || $('#t-category').value }),
+                        e.account ? el('div', { class: 'sub', text: e.account }) : null,
+                    ]),
+                    el('div', { class: 'money-num', text: money(e.amount) }),
+                ]));
+            }
+        };
+        renderRecent();
 
         $('#t-new-account-cancel').onclick = () => {
             // 取消就退回原本選的那個；本來就沒有帳戶的話留在「＋ 新增帳戶…」

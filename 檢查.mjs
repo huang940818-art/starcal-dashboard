@@ -1880,6 +1880,28 @@ const guard = (p, what, ms = 5000) => Promise.race([
     ok('記一筆記得進去', Money.data.transactions.length === 1);
     ok('金額對', (Money.data.transactions[0] || {}).amount === 120);
 
+    // ── 記過的這個分類：點一筆就帶進來 ──
+    // 她的原話：「我上次買這個、這次還買這個，可以不用重新打字就記帳」。
+    // 手機 App 早就有，網頁補上；標題是「記過的」＋分類名，兩邊一字不差。
+    {
+      q('#add-txn').click(); await sleep(200);
+      const cat = q('#t-category').value;
+      ok('記過同一類的話，「記過的」會出現', !q('#t-recent').hidden);
+      ok('標題是「記過的」加分類名',
+         q('#t-recent-title').textContent === '記過的' + cat, q('#t-recent-title').textContent);
+      ok('那一筆列在清單裡', document.querySelectorAll('#t-recent-list .recent-pick').length === 1);
+      q('#t-amount').value = '';
+      q('#t-recent-list .recent-pick').click(); await sleep(120);
+      ok('點一下就把金額帶進來', q('#t-amount').value === '120', q('#t-amount').value);
+      ok('日期不會被改（留在今天）', q('#t-date').value === todayStr(), q('#t-date').value);
+      q('#dlg-txn button[value=\"cancel\"]').click(); await sleep(200);
+
+      // 改舊帳的時候不給：點一下就把金額蓋掉是在幫倒忙
+      Money.editTxn(Money.data.transactions[0]); await sleep(200);
+      ok('改舊帳的時候不出現「記過的」', q('#t-recent').hidden);
+      q('#dlg-txn button[value=\"cancel\"]').click(); await sleep(200);
+    }
+
     // 圖表的月份標籤不准斷行——「10月」拆成兩行的話那一欄會比別欄高，
     // 整排標籤參差不齊。她的原話是「兩位數的都跑掉」。
     {

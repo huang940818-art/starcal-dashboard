@@ -492,6 +492,47 @@ test('次數一樣的時候，最近用過的在前面', () => {
     assert.deepEqual(m.categoryOrder('expense'), ['交通', '居家', '飲食']);
 });
 
+/* ── 記過的這個分類：點一筆照抄 ──────────────────────
+ *
+ * 規則逐條對著 App 的 RecentEntries 寫。兩邊挑出來的清單不一樣的話，
+ * 同一個分類在手機和電腦上「記過的」長得不同。
+ */
+
+test('記過的：只列同分類、新的在前、不抄日期', () => {
+    const m = 有帳的(['飲食', '交通'], [
+        { id: 'a', kind: 'expense', category: '飲食', date: day(1), amount: 55, note: '三明治', account: '現金' },
+        { id: 'b', kind: 'expense', category: '交通', date: day(2), amount: 30, note: '公車', account: '現金' },
+        { id: 'c', kind: 'expense', category: '飲食', date: day(3), amount: 80, note: '便當', account: '郵局' },
+    ]);
+    const r = m.recentEntries('expense', '飲食');
+    assert.deepEqual(r.map(e => e.note), ['便當', '三明治']);
+    assert.deepEqual(r[0], { amount: 80, note: '便當', account: '郵局', key: '便當|80' });
+});
+
+test('記過的：同樣的備註加金額只留最近那一筆', () => {
+    const m = 有帳的(['飲食'], [
+        { id: 'a', kind: 'expense', category: '飲食', date: day(1), amount: 55, note: '咖啡', account: '現金' },
+        { id: 'b', kind: 'expense', category: '飲食', date: day(2), amount: 55, note: '咖啡', account: '郵局' },
+        { id: 'c', kind: 'expense', category: '飲食', date: day(3), amount: 60, note: '咖啡', account: '現金' },
+    ]);
+    const r = m.recentEntries('expense', '飲食');
+    assert.equal(r.length, 2, '55 的咖啡和 60 的咖啡是兩種');
+    assert.equal(r[1].account, '郵局', '55 的那個留下比較近的 day(2)');
+});
+
+test('記過的：最多 8 筆；沒分類、轉帳、金額 0 都不給；正在改的那筆不算', () => {
+    const txns = Array.from({ length: 12 }, (_, i) => ({
+        id: 't' + i, kind: 'expense', category: '飲食', date: day(i + 1), amount: 10 + i, note: '店' + i, account: '現金',
+    }));
+    txns.push({ id: 'z', kind: 'expense', category: '飲食', date: day(20), amount: 0, note: '免費', account: '現金' });
+    const m = 有帳的(['飲食'], txns);
+    assert.equal(m.recentEntries('expense', '飲食').length, 8);
+    assert.equal(m.recentEntries('expense', '飲食').some(e => e.note === '免費'), false);
+    assert.deepEqual(m.recentEntries('expense', ''), []);
+    assert.deepEqual(m.recentEntries('transfer', '飲食'), []);
+    assert.equal(m.recentEntries('expense', '飲食', 't11')[0].note, '店10', '排除自己');
+});
+
 test('補記昨天的一筆不算「最近用的」——看日期不看記的先後', () => {
     const m = 有帳的(['飲食', '交通', '居家'], [
         { kind: 'expense', category: '交通', date: day(5), amount: 10 },

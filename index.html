@@ -283,6 +283,11 @@
         </div>
         <label class="field"><span>備註</span><input id="t-note" placeholder="店名、買了什麼"></label>
         <p class="sub cat-hint" id="t-cat-hint" hidden></p>
+        <!-- 記過的這個分類：點一筆就把金額、備註、帳戶帶進來。只有新的一筆才出現。 -->
+        <div class="recent-picks" id="t-recent" hidden>
+            <p class="sub" id="t-recent-title"></p>
+            <div id="t-recent-list"></div>
+        </div>
         <div class="dialog-actions">
             <button type="button" class="btn danger spacer" id="t-delete" hidden>刪除</button>
             <button class="btn" value="cancel" formnovalidate>取消</button>

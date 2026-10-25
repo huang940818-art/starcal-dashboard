@@ -958,6 +958,28 @@ textarea { resize: vertical; min-height: 76px; line-height: 1.6; }
     font-size: 12px;
 }
 
+/* 記過的這個分類。點一筆就把金額、備註、帳戶帶進來。 */
+.recent-picks { margin: 0 0 12px; }
+.recent-picks > .sub { margin: 0 0 4px; }
+.recent-pick {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    padding: 9px 10px;
+    border: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--separator) 60%, transparent);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+.recent-pick:last-child { border-bottom: 0; }
+.recent-pick:hover, .recent-pick:focus-visible {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
 label.field {
     display: block;
     margin-bottom: 12px;
