@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 /** 把幾支瀏覽器用的 script 在同一個作用域裡跑起來，回傳裡面的全域。 */
 function load(...files) {
     const src = files.map(f => readFileSync(new URL(f, import.meta.url), 'utf-8')).join('\n');
-    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview', 'Countdown', 'Shifts', 'Cal', 'newestFirst', 'Review'];
+    const names = ['Charts', 'Money', 'money', 'ymd', 'parseYmd', 'monthOf', 'recentMonths', 'DEMO', 'AutoCat', 'Range', 'Csv', 'uid', 'stamp', 'pad', 'Weather', 'Overview', 'Countdown', 'Shifts', 'Cal', 'newestFirst', 'Review', 'DayPlan'];
     // 這些檔案是給瀏覽器的全域 script，沒有 export。包一層把要的東西丟出來。
     // **沒定義的名字要給 undefined，不能直接丟出去。** names 是所有 load()
     // 共用的一份清單，只載其中一支檔案的時候，其他名字本來就不存在——
@@ -2109,4 +2109,120 @@ test('國定假日雙倍：存在那一筆班上，薪水乘二', () => {
     const t = Shifts.total([{ ...row, date: '2026-09-27' }, { ...row, date: '2026-09-28', mult: 2 }]);
     assert.equal(t.pay, 1176 + 2352);
     assert.equal(t.hours, 12, '雙倍是錢加倍，工時不變');
+});
+
+
+/* ── 總覽最上面「今天要幹嘛」那句 ─────────────────────
+ *
+ * 她要「適配所有情境」。下面每一條是一種一天的樣子，
+ * 句子錯了不會報錯，只會在總覽最上面講一句不對的話。
+ */
+const { DayPlan } = load('./js/dayplan.js');
+const at = (h, m = 0) => h * 60 + m;
+const shift = { start: '06:00', end: '12:00', title: '早班', kind: 'shift' };
+const cls = (start, end, title) => ({ start, end, title, kind: 'class' });
+
+test('今天：什麼資料都沒有就不講', () => {
+    assert.equal(DayPlan.say({ now: at(9) }), '');
+});
+
+test('今天：還沒開始，講從幾點開始、到幾點，再講下一件', () => {
+    const s = DayPlan.say({ now: at(5), today: [shift, cls('18:00', '19:45', '微積分')] });
+    assert.equal(s, '今天從 06:00 早班開始，到 12:00。接著 18:00 微積分。');
+});
+
+test('今天：正在上班，講到幾點，接著下一件', () => {
+    const s = DayPlan.say({ now: at(9), today: [shift, cls('13:30', '15:20', '英文')] });
+    assert.equal(s, '現在：早班，到 12:00。接著 13:30 英文。');
+});
+
+test('今天：中間空兩小時以上，講空到幾點', () => {
+    const s = DayPlan.say({ now: at(13), today: [shift, cls('18:00', '19:45', '微積分')] });
+    assert.equal(s, '到 18:00 前都空著，接著是微積分。');
+});
+
+test('今天：空檔不到兩小時就只講下一件', () => {
+    const s = DayPlan.say({ now: at(17), today: [shift, cls('18:00', '19:45', '微積分')] });
+    assert.equal(s, '下一件 18:00 微積分。');
+});
+
+test('今天：三件以上，後面的講「之後還有幾件」', () => {
+    const s = DayPlan.say({ now: at(5), today: [shift,
+        cls('13:30', '15:20', 'A'), cls('18:00', '19:45', 'B'), cls('19:50', '21:35', 'C')] });
+    assert.equal(s, '今天從 06:00 早班開始，到 12:00。接著 13:30 A。之後還有 2 件。');
+});
+
+test('今天：都結束了，下午五點以後接著講明天，明天很早就叫人早點睡', () => {
+    const s = DayPlan.say({ now: at(17, 30), today: [shift], tomorrow: [shift] });
+    assert.equal(s, '今天排的都結束了。明天 06:00 早班，早點睡。');
+});
+
+test('今天：都結束了但還沒五點，不提明天', () => {
+    const s = DayPlan.say({ now: at(14), today: [shift], tomorrow: [shift] });
+    assert.equal(s, '今天排的都結束了。');
+});
+
+test('今天：明天不早就不叫人早睡', () => {
+    const s = DayPlan.say({ now: at(21), today: [shift], tomorrow: [cls('10:00', '12:00', '統計')] });
+    assert.equal(s, '今天排的都結束了。明天 10:00 統計。');
+});
+
+test('今天：晚上而且明天沒事', () => {
+    assert.equal(DayPlan.say({ now: at(21), today: [shift] }), '今天排的都結束了。明天沒有排事。');
+});
+
+test('今天：今天沒事，白天講整天是你的', () => {
+    assert.equal(DayPlan.say({ now: at(10), tomorrow: [shift] }), '今天沒有排事，整天是你的。');
+});
+
+test('今天：今天沒事，晚上直接講明天', () => {
+    assert.equal(DayPlan.say({ now: at(21), tomorrow: [shift] }),
+        '今天沒有排事，整天是你的。明天 06:00 早班，早點睡。');
+});
+
+test('今天：整天的行程排在最前面', () => {
+    const s = DayPlan.say({ now: at(8), today: [{ start: '', end: '', title: '期中考週', kind: 'event' },
+        cls('10:00', '12:00', '統計')] });
+    assert.equal(s, '整天：期中考週。今天從 10:00 統計開始，到 12:00。');
+});
+
+test('今天：到期的待辦列兩件，多的寫等幾件', () => {
+    assert.equal(DayPlan.say({ now: at(10), due: ['繳費'] }), '今天要做完：繳費。');
+    assert.equal(DayPlan.say({ now: at(10), due: ['A', 'B', 'C'] }), '今天要做完：A、B 等 3 件。');
+});
+
+test('今天：停課白天講，晚上八點以後不講', () => {
+    const today = [shift];
+    assert.equal(DayPlan.say({ now: at(13), today, off: ['微積分', '職場實務'] }),
+        '今天排的都結束了。2 堂課這次不用上。');
+    assert.equal(DayPlan.say({ now: at(13), today, off: ['微積分'] }),
+        '今天排的都結束了。微積分這次不用上。');
+    assert.equal(DayPlan.say({ now: at(20, 30), today, off: ['微積分'] }),
+        '今天排的都結束了。明天沒有排事。');
+});
+
+test('今天：只有停課，沒有別的事', () => {
+    assert.equal(DayPlan.say({ now: at(9), off: ['體育'] }), '體育這次不用上。');
+});
+
+test('今天：沒填結束時間的行程當一小時', () => {
+    const t = [{ start: '14:00', end: '', title: '看牙', kind: 'event' }];
+    assert.equal(DayPlan.say({ now: at(14, 30), today: t }), '現在：看牙。');
+    assert.equal(DayPlan.say({ now: at(15, 30), today: t }), '今天排的都結束了。');
+});
+
+test('今天：跨半夜的夜班，晚上算進行中', () => {
+    const t = [{ start: '22:00', end: '06:00', title: '夜班', kind: 'shift' }];
+    assert.equal(DayPlan.say({ now: at(23), today: t }), '現在：夜班，到 06:00。明天沒有排事。');
+});
+
+test('今天：節次沒填時間的課另外講', () => {
+    const t = [{ start: '', end: '', title: '體育（第 3 節）', kind: 'class' }];
+    assert.equal(DayPlan.say({ now: at(9), today: t }), '還有課：體育（第 3 節）。');
+});
+
+test('今天：明天只有沒時間的事', () => {
+    const s = DayPlan.say({ now: at(21), today: [shift],
+        tomorrow: [{ start: '', end: '', title: '運動會', kind: 'event' }] });
+    assert.equal(s, '今天排的都結束了。明天：運動會。');
 });

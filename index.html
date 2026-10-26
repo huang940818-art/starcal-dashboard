@@ -85,26 +85,31 @@
                         <button class="btn small ghost" id="manage-categories">管理分類</button>
                     </span>
                 </h2>
-                <div class="row" style="margin-bottom:14px">
+                <!-- 搜尋一整行，四個下拉兩兩一排。原本全丟進 .row 讓它自己折，
+                     手機上折成長短不一的三排，「清除」還孤零零掛在一排尾巴。 -->
+                <div class="txn-filters">
                     <input id="q" type="search" placeholder="搜尋店名、備註、分類…" aria-label="搜尋">
-                    <select id="f-kind" class="shrink" style="width:auto">
+                    <select id="f-kind" aria-label="收支">
                         <option value="">收支不限</option>
                         <option value="expense">只看支出</option>
                         <option value="income">只看收入</option>
                         <option value="transfer">只看轉帳</option>
                     </select>
-                    <select id="f-category" class="shrink" style="width:auto"></select>
-                    <select id="f-account" class="shrink" style="width:auto"></select>
-                    <select id="f-when" class="shrink" style="width:auto">
+                    <select id="f-category" aria-label="分類"></select>
+                    <select id="f-account" aria-label="帳戶"></select>
+                    <select id="f-when" aria-label="時間">
                         <option value="">全部時間</option>
                         <option value="month">這個月</option>
                         <option value="last">上個月</option>
                         <option value="year">今年</option>
                         <option value="90">近 90 天</option>
                     </select>
-                    <button class="btn ghost shrink" id="clear-filters">清除</button>
                 </div>
-                <div id="txn-result-summary" class="sub" style="margin-bottom:8px"></div>
+                <!-- 「清除」跟結果數字擺同一行，有篩選的時候才出現 -->
+                <div class="txn-summary-row">
+                    <div id="txn-result-summary" class="sub"></div>
+                    <button class="btn small ghost" id="clear-filters" type="button" hidden>清除篩選</button>
+                </div>
                 <div id="txns"></div>
             </div>
 
@@ -791,6 +796,7 @@
 <script src="js/weather.js"></script>
 <script src="js/ke.js"></script>
 <script src="js/review.js"></script>
+<script src="js/dayplan.js"></script>
 <script src="js/overview.js"></script>
 <script src="js/app.js"></script>
 </body>

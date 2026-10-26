@@ -3668,3 +3668,94 @@ dialog.editor { width: min(680px, calc(100vw - 24px)); }
         padding-right: 0;
     }
 }
+
+/* ── 所有帳目的篩選（2026-10-26）──────────────────────
+ *
+ * 搜尋一整行，四個下拉在下面排成一格一格等寬的。桌機一排五格；
+ * 手機兩兩一排。「清除篩選」挪到結果數字那行的右邊，沒篩選就不出現。
+ */
+.txn-filters {
+    display: grid;
+    grid-template-columns: 2fr repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.txn-filters > * { width: 100%; min-width: 0; }
+
+.txn-summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 32px;
+    margin-bottom: 6px;
+}
+.txn-summary-row .sub { margin: 0; font-variant-numeric: tabular-nums; }
+.txn-summary-row .btn { flex: none; }
+
+@media (max-width: 760px) {
+    .txn-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .txn-filters #q { grid-column: 1 / -1; }
+}
+
+/* 「最早」那格的單位可能是一整個行程名字，太長就截掉，不要把格子撐破、
+ * 也不要整個掉到下一行。數字不縮，名字縮。 */
+.hero .stat .v { display: flex; align-items: baseline; min-width: 0; }
+.hero .stat .v .unit {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 7.5em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ── 手機的頁首與自訂期間（2026-10-26）────────────────
+ *
+ * 分頁原本只排到三分之二就停，右邊空一塊，跟上面那排（右邊貼著主題鈕）
+ * 對不齊。手機上四個分頁平分整排，左右都跟頁首、卡片同一條線。
+ * 日期太長時自己縮，不要把主題鈕擠到第二行。
+ */
+@media (max-width: 620px) {
+    .topbar { flex-wrap: nowrap; gap: 10px; }
+    .today { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .mode { margin-left: 0; }
+    nav { gap: 4px; }
+    nav button { flex: 1 1 0; padding: 7px 0; text-align: center; }
+
+    /* 自訂期間：上面那顆標籤跟底下兩格日期講的是同一件事，手機上只留日期，
+     * 兩格等寬、字小一點，「2026年12月31日」才不會折成兩行 */
+    .month-nav.custom { flex-wrap: wrap; }
+    .month-nav.custom .month-label { display: none; }
+    .custom-range { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+    .custom-range input {
+        width: 100%;
+        font-size: 15px;
+        padding-left: 8px;
+        padding-right: 8px;
+        text-align: center;
+        white-space: nowrap;
+    }
+}
+
+/* 總覽最上面「今天要幹嘛」那句（js/dayplan.js）。
+ * 比 note 深一階：note 是補充，這句是這張卡要講的事。
+ * 本機的話前面掛一個小名牌，講是誰寫的；模板句沒有名牌。 */
+.hero .plan {
+    margin-top: 8px;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--text);
+    max-width: 46em;
+}
+.hero .plan-by {
+    display: inline-block;
+    margin-right: 7px;
+    padding: 0 7px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    line-height: 1.7;
+    vertical-align: 1px;
+    color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 12%, transparent);
+}

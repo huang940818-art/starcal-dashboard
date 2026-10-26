@@ -254,7 +254,8 @@ const Overview = {
         const on = this.onSet();
         const off = this.CARDS.filter(c => !on.has(c.id));
         // 想法牆在窄螢幕上整個分頁都是收起來的，這裡也不該給
-        const usable = off.filter(c => c.id !== 'wall' || wallUsable());
+        const usable = off.filter(c => (c.id !== 'wall' || wallUsable())
+                                     && (c.id !== 'ke' || Store.mode === 'local'));
 
         grid.append(el('div', { class: 'card wide off-shelf', 'data-hue': 'todo' }, [
             el('h2', {}, [el('span', { class: 'label' }, [icon('wall'), '還沒放上去的'])]),
@@ -655,6 +656,9 @@ const Overview = {
             && !Cal.data.events.length && !Timetable.slots().length
             && !Memo.data.items.length && !Wall.data.notes.length;
 
+        // 「今天要幹嘛」那一句。新使用者什麼都沒有的時候不講。
+        const plan = empty ? null : this.planLine();
+
         // 一次只講最要緊的那一件
         let headline, note = null, tone = '';
         // hero 講掉的那一條，下面「要注意的」就不要再講一次。
@@ -671,7 +675,8 @@ const Overview = {
         } else if (todayAll.length) {
             headline = ['今天有 ', em(todayAll.length), ' 件事'];
             // 把它們列出來。「三件事」是抽象的，看到是哪三件才會變小。
-            note = todayAll.map(i => i.title).slice(0, 4).join('、');
+            // 有「今天要幹嘛」那句的話它已經照時間排好講過了，這裡不再列一次。
+            note = plan?.text ? null : todayAll.map(i => i.title).slice(0, 4).join('、');
         } else if (pace && pace.over) {
             // 總額超了排在單一分類前面：一類超支還可以從別類挪，
             // 總額超了就是真的沒有了。
@@ -692,7 +697,8 @@ const Overview = {
         }
 
         // 課的那一句接在後面，不搶上面那句的位置。
-        if (classes.length) {
+        // 「今天要幹嘛」那句已經把課排進時間裡了，有它就不再另外講。
+        if (classes.length && !plan?.text) {
             // 節次沒設時間的話講節次，不要生一個「–」出來假裝有時間
             const a = Timetable.startOf(classes[0]);
             const b = Timetable.endOf(classes[classes.length - 1]);
@@ -719,8 +725,66 @@ const Overview = {
                 class: 'headline' + (headline.length === 1 && !note ? ' calm' : ''),
             }, headline),
             note ? el('div', { class: 'note ' + tone, text: note }) : null,
+            plan?.text ? el('div', { class: 'plan' }, [
+                plan.by ? el('span', { class: 'plan-by', text: plan.by }) : null,
+                el('span', { text: plan.text }),
+            ]) : null,
             this.heroStats(open.length, todayAll.length),
         ]));
+    },
+
+    /* ── 今天要幹嘛 ─────────────────────────────────
+     *
+     * 平常是 DayPlan 的模板句。本機模式下，如果這台 server 的擴充有提供
+     * /api/今天一句（不在 repo 裡），就拿它的那句蓋過去。
+     *
+     * **舊的那句絕對不能留著。** 早上寫的「06:00 早班」到了晚上還掛著，
+     * 或剛加了一個行程它卻沒講，都比模板更糟。所以每一句都綁著一把鑰匙：
+     * 日期＋現在幾點＋行程／待辦／課表三份資料的版本。任何一個變了，
+     * 那句就作廢、先退回模板，同時再去要一次。
+     */
+    planKey() {
+        const v = Store.versions || {};
+        return [todayStr(), new Date().getHours(), v['行事曆'], v['待辦'], v['課表']].join('|');
+    },
+
+    planLine() {
+        const key = this.planKey();
+        if (Store.mode === 'local') this.fetchLocalLine(key);
+        const local = this.localLine;
+        if (local && local.key === key && local.text) return { text: local.text, by: local.by };
+        return { text: DayPlan.text(), by: null };
+    },
+
+    /**
+     * 跟擴充要那一句。擴充那邊資料沒變就直接回上次的；變了會回 pending、
+     * 在背景重新寫，這裡每 2.5 秒再問一次，最多等 20 秒。
+     * 沒有這個端點（404）、或出錯，一分鐘內同一把鑰匙不再問——模板照常顯示。
+     */
+    async fetchLocalLine(key) {
+        if (this.planFetching === key || this.localLine?.key === key) return;
+        if (this.planFailed?.key === key && Date.now() - this.planFailed.at < 60000) return;
+        this.planFetching = key;
+        try {
+            for (let i = 0; i < 8; i++) {
+                const res = await fetch('api/今天一句', { cache: 'no-store' });
+                if (!res.ok) throw new Error(res.status);
+                const out = await res.json();
+                if (this.planKey() !== key) return;       // 等的時候資料又變了，交給下一輪
+                if (out.text) {
+                    this.localLine = { key, text: out.text, by: out.by || null };
+                    if (!this.arranging) this.renderHero();
+                    return;
+                }
+                if (!out.pending) throw new Error('fallback');
+                await new Promise(r => setTimeout(r, 2500));
+            }
+            throw new Error('timeout');
+        } catch {
+            this.planFailed = { key, at: Date.now() };
+        } finally {
+            if (this.planFetching === key) this.planFetching = null;
+        }
     },
 
     /**
@@ -777,8 +841,10 @@ const Overview = {
     },
 
     /**
-     * 今天第一個要出門的是幾點：第一堂課或第一個班，取早的那個。
+     * 今天最早的一件事是幾點：課、班、有時間的行程，取最早的那個。
      * 她要的是「今天幾點要到」，所以已經過了也照樣寫——那是今天的形狀，不是倒數。
+     * 原本只看課和班，標題寫「第一個」；她說不要寫「第一個」，但要顯示當天第一件事，
+     * 所以有時間的行程也算進來，標題改成「最早」。
      */
     firstStat() {
         const today = todayStr();
@@ -789,16 +855,17 @@ const Overview = {
                 const sp = Timetable.span(c);
                 const label = Timetable.startOf(c)
                     || (sp ? `第${Timetable.periods()[sp.a].name}節` : '');
-                return { key: Timetable.sortKey(c), label, what: '課' };
+                return { key: Timetable.sortKey(c), label, what: c.name || '課' };
             }),
             ...Cal.data.events
-                .filter(e => e.date === today && Shifts.isShift(e) && e.time)
-                .map(e => ({ key: mins(e.time), label: e.time, what: e.title || '班' })),
+                .filter(e => e.date === today && e.time)
+                .map(e => ({ key: mins(e.time), label: e.time,
+                             what: e.title || (Shifts.isShift(e) ? '班' : '行程') })),
         ].filter(x => x.label).sort((a, b) => a.key - b.key);
 
         const first = items[0];
         return {
-            hue: 'var(--accent)', ico: 'clock', name: '第一個',
+            hue: 'var(--accent)', ico: 'clock', name: '最早',
             value: first ? first.label : '沒有', unit: first ? first.what : null,
             go: () => this.goAgenda('timeline'),
         };

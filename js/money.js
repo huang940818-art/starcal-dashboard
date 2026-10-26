@@ -882,6 +882,7 @@ const Money = {
                     this.render();
                 },
             });
+            nav.classList.add('custom');
             nav.append(el('div', { class: 'custom-range' }, [from, el('span', { text: '–' }), to]));
         }
 
@@ -1709,6 +1710,8 @@ const Money = {
 
         const rows = this.filtered();
         const summary = $('#txn-result-summary');
+        $('#clear-filters').hidden = !($('#q').value.trim()
+            || ['#f-kind', '#f-category', '#f-account', '#f-when'].some(id => $(id).value));
 
         if (!rows.length) {
             summary.textContent = '';

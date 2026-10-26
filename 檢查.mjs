@@ -3529,8 +3529,11 @@ const guard = (p, what, ms = 5000) => Promise.race([
     const stats = [...document.querySelectorAll('#hero .stat')].map(x => x.textContent);
     ok('總覽有「今天的課」那格',
        stats.some(t => t.includes('今天的課')), stats.join(' | '));
-    ok('總覽那句話有提到今天幾堂課',
-       q('#hero').textContent.includes('1 堂課'), q('#hero').textContent.slice(0, 90));
+    // 2026-10-26 起課排進「今天要幹嘛」那句（js/dayplan.js）裡，不再另外講「今天 1 堂課」
+    // 句子會隨現在幾點變（上課中／下課了），所以不比字，比的是課有沒有被算進去
+    ok('總覽那句話有把今天的課算進去',
+       !!q('#hero .plan') && DayPlan.itemsOn(todayStr()).some(x => x.title === '實務專題'),
+       q('#hero').textContent.slice(0, 90));
 
     // ── 某一堂課在某一天的標記：這次不用上、要交什麼 ──
     //
